@@ -1,0 +1,6 @@
+; browse: Velox driven by keyboard from the host (test/amiga/browse.host)
+Echo >VELOX:r/browse.txt "browse"
+Echo >VELOX:r/browse.start ""
+VELOX:velox http://127.0.0.1:8080/index.html LOG=VELOX:r/browse.log
+Echo >>VELOX:r/browse.txt "exit rc=$RC"
+Echo >>VELOX:r/browse.txt "done"

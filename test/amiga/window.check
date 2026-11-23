@@ -1,0 +1,11 @@
+#!/bin/sh
+# checks for window.script; $1 = result file
+r=$1; fail=0
+grep -q '^running: yes' "$r" || { echo "velox was not running"; fail=1; }
+grep -q '^after_break: exited' "$r" || { echo "velox did not exit on Ctrl-C"; fail=1; }
+before=$(sed -n 's/^mem_before *//p' "$r" | tr -dc 0-9)
+after=$(sed -n 's/^mem_after *//p' "$r" | tr -dc 0-9)
+echo "memory: before=$before after=$after"
+# more free memory afterwards is fine (caches settling), less is a leak
+[ -n "$before" ] && [ -n "$after" ] && [ "$after" -ge "$before" ] || { echo "memory not fully returned"; fail=1; }
+exit $fail

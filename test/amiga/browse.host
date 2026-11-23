@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+"""Host side of browse.script: keyboard-drive Velox and check its log."""
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from xdrive import Amiga, wait_log  # noqa: E402
+
+r = sys.argv[1]
+log = os.path.join(r, "browse.log")
+out = open(os.path.join(r, "browse.driver"), "w")
+U = "http://127.0.0.1:8080/"
+
+
+def step(msg):
+    out.write(msg + "\n")
+    out.flush()
+
+
+try:
+    a = Amiga()
+    wait_log(log, "page " + U + "index.html")
+    time.sleep(1)
+    a.shot(os.path.join(r, "browse-index.png"))
+    step("index shown")
+    a.key("Down", 3)
+    wait_log(log, "scroll", 3)
+    step("scrolled with cursor down")
+    a.key("ctrl+Down")
+    a.key("ctrl+Up")
+    lines = wait_log(log, "scroll 0")
+    step("top/bottom keys")
+    a.key("Tab")
+    wait_log(log, "focus second.html")
+    step("tab focuses the first link")
+    a.key("Return")
+    wait_log(log, "page " + U + "second.html")
+    time.sleep(1)
+    a.shot(os.path.join(r, "browse-second.png"))
+    step("return follows the link")
+    a.key("ctrl+l")
+    a.type("127.0.0.1:8080/third.html#middle")
+    a.key("Return")
+    lines = wait_log(log, "page " + U + "third.html#middle")
+    time.sleep(1)
+    a.shot(os.path.join(r, "browse-third.png"))
+    top = [l for l in lines if l.startswith("top ")][-1]
+    if int(top.split()[1]) <= 0:
+        raise AssertionError("fragment did not scroll: " + top)
+    step("typed URL with #fragment scrolls to it (" + top + ")")
+    a.key("BackSpace")
+    wait_log(log, "page " + U + "second.html", 2)
+    step("backspace goes back")
+    a.key("ctrl+b")
+    wait_log(log, "page " + U + "index.html", 2)
+    step("ctrl+b goes back")
+    a.key("ctrl+f")
+    wait_log(log, "page " + U + "second.html", 3)
+    step("ctrl+f goes forward")
+    a.key("ctrl+q")
+    step("ok")
+except Exception as e:  # report and let the Amiga side time out
+    step("FAIL " + repr(e))
+    try:
+        Amiga().key("ctrl+q")
+    except Exception:
+        pass

@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+"""checks for net.script; argv[1] = result file (outputs are next to it)"""
+import os
+import sys
+
+r = sys.argv[1]
+d = os.path.dirname(r)
+res = open(r).read()
+fail = []
+
+
+def out(name):
+    return open(os.path.join(d, f"net-{name}.out"), "rb").read()
+
+
+def rc(name, want):
+    line = f"{name} rc={want}"
+    if line not in res.splitlines():
+        fail.append(f"{name}: expected rc={want}")
+
+
+big = bytes((i * 7 + 13) % 251 for i in range(100000))
+rc("hello", 0)
+if out("hello") != b"Hello from the Velox test server\n":
+    fail.append(f"hello: body {out('hello')[:80]!r}")
+rc("chunked", 0)
+if out("chunked") != b"chunk one, chunk two, chunk three\n":
+    fail.append(f"chunked: body {out('chunked')[:80]!r}")
+rc("redirect", 0)
+if out("redirect") != (b"status: 200\nurl: http://127.0.0.1:8080/hello\ntype: text/plain\n"
+                       b"length: 33\nHello from the Velox test server\n"):
+    fail.append(f"redirect: {out('redirect')!r}")
+rc("redirect-rel", 0)
+if b"url: http://127.0.0.1:8080/hello\n" not in out("redirect-rel"):
+    fail.append(f"redirect-rel: {out('redirect-rel')!r}")
+rc("loop", 20)
+if out("loop") != b"velox: Too many redirects\n":
+    fail.append(f"loop: {out('loop')!r}")
+rc("big", 0)
+if out("big") != big:
+    fail.append(f"big: {len(out('big'))} bytes, equal={out('big') == big}")
+rc("missing", 5)
+if not out("missing").startswith(b"status: 404\n"):
+    fail.append(f"missing: {out('missing')!r}")
+rc("echo", 0)
+echo = out("echo").decode("latin-1")
+if not echo.startswith("GET /echo/a%20b?q=%E4 HTTP/1.1\n"):
+    fail.append(f"echo request line: {echo.splitlines()[:1]}")
+for h in ("Host: 127.0.0.1:8080", "Connection: close", "User-Agent: Velox/"):
+    if h not in echo:
+        fail.append(f"echo: missing header {h}")
+rc("refused", 20)
+if out("refused") != b"velox: Connection failed\n":
+    fail.append(f"refused: {out('refused')!r}")
+rc("nohost", 20)
+if out("nohost") != b"velox: Host not found\n":
+    fail.append(f"nohost: {out('nohost')!r}")
+
+mem = {k: v for k, v in (l.split() for l in res.splitlines() if l.startswith("mem_"))}
+print(f"memory: before={mem.get('mem_before')} after={mem.get('mem_after')}")
+if mem.get("mem_before") != mem.get("mem_after"):
+    fail.append("memory not fully returned")
+
+for f in fail:
+    print(f)
+sys.exit(1 if fail else 0)

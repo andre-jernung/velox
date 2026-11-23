@@ -1,0 +1,7 @@
+#!/bin/sh
+# checks for browse.script; $1 = result file
+d=$(dirname "$1"); fail=0
+sed 's/^/driver: /' "$d/browse.driver"
+grep -q '^ok$' "$d/browse.driver" || fail=1
+grep -q '^exit rc=0' "$1" || { echo "velox exit code: $(grep exit "$1")"; fail=1; }
+exit $fail

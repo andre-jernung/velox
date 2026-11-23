@@ -1,0 +1,34 @@
+; net: command line fetches against test/server.py on the host
+Echo >VELOX:r/net.txt "net"
+VELOX:velox http://127.0.0.1:8080/hello DUMP >VELOX:r/net-hello.out
+Echo >>VELOX:r/net.txt "hello rc=$RC"
+VELOX:velox http://127.0.0.1:8080/chunked DUMP >VELOX:r/net-chunked.out
+Echo >>VELOX:r/net.txt "chunked rc=$RC"
+VELOX:velox http://127.0.0.1:8080/redirect INFO DUMP >VELOX:r/net-redirect.out
+Echo >>VELOX:r/net.txt "redirect rc=$RC"
+VELOX:velox http://127.0.0.1:8080/redirect-rel INFO >VELOX:r/net-redirect-rel.out
+Echo >>VELOX:r/net.txt "redirect-rel rc=$RC"
+VELOX:velox http://127.0.0.1:8080/loop INFO >VELOX:r/net-loop.out
+Echo >>VELOX:r/net.txt "loop rc=$RC"
+VELOX:velox http://127.0.0.1:8080/big DUMP >VELOX:r/net-big.out
+Echo >>VELOX:r/net.txt "big rc=$RC"
+VELOX:velox http://127.0.0.1:8080/missing INFO >VELOX:r/net-missing.out
+Echo >>VELOX:r/net.txt "missing rc=$RC"
+VELOX:velox "127.0.0.1:8080/echo/a b?q=ä" DUMP >VELOX:r/net-echo.out
+Echo >>VELOX:r/net.txt "echo rc=$RC"
+VELOX:velox http://127.0.0.1:1/ INFO >VELOX:r/net-refused.out
+Echo >>VELOX:r/net.txt "refused rc=$RC"
+VELOX:velox http://no-such-host.invalid/ INFO >VELOX:r/net-nohost.out
+Echo >>VELOX:r/net.txt "nohost rc=$RC"
+
+; leak check over repeated fetches
+Avail >NIL: FLUSH
+Echo >>VELOX:r/net.txt "mem_before " NOLINE
+Avail >>VELOX:r/net.txt TOTAL
+VELOX:velox http://127.0.0.1:8080/big DUMP >NIL:
+VELOX:velox http://127.0.0.1:8080/redirect DUMP >NIL:
+VELOX:velox http://127.0.0.1:1/ DUMP >NIL:
+Avail >NIL: FLUSH
+Echo >>VELOX:r/net.txt "mem_after " NOLINE
+Avail >>VELOX:r/net.txt TOTAL
+Echo >>VELOX:r/net.txt "done"
