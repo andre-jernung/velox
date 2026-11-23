@@ -1,0 +1,53 @@
+# layout with fixed test metrics (8 px per character)
+layout test/unit/layout/text.html 200 => 
+height 278
+text 13 8 40 20 18 f5 s2 c000000 "Title"
+text 46 8 152 10 8 f1 s0 c000000 "The quick brown fox"
+text 56 8 184 10 8 f1 s0 c000000 "jumps over the lazy dog"
+text 66 8 128 10 8 f1 s0 c000000 "again and again."
+text 86 12 56 10 8 f1 s0 c000000 "centred"
+text 86 76 32 10 8 f1 s2 c000000 "bold"
+text 86 116 72 10 8 f1 s1 c0000ee L "link text"
+text 106 28 24 10 8 f1 s0 c000000 "one"
+bull 108 8 4 4 6 f0 s0 c000000 0
+text 116 28 24 10 8 f1 s0 c000000 "two"
+bull 118 8 4 4 6 f0 s0 c000000 0
+text 116 60 40 10 8 f1 s0 c000000 "words"
+text 136 28 40 10 8 f1 s0 c000000 "three"
+text 136 4 16 10 8 f1 s0 c000000 "3."
+text 146 28 32 10 8 f1 s0 c000000 "nine"
+text 146 4 16 10 8 f1 s0 c000000 "9."
+rule 166 8 184 2 0 f0 s0 c000000
+text 178 8 8 10 8 f9 s0 c000000 "a"
+text 178 72 8 10 8 f9 s0 c000000 "b"
+text 188 8 24 10 8 f9 s0 c000000 "  c"
+text 208 8 184 10 8 f1 s0 c000000 "Supercalifragilisticexp"
+text 218 8 88 10 8 f1 s0 c000000 "ialidocious"
+text 238 8 32 10 8 f1 s0 c000000 "line"
+text 248 8 40 10 8 f1 s0 c000000 "break"
+text 268 8 24 10 8 f1 s0 c000000 "end"
+
+layout test/unit/layout/table.html 300 => 
+height 116
+rect 0 8 284 70 0 f0 s0 ceeeeee
+box  0 8 284 70 0 f0 s0 c000000
+box  1 9 68 16 0 f0 s0 c000000
+text 4 27 32 10 8 f1 s2 c000000 "Name"
+box  1 77 213 16 0 f0 s0 c000000
+text 4 139 88 10 8 f1 s2 c000000 "Description"
+box  17 9 68 16 0 f0 s0 c000000
+text 20 12 8 10 8 f1 s0 c000000 "a"
+box  17 77 213 16 0 f0 s0 c000000
+text 20 80 40 10 8 f1 s0 c000000 "short"
+box  33 9 68 36 0 f0 s0 c000000
+text 36 12 48 10 8 f1 s0 c000000 "longer"
+text 46 12 32 10 8 f1 s0 c000000 "name"
+rect 33 77 213 36 0 f0 s0 cffff00
+box  33 77 213 36 0 f0 s0 c000000
+text 36 80 200 10 8 f1 s0 c000000 "a much longer description"
+text 46 80 128 10 8 f1 s0 c000000 "that has to wrap"
+text 56 80 72 10 8 f1 s0 c000000 "somewhere"
+text 73 82 8 10 8 f1 s0 c000000 "x"
+text 73 152 8 10 8 f1 s0 c000000 "y"
+text 96 8 40 10 8 f1 s0 c000000 "after"
+

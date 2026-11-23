@@ -1,0 +1,3 @@
+# layout with fixed test metrics (8 px per character)
+layout test/unit/layout/text.html 200
+layout test/unit/layout/table.html 300

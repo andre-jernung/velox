@@ -148,6 +148,75 @@ CS_UTF8		equ	1
 CS_LATIN1	equ	2		; also Windows-1252
 
 ;--------------------------------------------------------------------
+; Style - computed style of an element (built on the stack in layout)
+;--------------------------------------------------------------------
+FONT_SIZES	equ	6		; size classes 0 (small) .. 5 (h1)
+FONT_MONO	equ	8		; added to the size class
+FONT_COUNT	equ	16
+SOFT_UNDERLINE	equ	1		; = graphics FSF_UNDERLINED
+SOFT_BOLD	equ	2
+SOFT_ITALIC	equ	4
+
+ALIGN_LEFT	equ	0
+ALIGN_CENTER	equ	1
+ALIGN_RIGHT	equ	2
+WS_NORMAL	equ	0
+WS_PRE		equ	1
+WS_NOWRAP	equ	2
+LIST_DISC	equ	0
+LIST_CIRCLE	equ	1
+LIST_SQUARE	equ	2
+LIST_DECIMAL	equ	3
+LIST_NONE	equ	4
+SF_INLIST	equ	1		; st_Flags: inside a list (inherited)
+
+	RSRESET
+st_Display	rs.b	1		; DISP_xxx
+st_Font		rs.b	1		; size class + FONT_MONO
+st_Soft		rs.b	1		; SOFT_xxx
+st_Align	rs.b	1
+st_White	rs.b	1
+st_List		rs.b	1
+st_Flags	rs.b	1
+st_pad		rs.b	1
+st_Color	rs.l	1		; $RRGGBB
+st_Bg		rs.l	1		; $RRGGBB or -1 (not inherited)
+st_MTop		rs.w	1		; margins in pixels (not inherited)
+st_MBottom	rs.w	1
+st_MLeft	rs.w	1
+st_MRight	rs.w	1
+st_Link		rs.l	1		; enclosing <a href> element
+st_Width	rs.w	1		; px; negative = percent; 0 = auto
+st_Height	rs.w	1
+STYLE_SIZEOF	rs.b	0
+
+;--------------------------------------------------------------------
+; Run - one item of the display list made by layout
+;--------------------------------------------------------------------
+RT_TEXT		equ	1
+RT_RECT		equ	2		; filled background
+RT_RULE		equ	3		; <hr>
+RT_BULLET	equ	4		; list marker, ru_Len = LIST_xxx
+RT_IMAGE	equ	5		; ru_Text = <img> node
+RT_BOX		equ	6		; 1 pixel outline
+
+	RSRESET
+ru_Y		rs.l	1		; top, document coordinates
+ru_X		rs.w	1
+ru_W		rs.w	1
+ru_H		rs.w	1
+ru_Base		rs.w	1		; baseline offset from ru_Y
+ru_Type		rs.b	1
+ru_Font		rs.b	1
+ru_Soft		rs.b	1
+ru_Flags	rs.b	1
+ru_Color	rs.l	1		; $RRGGBB
+ru_Text		rs.l	1
+ru_Len		rs.l	1
+ru_Link		rs.l	1		; <a> element (or form control)
+RUN_SIZEOF	rs.b	0
+
+;--------------------------------------------------------------------
 ; Global data block, addressed as xxx(a4)
 ;--------------------------------------------------------------------
 	RSRESET
@@ -187,6 +256,39 @@ g_PreDepth	rs.l	1		; open elements that preserve blanks
 g_TagName	rs.b	32		; current tag name, lower case
 g_AttrName	rs.b	32		; current attribute name, lower case
 g_OpenStack	rs.l	MAX_DEPTH
+; fonts and text measuring (set up by the GUI or the test driver)
+g_MeasureFn	rs.l	1		; d0=font|soft<<8, a0=text, d1=len -> d0=width
+g_FontH		rs.w	FONT_COUNT	; height per font index
+g_FontBase	rs.w	FONT_COUNT	; baseline per font index
+; layout
+g_Runs		rs.b	BUF_SIZEOF	; display list (Run records)
+g_LayWidth	rs.l	1		; width laid out for
+g_DocHeight	rs.l	1
+g_PageFg	rs.l	1		; default text colour
+g_PageBg	rs.l	1		; page background colour
+g_LinkColor	rs.l	1
+g_LayY		rs.l	1		; top of the current line
+g_LayLeft	rs.l	1		; content box of the current block
+g_LayRight	rs.l	1
+g_LayAlign	rs.l	1
+g_LayWhite	rs.l	1
+g_LineX		rs.l	1		; next x on the line
+g_LineStart	rs.l	1		; index of the first run of the line
+g_LineAsc	rs.l	1
+g_LineDesc	rs.l	1
+g_LineUsed	rs.l	1		; line has content
+g_PendSpace	rs.l	1		; a blank is pending before the next word
+g_PendMargin	rs.l	1		; collapsed vertical margin to add
+g_LastH		rs.l	1		; font height for empty lines
+g_SpaceW	rs.l	1		; width of a blank in the current font
+g_Marker	rs.l	1		; list marker pending (LIST_xxx + 1)
+g_MarkerNum	rs.l	1
+g_ListNum	rs.l	1		; counter of the innermost list
+g_LayDepth	rs.l	1
+g_MeasMin	rs.l	1		; table measuring
+g_MeasPref	rs.l	1
+g_MeasLine	rs.l	1
+g_StackSwap	rs.l	3		; StackSwapStruct
 g_SIZEOF	rs.b	0
 
 ;--------------------------------------------------------------------

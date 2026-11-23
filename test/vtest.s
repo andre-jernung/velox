@@ -10,6 +10,8 @@
 ;   http FILE            HttpReadResponse on a canned response file
 ;   httpinfo FILE        same, but print body length and checksum only
 ;   html FILE            parse an HTML file and dump the DOM
+;   layout FILE WIDTH    parse and lay out with fixed test metrics (8 px
+;                        per character), dump the display list
 ;
 
 	include	"velox.i"
@@ -19,7 +21,7 @@
 	xref	ConnOpenFile,ConnClose,ConnReadLine,HttpReadResponse
 	xref	PutStr,PutBuf,PutNum,PutNL,PutChar,FlushOut,ErrorText
 	xref	PageNew,BufReserve,BufClear,CharsetDetect,DecodeCharset
-	xref	HtmlParse,TagNameOf
+	xref	HtmlParse,TagNameOf,LayoutDocument,RunCount,RunPtr,ParseDec
 
 T_LINEMAX	equ	2048
 T_MAXWORDS	equ	4
@@ -164,6 +166,7 @@ Commands:
 	dc.w	CnHttp-Commands,CmdHttp-Commands
 	dc.w	CnHttpInfo-Commands,CmdHttpInfo-Commands
 	dc.w	CnHtml-Commands,CmdHtml-Commands
+	dc.w	CnLayout-Commands,CmdLayout-Commands
 	dc.w	0
 
 CnParse:	dc.b	"parse",0
@@ -172,6 +175,7 @@ CnFixup:	dc.b	"fixup",0
 CnHttp:		dc.b	"http",0
 CnHttpInfo:	dc.b	"httpinfo",0
 CnHtml:		dc.b	"html",0
+CnLayout:	dc.b	"layout",0
 Empty:		dc.b	0
 ResultSep:	dc.b	" => ",0
 MsgUnknown:	dc.b	"unknown command",0
@@ -516,6 +520,160 @@ PutEscaped:
 	bra.s	.l
 .x:	movem.l	(sp)+,d2/a2
 	rts
+
+;--------------------------------------------------------------------
+; Fixed font metrics for layout tests: every character is 8 pixels
+; wide; size classes 0..5 are 8,10,12,14,16,20 pixels high (baseline
+; 2 pixels above the bottom), monospace the same.
+;--------------------------------------------------------------------
+TestMetrics:
+	lea	TestMeasure(pc),a0
+	move.l	a0,g_MeasureFn(a4)
+	lea	g_FontH(a4),a0
+	lea	g_FontBase(a4),a1
+	moveq	#FONT_COUNT-1,d1
+	moveq	#0,d0
+.l:	move.w	d0,d2
+	and.w	#7,d2
+	cmp.w	#FONT_SIZES-1,d2
+	bls.s	.ok
+	moveq	#FONT_SIZES-1,d2
+.ok:	add.w	d2,d2
+	move.w	TestHeights(pc,d2.w),d2
+	move.w	d2,(a0)+
+	subq.w	#2,d2
+	move.w	d2,(a1)+
+	addq.w	#1,d0
+	dbf	d1,.l
+	clr.l	g_PageFg(a4)
+	move.l	#$ffffff,g_PageBg(a4)
+	move.l	#$0000ee,g_LinkColor(a4)
+	rts
+TestHeights:	dc.w	8,10,12,14,16,20
+
+TestMeasure:
+	move.l	d1,d0
+	lsl.l	#3,d0
+	rts
+
+CmdLayout:
+	movem.l	d2-d3/a2,-(sp)
+	bsr	TestMetrics
+	move.l	T_Words+8,a0
+	bsr	ParseDec
+	move.l	d0,d3
+	move.l	T_Words+4,a0
+	bsr	LoadPage
+	beq	.err
+	move.l	g_PageSrc+buf_Data(a4),a0
+	bsr	HtmlParse
+	tst.l	d0
+	beq	.err
+	move.l	d3,d0
+	bsr	LayoutDocument
+	beq	.err
+	lea	MsgHeight(pc),a0
+	bsr	PutStr
+	move.l	g_DocHeight(a4),d0
+	bsr	PutNum
+	bsr	PutNL
+	moveq	#0,d2
+.run:	bsr	RunCount
+	cmp.l	d0,d2
+	bhs	.x
+	move.l	d2,d0
+	bsr	RunPtr
+	move.l	a0,a2
+	moveq	#0,d0
+	move.b	ru_Type(a2),d0
+	lea	RunTypes(pc),a0
+	subq.w	#1,d0
+	mulu.w	#6,d0
+	add.w	d0,a0
+	bsr	PutStr
+	move.l	ru_Y(a2),d0
+	bsr	PutNumSp
+	move.w	ru_X(a2),d0
+	ext.l	d0
+	bsr	PutNumSp
+	move.w	ru_W(a2),d0
+	ext.l	d0
+	bsr	PutNumSp
+	move.w	ru_H(a2),d0
+	ext.l	d0
+	bsr	PutNumSp
+	move.w	ru_Base(a2),d0
+	ext.l	d0
+	bsr	PutNumSp
+	lea	MsgF(pc),a0
+	bsr	PutStr
+	moveq	#0,d0
+	move.b	ru_Font(a2),d0
+	bsr	PutNum
+	lea	MsgS(pc),a0
+	bsr	PutStr
+	moveq	#0,d0
+	move.b	ru_Soft(a2),d0
+	bsr	PutNum
+	lea	MsgC(pc),a0
+	bsr	PutStr
+	move.l	ru_Color(a2),d0
+	bsr	PutHex6
+	tst.l	ru_Link(a2)
+	beq.s	.nolink
+	lea	MsgLink(pc),a0
+	bsr	PutStr
+.nolink:
+	cmp.b	#RT_TEXT,ru_Type(a2)
+	bne.s	.nt
+	lea	MsgQ(pc),a0
+	bsr	PutStr
+	move.l	ru_Text(a2),a0
+	move.l	ru_Len(a2),d0
+	bsr	PutEscaped
+	moveq	#'"',d0
+	bsr	PutChar
+.nt:	cmp.b	#RT_BULLET,ru_Type(a2)
+	bne.s	.nb
+	moveq	#' ',d0
+	bsr	PutChar
+	move.l	ru_Len(a2),d0
+	bsr	PutNum
+.nb:	bsr	PutNL
+	addq.l	#1,d2
+	bra	.run
+.err:	bsr	PutError
+.x:	movem.l	(sp)+,d2-d3/a2
+	rts
+
+PutNumSp:
+	bsr	PutNum
+	moveq	#' ',d0
+	bra	PutChar
+
+PutHex6:
+	movem.l	d2-d3,-(sp)
+	move.l	d0,d2
+	lsl.l	#8,d2			; 24 bit value to the top
+	moveq	#5,d3
+.l:	rol.l	#4,d2
+	move.l	d2,d0
+	and.w	#15,d0
+	lea	Hex(pc),a0
+	move.b	(a0,d0.w),d0
+	bsr	PutChar
+	dbf	d3,.l
+	movem.l	(sp)+,d2-d3
+	rts
+
+RunTypes:	dc.b	"text ",0,"rect ",0,"rule ",0,"bull ",0,"img  ",0,"box  ",0
+MsgHeight:	dc.b	10,"height ",0
+MsgF:		dc.b	"f",0
+MsgS:		dc.b	" s",0
+MsgC:		dc.b	" c",0
+MsgLink:	dc.b	" L",0
+MsgQ:		dc.b	' "',0
+	even
 
 MsgDoc:		dc.b	"#document",0
 MsgEqQ:		dc.b	'="',0

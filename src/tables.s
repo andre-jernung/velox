@@ -4,7 +4,7 @@
 
 	include	"velox.i"
 
-	xdef	TagFlags,TagNames,Entities
+	xdef	TagFlags,TagNames,Entities,UaStyle
 
 	section	code,code
 

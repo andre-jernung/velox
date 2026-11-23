@@ -1,0 +1,938 @@
+;
+; table.s - table layout
+;
+; Automatic table layout: every column gets a minimum width (longest
+; word / fixed content) and a preferred width (content without
+; wrapping).  If the preferred widths fit they are used, otherwise each
+; column gets its minimum plus a share of the remaining space in
+; proportion to (preferred - minimum).  Cells are laid out as blocks in
+; their columns; a row is as high as its tallest cell.
+;
+
+	include	"velox.i"
+
+	xdef	LayoutTable
+	xref	StyleCompute,CssApply,LayoutBlockContent,LayoutNode
+	xref	LineReset,AddRun,RunPtr,RunCount,ApplyPendingMargin
+	xref	Measure,DomGetAttr,ParseDec
+
+MAXCOLS		equ	48
+MAX_MDEPTH	equ	100
+
+	RSRESET
+tb_Min		rs.l	MAXCOLS
+tb_Pref		rs.l	MAXCOLS
+tb_W		rs.l	MAXCOLS
+tb_X		rs.l	MAXCOLS
+tb_Rect		rs.l	MAXCOLS		; run index of a cell background
+tb_Box		rs.l	MAXCOLS		; run index of a cell border
+tb_RowStyle	rs.b	STYLE_SIZEOF
+tb_CellStyle	rs.b	STYLE_SIZEOF
+tb_Cols		rs.l	1
+tb_Spacing	rs.l	1
+tb_Pad		rs.l	1
+tb_Border	rs.l	1
+tb_X0		rs.l	1		; table left edge
+tb_Width	rs.l	1
+tb_Top		rs.l	1
+tb_Style	rs.l	1		; table style
+tb_RowTop	rs.l	1
+tb_RowBottom	rs.l	1
+tb_NCells	rs.l	1
+tb_TabRect	rs.l	1
+tb_TabBox	rs.l	1
+tb_SIZEOF	rs.b	0
+
+	section	code,code
+
+;--------------------------------------------------------------------
+; LayoutTable - lay out the rows of a table
+; In: a0 = <table>, a1 = its style.  The current block bounds are the
+;     space available; LayoutBlock restores them afterwards.
+;--------------------------------------------------------------------
+LayoutTable:
+	movem.l	d2-d7/a2-a3/a5,-(sp)
+	lea	-tb_SIZEOF(sp),sp
+	move.l	sp,a3
+	move.l	a0,a5			; a5 = table throughout
+	move.l	a1,tb_Style(a3)
+
+	lea	AnCellspacing(pc),a1
+	moveq	#2,d0
+	bsr	NumAttr
+	move.l	d0,tb_Spacing(a3)
+	lea	AnCellpadding(pc),a1
+	moveq	#1,d0
+	bsr	NumAttr
+	move.l	d0,tb_Pad(a3)
+	clr.l	tb_Border(a3)		; border, border="", border="1": 1px
+	move.l	a5,a0
+	lea	AnBorder(pc),a1
+	bsr	DomGetAttr
+	tst.l	d0
+	beq.s	.nob
+	move.l	d0,a0
+	bsr	ParseDec
+	tst.l	d1
+	beq.s	.b1
+	tst.l	d0
+	beq.s	.nob
+.b1:	moveq	#1,d0
+	move.l	d0,tb_Border(a3)
+	addq.l	#1,tb_Pad(a3)		; room for the cell outline
+.nob:
+	; captions first, as centred blocks
+	move.l	n_First(a5),a2
+.cap:	move.l	a2,d0
+	beq.s	.capd
+	cmp.w	#TAG_CAPTION,n_Tag(a2)
+	bne.s	.capn
+	cmp.b	#DN_ELEMENT,n_Type(a2)
+	bne.s	.capn
+	move.l	a2,a0
+	move.l	tb_Style(a3),a1
+	bsr	LayoutNode
+.capn:	move.l	n_Next(a2),a2
+	bra.s	.cap
+.capd:
+	; number of columns
+	moveq	#0,d3
+	sub.l	a2,a2
+.cr:	move.l	a2,a1
+	bsr	NextRow
+	move.l	d0,a2
+	tst.l	d0
+	beq.s	.crd
+	moveq	#0,d4
+	move.l	n_First(a2),d0
+.cc:	tst.l	d0
+	beq.s	.ccd
+	move.l	d0,a0
+	bsr	IsCell
+	beq.s	.ccn
+	bsr	SpanOf
+	add.l	d0,d4
+.ccn:	move.l	n_Next(a0),d0
+	bra.s	.cc
+.ccd:	cmp.l	d4,d3
+	bge.s	.cr
+	move.l	d4,d3
+	bra.s	.cr
+.crd:	cmp.l	#MAXCOLS,d3
+	ble.s	.colok
+	moveq	#MAXCOLS,d3
+.colok:	move.l	d3,tb_Cols(a3)
+	beq	.done
+
+	; clear column data
+	move.l	a3,a0
+	move.w	#MAXCOLS*2-1,d0
+.clr:	clr.l	(a0)+
+	dbf	d0,.clr
+
+	; measure every cell
+	sub.l	a2,a2
+.mr:	move.l	a2,a1
+	bsr	NextRow
+	move.l	d0,a2
+	tst.l	d0
+	beq	.mrd
+	move.l	a2,a0
+	move.l	tb_Style(a3),a1
+	bsr	RowStyle
+	beq.s	.mr
+	moveq	#0,d5			; column
+	move.l	n_First(a2),d6
+.mc:	tst.l	d6
+	beq.s	.mr
+	cmp.l	tb_Cols(a3),d5
+	bge.s	.mr
+	move.l	d6,a0
+	bsr	IsCell
+	beq	.mcn
+	bsr	SpanOf
+	move.l	d0,d7			; span
+	move.l	d6,a0
+	lea	tb_RowStyle(a3),a1
+	lea	tb_CellStyle(a3),a2
+	bsr	CellStyle
+	move.l	d6,a0
+	lea	tb_CellStyle(a3),a1
+	bsr	MeasureCell		; d0 = min, d1 = pref (content)
+	move.l	tb_Pad(a3),d2
+	add.l	d2,d2
+	add.l	d2,d0
+	add.l	d2,d1
+	move.w	tb_CellStyle+st_Width(a3),d2	; width="120": a wish
+	ble.s	.nofix
+	ext.l	d2
+	cmp.l	d0,d2
+	blt.s	.nofix
+	move.l	d2,d1
+.nofix:	cmp.l	d0,d1
+	bge.s	.pok
+	move.l	d0,d1
+.pok:	; spread over the spanned columns
+	move.l	d5,d2
+	add.l	d7,d2
+	cmp.l	tb_Cols(a3),d2
+	ble.s	.spok
+	move.l	tb_Cols(a3),d7
+	sub.l	d5,d7
+.spok:	divul.l	d7,d2:d0
+	divul.l	d7,d2:d1
+	move.l	d7,d2
+.ms:	lea	tb_Min(a3),a0
+	cmp.l	(a0,d5.l*4),d0
+	ble.s	.ms1
+	move.l	d0,(a0,d5.l*4)
+.ms1:	lea	tb_Pref(a3),a0
+	cmp.l	(a0,d5.l*4),d1
+	ble.s	.ms2
+	move.l	d1,(a0,d5.l*4)
+.ms2:	addq.l	#1,d5
+	subq.l	#1,d2
+	bne.s	.ms
+	move.l	d6,a2
+	move.l	n_Parent(a2),a2		; (a2 is the row again below)
+	bra.s	.mcn2
+.mcn:	move.l	d6,a0
+	move.l	n_Parent(a0),a2
+.mcn2:	move.l	d6,a0
+	move.l	n_Next(a0),d6
+	bra	.mc
+.mrd:
+	; available width and the table's own width
+	move.l	g_LayRight(a4),d4
+	sub.l	g_LayLeft(a4),d4	; d4 = available
+	move.l	tb_Cols(a3),d0
+	addq.l	#1,d0
+	mulu.l	tb_Spacing(a3),d0
+	move.l	tb_Border(a3),d1
+	add.l	d1,d1
+	add.l	d1,d0
+	move.l	d0,d6			; d6 = spacing + borders
+	moveq	#0,d5			; d5 = requested width (0 = auto)
+	move.l	tb_Style(a3),a0
+	move.w	st_Width(a0),d5
+	ext.l	d5
+	beq.s	.auto
+	bpl.s	.wpx
+	neg.l	d5
+	mulu.l	d4,d5
+	divul.l	#100,d1:d5
+.wpx:	cmp.l	d4,d5
+	ble.s	.auto
+	move.l	d4,d5
+.auto:	; sums
+	moveq	#0,d2			; sum min
+	moveq	#0,d3			; sum pref
+	move.l	tb_Cols(a3),d7
+	subq.l	#1,d7
+	lea	tb_Min(a3),a0
+	lea	tb_Pref(a3),a1
+.sum:	add.l	(a0)+,d2
+	add.l	(a1)+,d3
+	dbf	d7,.sum
+	; content width to fill
+	move.l	d5,d7
+	bne.s	.has
+	move.l	d4,d7
+.has:	sub.l	d6,d7			; d7 = room for columns
+	bpl.s	.room
+	moveq	#0,d7
+.room:	cmp.l	d7,d3
+	bgt.s	.squeeze
+	; preferred widths fit
+	tst.l	d5
+	beq.s	.usepref
+	move.l	d7,d1			; grow to the requested width
+	sub.l	d3,d1			; extra
+	bsr	SpreadExtra
+	bra.s	.widths
+.usepref:
+	bsr	CopyPref
+	move.l	d3,d7
+	bra.s	.widths
+.squeeze:
+	cmp.l	d7,d2
+	blt.s	.mix
+	bsr	CopyMin			; even the minimum does not fit
+	move.l	d2,d7
+	bra.s	.widths
+.mix:	move.l	d7,d1
+	sub.l	d2,d1			; room above the minimums
+	bsr	MixWidths
+.widths:
+	move.l	d7,d0
+	add.l	d6,d0
+	move.l	d0,tb_Width(a3)
+	; horizontal position
+	move.l	g_LayLeft(a4),d0
+	move.l	d4,d1
+	sub.l	tb_Width(a3),d1		; free space
+	ble.s	.x0
+	move.l	a5,a0
+	lea	AnAlign(pc),a1
+	bsr	DomGetAttr
+	tst.l	d0
+	beq.s	.inh
+	move.l	d0,a0
+	move.b	(a0),d0
+	or.b	#$20,d0
+	cmp.b	#'c',d0
+	beq.s	.cen
+	cmp.b	#'r',d0
+	bne.s	.left
+	move.l	g_LayLeft(a4),d0
+	add.l	d1,d0
+	bra.s	.x0
+.inh:	move.l	tb_Style(a3),a0		; inside <center>
+	cmp.b	#ALIGN_CENTER,st_Align(a0)
+	bne.s	.left
+.cen:	lsr.l	#1,d1
+	move.l	g_LayLeft(a4),d0
+	add.l	d1,d0
+	bra.s	.x0
+.left:	move.l	g_LayLeft(a4),d0
+.x0:	move.l	d0,tb_X0(a3)
+	; column positions
+	add.l	tb_Border(a3),d0
+	add.l	tb_Spacing(a3),d0
+	moveq	#0,d1
+	lea	tb_X(a3),a0
+	lea	tb_W(a3),a1
+.cx:	move.l	d0,(a0)+
+	add.l	(a1)+,d0
+	add.l	tb_Spacing(a3),d0
+	addq.l	#1,d1
+	cmp.l	tb_Cols(a3),d1
+	blo.s	.cx
+
+	; table background and border
+	bsr	ApplyPendingMargin
+	move.l	g_LayY(a4),tb_Top(a3)
+	moveq	#-1,d0
+	move.l	d0,tb_TabRect(a3)
+	move.l	d0,tb_TabBox(a3)
+	move.l	tb_Style(a3),a0
+	move.l	st_Bg(a0),d1
+	bmi.s	.notb
+	moveq	#RT_RECT,d0
+	bsr	BoxRun
+	move.l	d0,tb_TabRect(a3)
+.notb:	tst.l	tb_Border(a3)
+	beq.s	.notbx
+	moveq	#RT_BOX,d0
+	move.l	g_PageFg(a4),d1
+	bsr	BoxRun
+	move.l	d0,tb_TabBox(a3)
+.notbx:	move.l	tb_Border(a3),d0
+	add.l	tb_Spacing(a3),d0
+	add.l	d0,g_LayY(a4)
+
+	; rows
+	sub.l	a2,a2
+.row:	move.l	a2,a1
+	bsr	NextRow
+	move.l	d0,a2
+	tst.l	d0
+	beq	.rowsd
+	move.l	a2,a0
+	move.l	tb_Style(a3),a1
+	bsr	RowStyle
+	beq.s	.row
+	move.l	g_LayY(a4),tb_RowTop(a3)
+	move.l	g_LayY(a4),tb_RowBottom(a3)
+	clr.l	tb_NCells(a3)
+	moveq	#0,d5			; column
+	move.l	n_First(a2),d6
+.cell:	tst.l	d6
+	beq	.rowend
+	cmp.l	tb_Cols(a3),d5
+	bge	.rowend
+	move.l	d6,a0
+	bsr	IsCell
+	beq	.celln
+	bsr	SpanOf
+	move.l	d0,d7
+	move.l	d5,d0			; clamp the span
+	add.l	d7,d0
+	cmp.l	tb_Cols(a3),d0
+	ble.s	.sp
+	move.l	tb_Cols(a3),d7
+	sub.l	d5,d7
+.sp:	move.l	d6,a0
+	lea	tb_RowStyle(a3),a1
+	move.l	a2,-(sp)
+	lea	tb_CellStyle(a3),a2
+	bsr	CellStyle
+	movem.l	(sp)+,a2
+	; cell x range: d2 = left, d3 = right
+	lea	tb_X(a3),a0
+	move.l	(a0,d5.l*4),d2
+	move.l	d2,d3
+	move.l	d7,d1
+	move.l	d5,d0
+	lea	tb_W(a3),a0
+.spw:	add.l	(a0,d0.l*4),d3
+	addq.l	#1,d0
+	subq.l	#1,d1
+	beq.s	.spd
+	add.l	tb_Spacing(a3),d3
+	bra.s	.spw
+.spd:	; background and outline (heights fixed at the end of the row)
+	move.l	tb_NCells(a3),d4
+	lea	tb_Rect(a3),a0
+	move.l	#-1,(a0,d4.l*4)
+	lea	tb_Box(a3),a0
+	move.l	#-1,(a0,d4.l*4)
+	move.l	tb_CellStyle+st_Bg(a3),d1
+	bpl.s	.cbg
+	move.l	tb_RowStyle+st_Bg(a3),d1
+	bmi.s	.nocbg
+.cbg:	moveq	#RT_RECT,d0
+	bsr	CellRun
+	lea	tb_Rect(a3),a0
+	move.l	d0,(a0,d4.l*4)
+.nocbg:	tst.l	tb_Border(a3)
+	beq.s	.nocbx
+	moveq	#RT_BOX,d0
+	move.l	g_PageFg(a4),d1
+	bsr	CellRun
+	lea	tb_Box(a3),a0
+	move.l	d0,(a0,d4.l*4)
+.nocbx:	addq.l	#1,tb_NCells(a3)
+	; content
+	move.l	tb_Pad(a3),d0
+	add.l	d0,d2
+	sub.l	d0,d3
+	cmp.l	d2,d3
+	bgt.s	.wok
+	move.l	d2,d3
+	addq.l	#1,d3
+.wok:	move.l	d2,g_LayLeft(a4)
+	move.l	d3,g_LayRight(a4)
+	move.l	tb_RowTop(a3),d0
+	add.l	tb_Pad(a3),d0
+	move.l	d0,g_LayY(a4)
+	clr.l	g_PendMargin(a4)
+	clr.l	g_Marker(a4)
+	bsr	LineReset
+	move.l	d6,a0
+	lea	tb_CellStyle(a3),a1
+	bsr	LayoutBlockContent
+	move.l	g_LayY(a4),d0
+	add.l	tb_Pad(a3),d0
+	moveq	#0,d1			; height="..." on the cell
+	move.w	tb_CellStyle+st_Height(a3),d1
+	add.l	tb_RowTop(a3),d1
+	cmp.l	d1,d0
+	bge.s	.hok
+	move.l	d1,d0
+.hok:	cmp.l	tb_RowBottom(a3),d0
+	ble.s	.nb
+	move.l	d0,tb_RowBottom(a3)
+.nb:	add.l	d7,d5
+.celln:	move.l	d6,a0
+	move.l	n_Next(a0),d6
+	bra	.cell
+.rowend:
+	; row height for the cell boxes
+	move.l	tb_RowBottom(a3),d2
+	sub.l	tb_RowTop(a3),d2
+	move.l	tb_NCells(a3),d4
+.fix:	subq.l	#1,d4
+	bmi.s	.fixd
+	lea	tb_Rect(a3),a0
+	move.l	(a0,d4.l*4),d0
+	bmi.s	.f2
+	bsr	RunPtr
+	move.w	d2,ru_H(a0)
+.f2:	lea	tb_Box(a3),a0
+	move.l	(a0,d4.l*4),d0
+	bmi.s	.fix
+	bsr	RunPtr
+	move.w	d2,ru_H(a0)
+	bra.s	.fix
+.fixd:	move.l	tb_RowBottom(a3),d0
+	add.l	tb_Spacing(a3),d0
+	move.l	d0,g_LayY(a4)
+	clr.l	g_PendMargin(a4)
+	bra	.row
+.rowsd:
+	move.l	tb_Border(a3),d0
+	add.l	d0,g_LayY(a4)
+	move.l	g_LayY(a4),d2
+	sub.l	tb_Top(a3),d2
+	move.l	tb_TabRect(a3),d0
+	bmi.s	.t2
+	bsr	RunPtr
+	move.w	d2,ru_H(a0)
+.t2:	move.l	tb_TabBox(a3),d0
+	bmi.s	.done
+	bsr	RunPtr
+	move.w	d2,ru_H(a0)
+.done:	clr.l	g_PendMargin(a4)
+	bsr	LineReset
+	lea	tb_SIZEOF(sp),sp
+	movem.l	(sp)+,d2-d7/a2-a3/a5
+	rts
+
+; BoxRun - a table-wide RECT/BOX run at the table top
+; In: d0 = type, d1 = colour; a3 = frame; Out: d0 = run index
+BoxRun:
+	movem.l	d2-d3,-(sp)
+	move.l	d0,d2
+	move.l	d1,d3
+	bsr	AddRun
+	beq.s	.fail
+	move.l	d0,a0
+	move.b	d2,ru_Type(a0)
+	move.l	d3,ru_Color(a0)
+	move.l	tb_Top(a3),ru_Y(a0)
+	move.w	tb_X0+2(a3),ru_X(a0)
+	move.w	tb_Width+2(a3),ru_W(a0)
+	bsr	LineReset		; (uses d0)
+	bsr	RunCount
+	subq.l	#1,d0
+	movem.l	(sp)+,d2-d3
+	rts
+.fail:	moveq	#-1,d0
+	movem.l	(sp)+,d2-d3
+	rts
+
+; CellRun - a RECT/BOX run for a cell (x d2..d3 at the row top)
+; In: d0 = type, d1 = colour; Out: d0 = run index
+CellRun:
+	movem.l	d4-d5,-(sp)
+	move.l	d0,d4
+	move.l	d1,d5
+	bsr	AddRun
+	beq.s	.fail
+	move.l	d0,a0
+	move.b	d4,ru_Type(a0)
+	move.l	d5,ru_Color(a0)
+	move.l	tb_RowTop(a3),ru_Y(a0)
+	move.w	d2,ru_X(a0)
+	move.l	d3,d0
+	sub.l	d2,d0
+	move.w	d0,ru_W(a0)
+	bsr	RunCount
+	subq.l	#1,d0
+	movem.l	(sp)+,d4-d5
+	rts
+.fail:	moveq	#-1,d0
+	movem.l	(sp)+,d4-d5
+	rts
+
+; CopyPref / CopyMin - column widths = preferred / minimum widths
+CopyPref:
+	lea	tb_Pref(a3),a0
+	bra.s	CopyW
+CopyMin:
+	lea	tb_Min(a3),a0
+CopyW:	lea	tb_W(a3),a1
+	move.l	tb_Cols(a3),d0
+	subq.l	#1,d0
+.c:	move.l	(a0)+,(a1)+
+	dbf	d0,.c
+	rts
+
+; SpreadExtra - widths = pref + extra * pref / sum(pref)
+; In: d1 = extra, d3 = sum of preferred widths
+SpreadExtra:
+	movem.l	d2/d4-d5,-(sp)
+	lea	tb_Pref(a3),a0
+	lea	tb_W(a3),a1
+	move.l	tb_Cols(a3),d4
+	subq.l	#1,d4
+.l:	move.l	(a0)+,d0
+	move.l	d0,d5
+	tst.l	d3
+	bne.s	.prop
+	move.l	d1,d2			; all empty: equal shares
+	divul.l	tb_Cols(a3),d0:d2
+	bra.s	.add
+.prop:	move.l	d1,d2
+	mulu.l	d0,d2
+	divul.l	d3,d0:d2
+.add:	add.l	d2,d5
+	move.l	d5,(a1)+
+	dbf	d4,.l
+	movem.l	(sp)+,d2/d4-d5
+	rts
+
+; MixWidths - widths = min + room * (pref - min) / sum(pref - min)
+; In: d1 = room above the minimums, d2 = sum min, d3 = sum pref
+MixWidths:
+	movem.l	d2-d6,-(sp)
+	move.l	d3,d6
+	sub.l	d2,d6			; sum of (pref - min), > 0 here
+	lea	tb_Min(a3),a0
+	lea	tb_Pref(a3),a1
+	lea	tb_W(a3),a2
+	move.l	tb_Cols(a3),d4
+	subq.l	#1,d4
+.l:	move.l	(a0)+,d0
+	move.l	(a1)+,d5
+	sub.l	d0,d5			; pref - min
+	mulu.l	d1,d5
+	divul.l	d6,d2:d5
+	add.l	d0,d5
+	move.l	d5,(a2)+
+	dbf	d4,.l
+	movem.l	(sp)+,d2-d6
+	rts
+
+;--------------------------------------------------------------------
+; Helpers for walking tables
+;--------------------------------------------------------------------
+
+; NextRow - next <tr> of the table a5, looking inside thead/tbody/tfoot
+; In: a1 = current row or 0; Out: d0 = row or 0
+NextRow:
+	move.l	a1,d0
+	beq.s	.first
+	move.l	a1,a0
+.adv:	move.l	n_Next(a0),d0
+	bne.s	.scan
+	move.l	n_Parent(a0),a0
+	cmp.l	a5,a0
+	beq.s	.none
+	move.l	a0,d0
+	beq.s	.none
+	bra.s	.adv
+.first:	move.l	n_First(a5),d0
+	beq.s	.none
+.scan:	move.l	d0,a0
+	cmp.b	#DN_ELEMENT,n_Type(a0)
+	bne.s	.adv
+	move.w	n_Tag(a0),d1
+	cmp.w	#TAG_TR,d1
+	beq.s	.x
+	cmp.w	#TAG_TBODY,d1
+	beq.s	.grp
+	cmp.w	#TAG_THEAD,d1
+	beq.s	.grp
+	cmp.w	#TAG_TFOOT,d1
+	bne.s	.adv
+.grp:	move.l	n_First(a0),d0
+	bne.s	.scan
+	bra.s	.adv
+.none:	moveq	#0,d0
+.x:	rts
+
+; IsCell - In: a0 = node; Out: Z clear if <td>/<th>.  a0 kept.
+IsCell:
+	cmp.b	#DN_ELEMENT,n_Type(a0)
+	bne.s	.no
+	move.w	n_Tag(a0),d0
+	cmp.w	#TAG_TD,d0
+	beq.s	.yes
+	cmp.w	#TAG_TH,d0
+	beq.s	.yes
+.no:	moveq	#0,d0
+	rts
+.yes:	moveq	#1,d0
+	rts
+
+; SpanOf - colspan of a cell
+; In: a0 = cell; Out: d0 = 1..MAXCOLS.  a0 kept.
+SpanOf:
+	move.l	a0,-(sp)
+	lea	AnColspan(pc),a1
+	bsr	DomGetAttr
+	tst.l	d0
+	beq.s	.one
+	move.l	d0,a0
+	bsr	ParseDec
+	tst.l	d0
+	ble.s	.one
+	cmp.l	#MAXCOLS,d0
+	ble.s	.x
+	moveq	#MAXCOLS,d0
+	bra.s	.x
+.one:	moveq	#1,d0
+.x:	movem.l	(sp)+,a0
+	rts
+
+; NumAttr - numeric attribute of the table a5
+; In: a1 = name, d0 = default; Out: d0 = value
+NumAttr:
+	move.l	d0,-(sp)
+	move.l	a5,a0
+	bsr	DomGetAttr
+	tst.l	d0
+	beq.s	.def
+	move.l	d0,a0
+	bsr	ParseDec
+	tst.l	d1
+	beq.s	.def
+	addq.l	#4,sp
+	rts
+.def:	movem.l	(sp)+,d0
+	rts
+
+; RowStyle - style of a row into tb_RowStyle
+; In: a0 = row, a1 = table style; Out: d0 = 0 if the row is hidden
+RowStyle:
+	movem.l	a2/a5,-(sp)
+	move.l	a0,a5
+	lea	tb_RowStyle(a3),a2
+	bsr	StyleCompute
+	move.l	a5,a0
+	lea	tb_RowStyle(a3),a1
+	bsr	CssApply
+	moveq	#1,d0
+	cmp.b	#DISP_NONE,tb_RowStyle+st_Display(a3)
+	bne.s	.x
+	moveq	#0,d0
+.x:	movem.l	(sp)+,a2/a5
+	rts
+
+; CellStyle - In: a0 = cell, a1 = row style, a2 = output style
+CellStyle:
+	movem.l	a2/a5,-(sp)
+	move.l	a0,a5
+	bsr	StyleCompute
+	move.l	a5,a0
+	move.l	a2,a1
+	bsr	CssApply
+	movem.l	(sp)+,a2/a5
+	rts
+
+AnCellspacing:	dc.b	"cellspacing",0
+AnCellpadding:	dc.b	"cellpadding",0
+AnBorder:	dc.b	"border",0
+AnColspan:	dc.b	"colspan",0
+AnAlign:	dc.b	"align",0
+	even
+
+;--------------------------------------------------------------------
+; Measuring: minimum and preferred content widths
+;--------------------------------------------------------------------
+
+; MeasureCell - In: a0 = cell, a1 = its style
+; Out: d0 = minimum width, d1 = preferred width
+MeasureCell:
+	clr.l	g_MeasMin(a4)
+	clr.l	g_MeasPref(a4)
+	clr.l	g_MeasLine(a4)
+	bsr	MeasureChildren
+	bsr	MeasBreak
+	move.l	g_MeasMin(a4),d0
+	move.l	g_MeasPref(a4),d1
+	rts
+
+; MeasBreak - end the current line of the measurement
+MeasBreak:
+	move.l	g_MeasLine(a4),d0
+	cmp.l	g_MeasPref(a4),d0
+	ble.s	.x
+	move.l	d0,g_MeasPref(a4)
+.x:	clr.l	g_MeasLine(a4)
+	rts
+
+; MeasWord - add a word: In: d0 = width, d1 = width of a blank
+MeasWord:
+	cmp.l	g_MeasMin(a4),d0
+	ble.s	.m
+	move.l	d0,g_MeasMin(a4)
+.m:	tst.l	g_MeasLine(a4)
+	beq.s	.n
+	add.l	d1,g_MeasLine(a4)
+.n:	add.l	d0,g_MeasLine(a4)
+	rts
+
+; MeasureChildren - In: a0 = node, a1 = its style
+MeasureChildren:
+	movem.l	a2/a5,-(sp)
+	move.l	a1,a5
+	move.l	n_First(a0),a2
+.l:	move.l	a2,d0
+	beq.s	.x
+	move.l	a2,a0
+	move.l	a5,a1
+	bsr.s	MeasureNode
+	move.l	n_Next(a2),a2
+	bra.s	.l
+.x:	movem.l	(sp)+,a2/a5
+	rts
+
+; MeasureNode - In: a0 = node, a1 = parent style
+MeasureNode:
+	movem.l	d2-d7/a2-a3/a5,-(sp)
+	move.l	a0,a5
+	move.l	a1,a3
+	move.b	n_Type(a5),d0
+	cmp.b	#DN_TEXT,d0
+	beq	.text
+	cmp.b	#DN_ELEMENT,d0
+	bne	.x
+	cmp.l	#MAX_MDEPTH,g_LayDepth(a4)
+	bhs	.x
+	addq.l	#1,g_LayDepth(a4)
+	lea	-STYLE_SIZEOF(sp),sp
+	move.l	sp,a2
+	move.l	a5,a0
+	move.l	a3,a1
+	bsr	StyleCompute
+	move.l	a5,a0
+	move.l	sp,a1
+	bsr	CssApply
+	move.l	sp,a3			; a3 = this element's style
+	move.b	st_Display(a3),d0
+	cmp.b	#DISP_NONE,d0
+	beq	.pop
+	move.w	n_Tag(a5),d1
+	cmp.w	#TAG_BR,d1
+	bne.s	.nbr
+	bsr	MeasBreak
+	bra	.pop
+.nbr:	cmp.w	#TAG_IMG,d1
+	bne.s	.nimg
+	moveq	#0,d0
+	move.w	st_Width(a3),d0
+	ble	.pop
+	moveq	#0,d1
+	bsr	MeasWord
+	bra	.pop
+.nimg:	cmp.b	#DISP_INLINE,d0
+	beq.s	.inl
+	cmp.b	#DISP_IBLOCK,d0
+	beq.s	.inl
+	cmp.b	#DISP_ROW,d0
+	beq.s	.row
+	; block: measure apart, add its margins
+	bsr	MeasBreak
+	move.l	g_MeasMin(a4),d2
+	move.l	g_MeasPref(a4),d3
+	clr.l	g_MeasMin(a4)
+	clr.l	g_MeasPref(a4)
+	move.l	a5,a0
+	move.l	a3,a1
+	bsr	MeasureChildren
+	bsr	MeasBreak
+	moveq	#0,d0
+	move.w	st_MLeft(a3),d0
+	add.w	st_MRight(a3),d0
+	ext.l	d0
+	move.l	g_MeasMin(a4),d4
+	add.l	d0,d4
+	move.l	g_MeasPref(a4),d5
+	add.l	d0,d5
+	cmp.l	d2,d4
+	bge.s	.b1
+	move.l	d2,d4
+.b1:	cmp.l	d3,d5
+	bge.s	.b2
+	move.l	d3,d5
+.b2:	move.l	d4,g_MeasMin(a4)
+	move.l	d5,g_MeasPref(a4)
+	bra.s	.pop
+.inl:	move.l	a5,a0
+	move.l	a3,a1
+	bsr	MeasureChildren
+	bra.s	.pop
+.row:	; a row of a nested table: cells side by side
+	bsr	MeasBreak
+	move.l	g_MeasMin(a4),d2
+	move.l	g_MeasPref(a4),d3
+	moveq	#0,d4			; sum of minimums
+	moveq	#0,d5			; sum of preferred widths
+	move.l	n_First(a5),d6
+.rc:	tst.l	d6
+	beq.s	.rcd
+	move.l	d6,a0
+	clr.l	g_MeasMin(a4)
+	clr.l	g_MeasPref(a4)
+	clr.l	g_MeasLine(a4)
+	move.l	a3,a1
+	bsr	MeasureNode
+	bsr	MeasBreak
+	add.l	g_MeasMin(a4),d4
+	add.l	g_MeasPref(a4),d5
+	move.l	d6,a0
+	move.l	n_Next(a0),d6
+	bra.s	.rc
+.rcd:	cmp.l	d2,d4
+	bge.s	.r1
+	move.l	d2,d4
+.r1:	cmp.l	d3,d5
+	bge.s	.r2
+	move.l	d3,d5
+.r2:	move.l	d4,g_MeasMin(a4)
+	move.l	d5,g_MeasPref(a4)
+	clr.l	g_MeasLine(a4)
+.pop:	lea	STYLE_SIZEOF(sp),sp
+	subq.l	#1,g_LayDepth(a4)
+	bra	.x
+
+.text:	moveq	#0,d6			; font code
+	move.b	st_Soft(a3),d6
+	lsl.w	#8,d6
+	move.b	st_Font(a3),d6
+	lea	Blank(pc),a0
+	moveq	#1,d1
+	move.l	d6,d0
+	bsr	Measure
+	move.l	d0,d5			; blank width
+	move.l	n_Data(a5),a2
+	move.l	n_Data2(a5),d7
+	cmp.b	#WS_NORMAL,st_White(a3)
+	bne.s	.whole
+.tl:	tst.l	d7
+	ble	.x
+	cmp.b	#' ',(a2)
+	bne.s	.tw
+	addq.l	#1,a2
+	subq.l	#1,d7
+	bra.s	.tl
+.tw:	move.l	a2,a5
+.twl:	addq.l	#1,a2
+	subq.l	#1,d7
+	ble.s	.twe
+	cmp.b	#' ',(a2)
+	bne.s	.twl
+.twe:	move.l	a2,d1
+	sub.l	a5,d1
+	move.l	a5,a0
+	move.l	d6,d0
+	bsr	Measure
+	move.l	d5,d1
+	bsr	MeasWord
+	bra.s	.tl
+.whole:	; pre / nowrap: lines cannot be broken
+	tst.l	d7
+	ble.s	.x
+	move.l	a2,a5
+.wl:	cmp.b	#10,(a2)
+	beq.s	.wle
+	addq.l	#1,a2
+	subq.l	#1,d7
+	bgt.s	.wl
+.wle:	move.l	a2,d1
+	sub.l	a5,d1
+	move.l	a5,a0
+	move.l	d6,d0
+	bsr	Measure
+	moveq	#0,d1
+	bsr	MeasWord
+	move.l	g_MeasLine(a4),d0
+	cmp.l	g_MeasMin(a4),d0
+	ble.s	.wm
+	move.l	d0,g_MeasMin(a4)
+.wm:	tst.l	d7
+	ble.s	.x
+	cmp.b	#10,(a2)
+	bne.s	.whole
+	addq.l	#1,a2
+	subq.l	#1,d7
+	bsr	MeasBreak
+	bra.s	.whole
+.x:	movem.l	(sp)+,d2-d7/a2-a3/a5
+	rts
+
+Blank:	dc.b	" "
+	even
