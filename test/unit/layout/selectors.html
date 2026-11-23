@@ -1,0 +1,31 @@
+<style>
+.a :not(.keep) { display: none }
+.b li:last-child { display: none }
+.c span:only-child { display: none }
+.d p:empty + p { display: none }
+:is(.e, .f) i { display: none }
+:where(.g) i { display: none }
+.g i.keep { display: inline }
+input:checked + b { display: none }
+option:disabled { display: none }
+.h :not(.x, .y) { display: none }
+.i :not(p > em):not(p) { display: none }
+.j a:hover, .j b { display: none }
+.k b:not(:hover) { display: none }
+.l :is(:hover) { display: none }
+.m :not(:first-child):not(:last-child) { display: none }
+</style>
+<div class="a"><span class="keep">ok1</span><span>bad1</span></div>
+<ul class="b"><li>ok2</li><li>bad2</li></ul>
+<div class="c"><p><span>bad3</span></p><p><span>ok3a</span><span>ok3b</span></p></div>
+<div class="d"><p></p><p>bad4</p><p>ok4</p></div>
+<div class="e"><i>bad5</i></div><div class="f"><i>bad6</i></div><div class="z"><i>ok5</i></div>
+<div class="g"><i>bad7</i><i class="keep">ok7</i></div>
+<p><input type="checkbox" checked><b>bad8</b><input type="checkbox"><b>ok8</b></p>
+<select><option>ok9</option><option disabled>bad9</option></select>
+<div class="h"><span class="x">ok10a</span><span class="y">ok10b</span><span>bad10</span></div>
+<div class="i"><p><em>ok11</em></p><span>bad11</span></div>
+<div class="j"><b>bad12 (only a:hover fails)</b></div>
+<div class="k"><b>bad13 (never hovered)</b></div>
+<div class="l"><b>ok14 (never hovered)</b></div>
+<div class="m"><s>ok15a</s><s>bad15</s><s>ok15b</s></div>

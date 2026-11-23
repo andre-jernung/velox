@@ -213,6 +213,8 @@ COMB_ADJ	equ	3		; "A + B"
 COMB_SIB	equ	4		; "A ~ B"
 PS_LINK		equ	1		; :link, :any-link
 PS_FIRST	equ	2		; :first-child
+PS_LAST		equ	4		; :last-child
+PS_EMPTY	equ	8		; :empty
 
 	RSRESET				; compound selector
 cm_Prev		rs.l	1		; the compound to the left
@@ -222,6 +224,9 @@ cm_Tag		rs.w	1		; 0 any, -1 never matches
 cm_Id		rs.l	1
 cm_Classes	rs.l	1		; "a",0,"b",0,0
 cm_Attrs	rs.l	1		; AttrSel list
+cm_Not		rs.l	1		; :not() selectors (chained by cm_Alt)
+cm_Is		rs.l	1		; :is() / :where() selectors
+cm_Alt		rs.l	1		; next selector in such a list
 CM_SIZEOF	rs.b	0
 
 	RSRESET				; attribute selector
@@ -451,6 +456,7 @@ g_CssMatch	rs.l	CSS_MAXMATCH	; matching scratch
 g_CssNMatch	rs.l	1
 g_CssName	rs.b	256		; parsing scratch (CSS_NAMEBUF)
 g_CssTag	rs.b	32
+g_CssNameTop	rs.l	1		; free part of g_CssName (nesting)
 g_CssTmp	rs.b	4096		; declarations being parsed (DECL_TMP)
 ; TLS (AmiSSL)
 g_AmiSSLMasterBase rs.l	1

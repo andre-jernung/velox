@@ -8,9 +8,10 @@
 ; The rules that match an element are cached in its n_Css field.
 ;
 ; Selectors: type, *, #id, .class, [attr], [attr=v] [~= ^= $= *= |=],
-; :link, :any-link, :first-child, :root; combinators descendant, >, +
-; and ~.  Rules with anything else (:hover, :not(), ::before ...) are
-; dropped.  @media is evaluated on min-/max-width against the window
+; :link, :any-link, :first-child, :last-child, :only-child, :empty,
+; :root, :checked, :disabled, :selected (as attributes), :not(), :is(),
+; :where() (selector lists); combinators descendant, >, + and ~.  Rules
+; with anything else (:hover, ::before ...) are dropped.  @media is evaluated on min-/max-width against the window
 ; width; @supports and @layer contents are used; other at-rules are
 ; skipped.
 ;
@@ -962,6 +963,8 @@ PropNames:
 ;--------------------------------------------------------------------
 ParseSelectorList:
 	movem.l	d2-d4/a2-a3,-(sp)
+	lea	g_CssName(a4),a2	; class lists are built from here
+	move.l	a2,g_CssNameTop(a4)
 	move.l	a0,a2
 	move.l	a1,a3
 	move.l	d0,d4
@@ -1050,8 +1053,8 @@ ParseSelector:
 	moveq	#COMB_DESC,d5
 .hc:	move.b	d5,cm_Comb(a3)
 .first:	moveq	#0,d5
-	lea	g_CssName(a4),a0	; class list being built here
-	move.l	a0,d4			;  (d4 = write position)
+	move.l	g_CssNameTop(a4),d4	; class list being built here
+	move.l	d4,d3			;  (d3 = start, d4 = write position)
 .part:	cmp.l	d7,a2
 	bhs	.pend
 	move.b	(a2),d0
@@ -1109,6 +1112,49 @@ ParseSelector:
 	cmp.b	#':',(a2)		; ::pseudo-element: not rendered
 	beq	.bad
 	move.l	a2,a0
+	moveq	#0,d2
+	lea	PsNot(pc),a1		; functional: :not( :is( :where(
+	jsr	StrIPrefix
+	bne	.fn
+	moveq	#1,d2
+	lea	PsIsFn(pc),a1
+	jsr	StrIPrefix
+	bne	.fn
+	moveq	#2,d2
+	lea	PsWhere(pc),a1
+	jsr	StrIPrefix
+	bne	.fn
+	moveq	#PS_LAST,d2
+	lea	PsLast(pc),a1
+	bsr	PseudoIs
+	bne.s	.psb
+	moveq	#PS_FIRST|PS_LAST,d2
+	lea	PsOnly(pc),a1
+	bsr	PseudoIs
+	bne.s	.psb
+	moveq	#PS_EMPTY,d2
+	lea	PsEmpty(pc),a1
+	bsr	PseudoIs
+	bne.s	.psb
+	lea	PsChecked(pc),a1
+	move.l	a1,d2	; states: their attributes
+	bsr	PseudoIs
+	bne.s	.aps
+	lea	PsDisabled(pc),a1
+	move.l	a1,d2
+	bsr	PseudoIs
+	bne.s	.aps
+	lea	PsSelected(pc),a1
+	move.l	a1,d2
+	bsr	PseudoIs
+	bne.s	.aps
+	lea	PsNever(pc),a1		; states that never apply here
+.nev:	bsr	PseudoIs
+	bne.s	.never
+.nev2:	tst.b	(a1)+			; next name in the list
+	bne.s	.nev2
+	tst.b	(a1)
+	bne.s	.nev
 	lea	PsLink(pc),a1
 	bsr	PseudoIs
 	bne.s	.link
@@ -1122,6 +1168,89 @@ ParseSelector:
 	bsr	PseudoIs
 	beq	.bad			; anything else: drop the rule
 	move.w	#TAG_HTML,cm_Tag(a3)
+	bra.s	.pseen
+.psb:	or.b	d2,cm_Pseudo(a3)
+	bra.s	.pseen
+.aps:	; :checked -> [checked] (the state as the page set it)
+	move.l	a0,a2
+	moveq	#AS_SIZEOF,d0
+	jsr	PageAlloc
+	beq	.bad
+	move.l	d0,a0
+	move.l	d2,as_Name(a0)		; (the names are the same)
+	move.l	cm_Attrs(a3),as_Next(a0)
+	move.l	a0,cm_Attrs(a3)
+	add.l	#$100,d6
+	bra	.part
+.fn:	; :not(list) :is(list) :where(list); d2 = 0/1/2, a0 = after '('
+	move.l	d2,-(sp)		; kind
+	clr.l	-(sp)			; highest specificity in the list
+	move.l	a0,a2
+	moveq	#0,d1			; find the ')'
+.fs:	cmp.l	d7,a0
+	bhs	.fbad
+	move.b	(a0)+,d0
+	cmp.b	#'(',d0
+	bne.s	.fs1
+	addq.l	#1,d1
+	bra.s	.fs
+.fs1:	cmp.b	#')',d0
+	bne.s	.fs
+	subq.l	#1,d1
+	bpl.s	.fs
+	subq.l	#1,a0
+	move.l	a0,d2			; d2 = the ')'
+	move.l	d4,g_CssNameTop(a4)	; nested class lists after ours
+.piece:	move.l	a2,a0			; one selector: up to ',' at depth 0
+	moveq	#0,d1
+.pc:	cmp.l	d2,a0
+	bhs.s	.pce
+	move.b	(a0),d0
+	cmp.b	#'(',d0
+	bne.s	.pc1
+	addq.l	#1,d1
+.pc1:	cmp.b	#')',d0
+	bne.s	.pc2
+	subq.l	#1,d1
+.pc2:	cmp.b	#',',d0
+	bne.s	.pc3
+	tst.l	d1
+	beq.s	.pce
+.pc3:	addq.l	#1,a0
+	bra.s	.pc
+.pce:	move.l	a0,-(sp)		; its end
+	move.l	a0,a1
+	move.l	a2,a0
+	bsr	ParseSelector		; d0 = compound, d1 = specificity
+	move.l	(sp)+,a2
+	tst.l	d0
+	beq.s	.fbad
+	cmp.l	(sp),d1
+	bls.s	.nomax
+	move.l	d1,(sp)
+.nomax:	move.l	d0,a0
+	lea	cm_Not(a3),a1
+	tst.l	4(sp)
+	beq.s	.lnk
+	lea	cm_Is(a3),a1
+.lnk:	move.l	(a1),cm_Alt(a0)
+	move.l	a0,(a1)
+	cmp.l	d2,a2
+	bhs.s	.fdone
+	addq.l	#1,a2			; after ','
+	bra.s	.piece
+.fdone:	move.l	d3,g_CssNameTop(a4)
+	addq.l	#1,a2			; after ')'
+	move.l	(sp)+,d1
+	move.l	(sp)+,d0
+	cmp.l	#2,d0			; :where() counts for nothing
+	beq	.part
+	add.l	d1,d6
+	bra	.part
+.fbad:	move.l	d3,g_CssNameTop(a4)
+	addq.l	#8,sp
+	bra	.bad
+.never:	move.w	#-1,cm_Tag(a3)
 	bra.s	.pseen
 .link:	bset	#0,cm_Pseudo(a3)	; PS_LINK
 	bra.s	.pseen
@@ -1156,7 +1285,7 @@ ParseSelector:
 	addq.l	#1,d6
 	bra	.part
 .pend:	; classes collected: copy the list
-	lea	g_CssName(a4),a0
+	move.l	d3,a0
 	cmp.l	d4,a0
 	beq.s	.nocl
 	move.l	d4,a1
@@ -1168,7 +1297,7 @@ ParseSelector:
 	beq.s	.bad
 	move.l	d0,cm_Classes(a3)
 	move.l	d0,a1
-	lea	g_CssName(a4),a0
+	move.l	d3,a0
 	subq.l	#1,d2
 .cc:	move.b	(a0)+,(a1)+
 	dbf	d2,.cc
@@ -1207,6 +1336,17 @@ PsLink:		dc.b	"link",0
 PsAnyLink:	dc.b	"any-link",0
 PsFirst:	dc.b	"first-child",0
 PsRoot:		dc.b	"root",0
+PsNot:		dc.b	"not(",0
+PsIsFn:		dc.b	"is(",0
+PsWhere:	dc.b	"where(",0
+PsLast:		dc.b	"last-child",0
+PsOnly:		dc.b	"only-child",0
+PsEmpty:	dc.b	"empty",0
+PsChecked:	dc.b	"checked",0
+PsDisabled:	dc.b	"disabled",0
+PsSelected:	dc.b	"selected",0
+PsNever:	dc.b	"hover",0,"active",0,"focus",0,"focus-within",0
+		dc.b	"focus-visible",0,"visited",0,"target",0,0
 	even
 
 ; IsIdentChar - In: d0.b; Out: Z clear for letters, digits, - _ (and
@@ -1859,7 +1999,7 @@ MatchCompound:
 	bsr	MatchAttrs
 	beq.s	.no
 .atok:	move.b	cm_Pseudo(a3),d0
-	beq.s	.yes
+	beq.s	.psok
 	btst	#0,d0			; :link
 	beq.s	.pf
 	cmp.w	#TAG_A,n_Tag(a2)
@@ -1871,13 +2011,48 @@ MatchCompound:
 	beq.s	.no
 	move.b	cm_Pseudo(a3),d0
 .pf:	btst	#1,d0			; :first-child
-	beq.s	.yes
+	beq.s	.pl
 	move.l	a2,a0
 	bsr	PrevElement
 	bne.s	.no
-.yes:	moveq	#1,d0
-	bra.s	.x
+	move.b	cm_Pseudo(a3),d0
+.pl:	btst	#2,d0			; :last-child
+	beq.s	.pe
+	move.l	n_Next(a2),d1
+.nx:	beq.s	.pl2
+	move.l	d1,a0
+	cmp.b	#DN_ELEMENT,n_Type(a0)
+	beq.s	.no
+	move.l	n_Next(a0),d1
+	bra.s	.nx
+.pl2:	move.b	cm_Pseudo(a3),d0
+.pe:	btst	#3,d0			; :empty (comments are not kept)
+	beq.s	.psok
+	tst.l	n_First(a2)
+	bne.s	.no
+.psok:	move.l	cm_Not(a3),d0		; :not(): none may match
+.nl:	beq.s	.notok
+	move.l	d0,-(sp)
+	move.l	a2,a0
+	move.l	d0,a1
+	bsr	MatchSelector
+	movem.l	(sp)+,a1
+	bne.s	.no
+	move.l	cm_Alt(a1),d0
+	bra.s	.nl
+.notok:	move.l	cm_Is(a3),d0		; :is(): one must match
+	beq.s	.yes
+.il:	move.l	d0,-(sp)
+	move.l	a2,a0
+	move.l	d0,a1
+	bsr	MatchSelector
+	movem.l	(sp)+,a1
+	bne.s	.yes
+	move.l	cm_Alt(a1),d0
+	bne.s	.il
 .no:	moveq	#0,d0
+	bra.s	.x
+.yes:	moveq	#1,d0
 .x:	movem.l	(sp)+,a2-a3
 	rts
 

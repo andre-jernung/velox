@@ -46,3 +46,25 @@ text 105 180 240 10 8 f1 s0 c000000 "a service; avoid relying on it"
 text 115 196 208 10 8 f1 s0 c000000 "for testing and monitoring"
 text 125 264 72 10 8 f1 s0 c000000 "purposes."
 
+# :not() :is() :where() and structural pseudo-classes
+layout test/unit/layout/selectors.html 600 => 
+height 206
+text 0 8 24 10 8 f1 s0 c000000 "ok1"
+text 20 28 24 10 8 f1 s0 c000000 "ok2"
+bull 22 8 4 4 6 f0 s0 c000000 0
+text 40 8 32 10 8 f1 s0 c000000 "ok3a"
+text 40 40 32 10 8 f1 s0 c000000 "ok3b"
+text 60 8 24 10 8 f1 s0 c000000 "ok4"
+text 80 8 24 10 8 f1 s4 c000000 "ok5"
+text 90 8 24 10 8 f1 s4 c000000 "ok7"
+wdgt 110 8 8 8 8 f1 s0 c000000 L
+wdgt 110 16 8 8 8 f1 s0 c000000 L
+text 110 24 24 10 8 f1 s2 c000000 "ok8"
+wdgt 130 8 50 16 11 f1 s0 c000000 L
+text 146 8 40 10 8 f1 s0 c000000 "ok10a"
+text 146 48 40 10 8 f1 s0 c000000 "ok10b"
+text 166 8 32 10 8 f1 s4 c000000 "ok11"
+text 186 8 160 10 8 f1 s2 c000000 "ok14 (never hovered)"
+text 196 8 40 10 8 f1 s0 c000000 "ok15a"
+text 196 48 40 10 8 f1 s0 c000000 "ok15b"
+

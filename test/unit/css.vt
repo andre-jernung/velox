@@ -2,3 +2,5 @@
 layout test/unit/layout/css.html 400
 layout test/unit/layout/css.html 250
 layout test/unit/layout/example.html 600
+# :not() :is() :where() and structural pseudo-classes
+layout test/unit/layout/selectors.html 600
