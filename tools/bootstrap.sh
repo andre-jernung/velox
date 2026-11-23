@@ -22,6 +22,6 @@ if [ ! -d ndk/Include_I ]; then
 fi
 if [ ! -x venv/bin/vamos ]; then
 	python3 -m venv venv
-	venv/bin/pip install amitools greenlet machine68k
+	venv/bin/pip install amitools greenlet machine68k python-xlib
 fi
 echo "toolchain ready"

@@ -1074,8 +1074,16 @@ HandleEvent:
 .ngd:	cmp.l	#IDCMP_MOUSEBUTTONS,d2
 	beq	OnClick
 	cmp.l	#IDCMP_RAWKEY,d2
-	beq	OnKey
+	bne.s	.x
+	lea	LogKey(pc),a0		; (key events are logged for tests)
+	suba.l	a1,a1
+	move.l	d3,d0
+	bsr	LogEvent
+	bra	OnKey
 .x:	rts
+
+LogKey:	dc.b	"key",0
+	even
 
 ; OnGadget - a gadget was released (a2 = gadget, d3 = code)
 OnGadget:
@@ -1192,8 +1200,11 @@ OnKey:
 .go:	add.l	g_ScrollY(a4),d0
 	bra	GuiScrollTo
 
-; ActivateUrl - put the cursor into the URL gadget
+; ActivateUrl - empty the URL gadget and put the cursor into it
+; ("open location"; clicking the gadget edits the current URL instead)
 ActivateUrl:
+	lea	EmptyStr(pc),a0
+	bsr	GuiSetUrl
 	move.l	g_GadUrl(a4),d0
 	beq.s	.x
 	move.l	d0,a0
@@ -1267,6 +1278,7 @@ FocusNext:
 .x:	movem.l	(sp)+,d2-d4/a2
 	rts
 
+EmptyStr:	dc.b	0
 LogFocus:	dc.b	"focus",0
 LogScroll:	dc.b	"scroll",0
 	even

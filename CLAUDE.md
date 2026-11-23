@@ -19,11 +19,19 @@ and a single event dispatch point.
   127.0.0.1:8080, from `test/www`. It saves `build/screenshot.png` when a
   script requests one. Run it after every change that touches the OS.
   `test/emu.sh` without arguments boots Workbench for manual testing.
+  Automated runs use a private Xvfb display (`:91`), so they never show
+  windows on the user's screen or take keyboard focus. A test can have a
+  host driver, `test/amiga/NAME.host`. It starts when the Amiga script
+  creates `VELOX:r/NAME.start`, drives the GUI with keys via
+  `test/xdrive.py` (XTEST, US-layout physical keys), and reads Velox's
+  `LOG=` event log.
+- FS-UAE turns cursor keys into a joystick unless `joystick_port_1 = none`
+  is set, which the test config does.
 - Toolchain lives in `tools/` and is not committed. `tools/bootstrap.sh`
   rebuilds it (vasm, vlink, and the AmigaOS 3.2 NDK from Aminet).
   `tools/venv` holds amitools (xdftool, vamos).
-- System packages needed: `fs-uae` and `python3.13-venv` (apt). This is a
-  Qubes AppVM, so they belong in the TemplateVM.
+- System packages needed: `fs-uae`, `python3.13-venv` and `xvfb` (apt).
+  This is a Qubes AppVM, so they belong in the TemplateVM.
 
 ## Assembly conventions
 

@@ -25,6 +25,8 @@ try:
     a.shot(os.path.join(r, "browse-index.png"))
     step("index shown")
     a.key("Down", 3)
+    time.sleep(2)
+    a.shot(os.path.join(r, "browse-afterkeys.png"))
     wait_log(log, "scroll", 3)
     step("scrolled with cursor down")
     a.key("ctrl+Down")

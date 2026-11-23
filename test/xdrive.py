@@ -55,26 +55,9 @@ class Amiga:
         return None
 
     def focus(self):
-        if getattr(self, "_focused", False):
-            return
-        # a click inside the window makes SDL treat it as active
-        g = self.win.get_geometry()
-        root = self.d.screen().root
-        pos = self.win.translate_coords(root, 0, 0)
-        x, y = -pos.x + g.width // 2, -pos.y + g.height // 2
-        xtest.fake_input(self.d, X.MotionNotify, x=x, y=y)
-        self.d.sync()
-        time.sleep(0.2)
-        xtest.fake_input(self.d, X.ButtonPress, 1)
-        self.d.sync()
-        time.sleep(0.1)
-        xtest.fake_input(self.d, X.ButtonRelease, 1)
-        self.d.sync()
+        # tests run on a private Xvfb display, so taking the focus is safe
         self.win.set_input_focus(X.RevertToParent, X.CurrentTime)
         self.d.sync()
-        time.sleep(0.3)
-        print("focus:", self.d.get_input_focus().focus, "window:", self.win, flush=True)
-        self._focused = True
 
     def _send(self, name, down):
         xtest.fake_input(self.d, X.KeyPress if down else X.KeyRelease, _K[name] + 8)

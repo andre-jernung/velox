@@ -9,7 +9,8 @@
 #                                  the results with test/amiga/TEST.check
 #
 # test/server.py runs on 127.0.0.1:8080 for the duration.
-# Needs: fs-uae, xwininfo + import (ImageMagick), tools/venv (amitools).
+# Needs: fs-uae, Xvfb (automated runs), xwininfo + import (ImageMagick),
+# tools/venv (amitools, python-xlib).
 # AMIGA_DIR (default ~/amiga) must hold a1200.rom, wb31-02-workbench.adf and
 # wb31-06-fonts.adf.
 set -eu
@@ -70,6 +71,9 @@ hard_drive_0_label = Workbench3.1
 hard_drive_1 = $B
 hard_drive_1_label = VELOX
 bsdsocket_library = 1
+# cursor keys are keys, not an emulated joystick
+joystick_port_0 = mouse
+joystick_port_1 = none
 automatic_input_grab = 0
 floppy_drive_volume = 0
 volume = 0
@@ -79,9 +83,18 @@ EOF
 
 python3 "$ROOT/test/server.py" 8080 "$ROOT/test/www" 2>"$B/server.log" &
 SRV=$!
+XVFB=""
+if [ $AUTO = 1 ]; then
+	# automated runs use a private X display: nothing appears on the
+	# user's screen and keyboard focus is never taken from them
+	Xvfb :91 -screen 0 1280x1024x24 -nolisten tcp >"$B/xvfb.log" 2>&1 &
+	XVFB=$!
+	export DISPLAY=:91
+	sleep 1
+fi
 fs-uae "$B/velox.fs-uae" >"$B/fs-uae.log" 2>&1 &
 EMU=$!
-trap 'kill $EMU $SRV 2>/dev/null || true' EXIT INT TERM
+trap 'kill $EMU $SRV $XVFB 2>/dev/null || true' EXIT INT TERM
 
 if [ $AUTO = 0 ]; then
 	wait $EMU
@@ -90,6 +103,7 @@ fi
 
 t=0
 started=""
+DRIVERS=""
 while [ $t -lt "$TIMEOUT" ] && [ ! -e "$B/alldone" ]; do
 	# host-side drivers (test/amiga/NAME.host) start when NAME.start appears
 	for n in $TESTS; do
@@ -98,6 +112,7 @@ while [ $t -lt "$TIMEOUT" ] && [ ! -e "$B/alldone" ]; do
 				started="$started $n"
 				"$ROOT/tools/venv/bin/python" "$ROOT/test/amiga/$n.host" "$B/r" \
 					>"$B/r/$n.host.log" 2>&1 &
+				DRIVERS="$DRIVERS $!"
 			esac
 		fi
 	done
@@ -111,6 +126,12 @@ while [ $t -lt "$TIMEOUT" ] && [ ! -e "$B/alldone" ]; do
 	t=$((t + 1))
 done
 [ -e "$B/alldone" ] || echo "TIMEOUT after ${TIMEOUT}s"
+# let host drivers finish writing their results
+for p in $DRIVERS; do
+	n=0
+	while kill -0 "$p" 2>/dev/null && [ $n -lt 30 ]; do sleep 1; n=$((n + 1)); done
+	kill "$p" 2>/dev/null || true
+done
 
 fail=0
 for t in $TESTS; do
