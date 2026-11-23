@@ -1,0 +1,2 @@
+#!/bin/sh
+d=$(dirname "$1"); cat "$d/real.driver"; grep -v "^key" "$d/real.log"

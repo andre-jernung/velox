@@ -1,0 +1,21 @@
+#!/usr/bin/env python3
+import os, sys, time
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from xdrive import Amiga, wait_log
+r = sys.argv[1]; log = os.path.join(r, "real.log")
+out = open(os.path.join(r, "real.driver"), "w")
+def step(m): out.write(m + "\n"); out.flush()
+a = Amiga()
+for i, url in enumerate(["http://68k.news/", "http://frogfind.com/?q=amiga",
+                         "https://example.com/", "https://en.wikipedia.org/wiki/Amiga"]):
+    try:
+        if i:
+            a.key("ctrl+l"); a.type(url); a.key("Return")
+        lines = wait_log(log, "page ", i + 1, timeout=240)
+        time.sleep(2)
+        a.shot(os.path.join(r, "real-%d.png" % i))
+        step("%s -> %s" % (url, [l for l in lines if l.startswith("page ")][-1]))
+    except Exception as e:
+        step("%s FAIL %r" % (url, e))
+a.key("ctrl+q")
+step("ok")

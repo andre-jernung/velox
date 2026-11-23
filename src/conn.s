@@ -195,6 +195,11 @@ TlsInit:
 	moveq	#0,d0			; SSL_VERIFY_NONE (tests only)
 .v:	suba.l	a1,a1
 	SSL	SSL_CTX_set_verify
+	move.l	g_SslCtx(a4),a0		; cheap key exchanges only: the
+	moveq	#92,d0			; post-quantum hybrid default takes
+	moveq	#0,d1			; far too long on a 68020
+	lea	TlsGroups(pc),a1	; (SSL_CTRL_SET_GROUPS_LIST)
+	SSL	SSL_CTX_ctrl
 	moveq	#1,d0
 	move.l	d0,g_SslState(a4)
 	movem.l	(sp)+,d2-d3/a2
@@ -210,6 +215,8 @@ TlsInit:
 
 AMISSL_API	equ	47		; AMISSL_V41x: AmiSSL 6
 MasterName:	dc.b	"amisslmaster.library",0
+TlsGroups:	dc.b	"X25519:P-256",0
+DbgW:		dc.b	"SSL_write error ",0
 	even
 
 ;--------------------------------------------------------------------
@@ -444,8 +451,9 @@ ConnWrite:
 	move.l	d3,d0
 	SSL	SSL_write
 	tst.l	d0
-	ble.s	.err
-	bra.s	.sent
+	bgt.s	.sent
+	bra.s	.err			; (EPIPE here: the server gave up
+					;  waiting for a slow handshake)
 .plain:	move.l	c_Sock(a2),d0
 	bmi.s	.err
 	moveq	#1,d1

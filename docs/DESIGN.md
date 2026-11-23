@@ -80,3 +80,10 @@ JS is not on the roadmap yet, but it must stay possible to add. That means:
   `OPENSSL_thread_stop()` did not change it. The cause is not found yet; it
   may be in AmiSSL's socket I/O or in the bsdsocket emulation. The `tls`
   emulator test tolerates up to 64 bytes per connection.
+- A TLS handshake takes about 15 seconds on a stock 14 MHz 68020 (A1200).
+  Some servers (for example example.com) close the connection before it
+  finishes, and Velox then reports "Send failed". With an accelerator it
+  takes a second or two. Velox restricts key exchange to X25519/P-256,
+  because OpenSSL 4's default post-quantum hybrid is far slower. On slow
+  machines, `PROXY=` with tools/velox-proxy.py avoids TLS on the Amiga
+  entirely. The emulator tests run the 68020 unthrottled.

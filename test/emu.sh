@@ -26,7 +26,9 @@ if [ "${1:-}" = "--auto" ]; then
 	AUTO=1
 	shift
 fi
-TESTS=${*:-$(cd "$ROOT/test/amiga" && ls *.script | sed 's/\.script$//')}
+# default: every test whose script is not marked "(manual)" on line 1
+TESTS=${*:-$(cd "$ROOT/test/amiga" && for f in *.script; do
+	head -1 "$f" | grep -q '(manual)' || basename "$f" .script; done)}
 TIMEOUT=${TIMEOUT:-300}
 
 make -s -C "$ROOT"
@@ -101,6 +103,10 @@ bsdsocket_library = 1
 # cursor keys are keys, not an emulated joystick
 joystick_port_0 = mouse
 joystick_port_1 = none
+# run the 68020 unthrottled (like an accelerated Amiga): TLS handshakes
+# take ~15 s at the stock 14 MHz, too slow for some servers
+uae_cpu_speed = max
+accuracy = -1
 automatic_input_grab = 0
 floppy_drive_volume = 0
 volume = 0

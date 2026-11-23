@@ -1,0 +1,6 @@
+; real (manual): live web sites, needs internet - run with: test/emu.sh --auto real
+Echo >VELOX:r/real.txt "real"
+Echo >VELOX:r/real.start ""
+VELOX:velox http://68k.news/ LOG=VELOX:r/real.log
+Echo >>VELOX:r/real.txt "exit rc=$RC"
+Echo >>VELOX:r/real.txt "done"

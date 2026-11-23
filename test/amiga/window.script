@@ -17,6 +17,19 @@ Avail >NIL: FLUSH
 Echo >>VELOX:r/window.txt "mem_before " NOLINE
 Avail >>VELOX:r/window.txt TOTAL
 
+; two runs that are just started and stopped ...
+Run >NIL: VELOX:velox
+Wait 3
+Status >ENV:vpid COMMAND=VELOX:velox
+Break $vpid C
+Wait 2
+Run >NIL: VELOX:velox
+Wait 3
+Status >ENV:vpid COMMAND=VELOX:velox
+Break $vpid C
+Wait 2
+Delete >NIL: ENV:vpid
+; ... and a third one that is checked more closely
 Run >NIL: VELOX:velox
 Wait 3
 ; ask the host for a screenshot (it polls every second)

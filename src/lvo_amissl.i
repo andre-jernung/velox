@@ -22,3 +22,4 @@ _LVOSSL_get0_param	equ	-16284
 _LVOX509_VERIFY_PARAM_set1_host	equ	-16086
 _LVOX509_VERIFY_PARAM_set1_ip_asc	equ	-16098
 _LVOOPENSSL_thread_stop	equ	-16908
+_LVOSSL_CTX_ctrl	equ	-6630
