@@ -202,7 +202,18 @@ LoadSettings:
 	lea	SRam(pc),a0
 .dc:	move.b	(a0)+,(a1)+
 	bne.s	.dc
-.dl:	lea	VarInsecure(pc),a0	; Velox/InsecureTLS: no certificate
+.dl:	lea	VarNoImg(pc),a0		; Velox/NoImages: no images
+	move.l	a0,d1
+	lea	g_VarBuf(a4),a0
+	move.l	a0,d2
+	move.l	#255,d3
+	moveq	#0,d4
+	DOS	GetVar
+	tst.l	d0
+	bmi.s	.img
+	moveq	#1,d0
+	move.l	d0,g_NoImages(a4)
+.img:	lea	VarInsecure(pc),a0	; Velox/InsecureTLS: no certificate
 	move.l	a0,d1			; checks (testing with self-signed
 	lea	g_VarBuf(a4),a0		; certificates only!)
 	move.l	a0,d2
@@ -219,6 +230,7 @@ LoadSettings:
 VarProxy:	dc.b	"Velox/Proxy",0
 VarInsecure:	dc.b	"Velox/InsecureTLS",0
 VarDlDir:	dc.b	"Velox/DownloadDir",0
+VarNoImg:	dc.b	"Velox/NoImages",0
 SRam:		dc.b	"RAM:",0
 	even
 

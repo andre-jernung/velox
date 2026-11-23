@@ -95,6 +95,11 @@ PageNew:
 ; PageFree - free the page pool and the page source
 ;--------------------------------------------------------------------
 PageFree:
+	move.l	g_PageFreeHook(a4),d0	; (images free their bitmaps)
+	beq.s	.nohook
+	move.l	d0,a0
+	jsr	(a0)
+.nohook:
 	lea	g_PageSrc(a4),a0
 	bsr	BufFree
 	clr.l	g_Doc(a4)

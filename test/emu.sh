@@ -12,14 +12,23 @@
 # tools/velox-proxy.py on 8888, for the duration.
 # Needs: fs-uae, Xvfb (automated runs), xwininfo + import (ImageMagick),
 # tools/venv (amitools, python-xlib).
-# AMIGA_DIR (default ~/amiga) must hold a1200.rom, wb31-02-workbench.adf and
-# wb31-06-fonts.adf.
+# OS=3.1 (default): AMIGA_DIR (default ~/amiga) must hold a1200.rom,
+# wb31-02-workbench.adf and wb31-06-fonts.adf.
+# OS=3.2: OS32_DIR (default ~/amiga/os32/cd, the AmigaOS 3.2 CD) must hold
+# ROM/kicka1200.rom and ADF/{Workbench3.2,Classes3.2,Fonts}.adf.
 set -eu
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 AMIGA_DIR=${AMIGA_DIR:-$HOME/amiga}
-ROM=$AMIGA_DIR/a1200.rom
-SYS=$ROOT/tools/amiga/Workbench3.1
+OS32_DIR=${OS32_DIR:-$AMIGA_DIR/os32/cd}
+OS=${OS:-3.1}
+case "$OS" in
+	3.1)	ROM=$AMIGA_DIR/a1200.rom
+		SYS=$ROOT/tools/amiga/Workbench3.1 ;;
+	3.2)	ROM=$OS32_DIR/ROM/kicka1200.rom
+		SYS=$ROOT/tools/amiga/Workbench3.2 ;;
+	*)	echo "OS must be 3.1 or 3.2"; exit 2 ;;
+esac
 B=$ROOT/build
 AUTO=0
 if [ "${1:-}" = "--auto" ]; then
@@ -33,19 +42,31 @@ TIMEOUT=${TIMEOUT:-300}
 
 make -s -C "$ROOT"
 
-# One-time setup: unpack Workbench 3.1 and hook the autotest into it.
+XDF="$ROOT/tools/venv/bin/xdftool"
+# unpack ADF $1 and copy its contents into directory $2
+adf_into() {
+	t=$(mktemp -d)
+	"$XDF" "$1" unpack "$t" >/dev/null
+	mkdir -p "$2"
+	cp -r "$t"/*/. "$2/"
+	rm -rf "$t"
+}
+# One-time setup: unpack Workbench and hook the autotest into it.
 if [ ! -d "$SYS" ]; then
 	mkdir -p "$ROOT/tools/amiga"
-	"$ROOT/tools/venv/bin/xdftool" "$AMIGA_DIR/wb31-02-workbench.adf" unpack "$ROOT/tools/amiga"
-	sed -i 's/^EndCLI >NIL:$/IF EXISTS VELOX:autotest\n  Execute VELOX:autotest\nEndIF\nEndCLI >NIL:/' \
-		"$SYS/S/Startup-Sequence"
-fi
-# Fonts from the Workbench 3.1 fonts disk (Velox uses helvetica/courier)
-if [ ! -d "$SYS/Fonts" ]; then
-	t=$(mktemp -d)
-	"$ROOT/tools/venv/bin/xdftool" "$AMIGA_DIR/wb31-06-fonts.adf" unpack "$t"
-	cp -r "$t"/*/ "$SYS/Fonts"
-	rm -rf "$t"
+	if [ "$OS" = 3.1 ]; then
+		adf_into "$AMIGA_DIR/wb31-02-workbench.adf" "$SYS"
+		adf_into "$AMIGA_DIR/wb31-06-fonts.adf" "$SYS/Fonts"
+	else
+		adf_into "$OS32_DIR/ADF/Workbench3.2.adf" "$SYS"
+		adf_into "$OS32_DIR/ADF/Classes3.2.adf" "$SYS"
+		adf_into "$OS32_DIR/ADF/Fonts.adf" "$SYS/Fonts"
+		# disk-based in 3.2 (on the Modules/Install disks)
+		cp "$OS32_DIR/Libs/icon.library" "$OS32_DIR/Libs/workbench.library" "$SYS/Libs/"
+	fi
+	for f in "$SYS"/S/Startup-[Ss]equence; do
+		sed -i 's/^EndCLI >NIL:$/IF EXISTS VELOX:autotest\n  Execute VELOX:autotest\nEndIF\nEndCLI >NIL:/' "$f"
+	done
 fi
 
 # Test certificates: a local CA and a server certificate it signed
@@ -70,6 +91,7 @@ if [ ! -d "$SYS/AmiSSL" ] && [ -d "$ROOT/tools/src/amissl/AmiSSL" ]; then
 	cp -r "$A/Certs" "$SYS/AmiSSL/Certs"
 	printf 'Assign AmiSSL: SYS:AmiSSL\nAssign LIBS: AmiSSL:Libs ADD\n' >>"$SYS/S/User-Startup"
 fi
+export OS
 if [ -d "$SYS/AmiSSL/Certs" ]; then
 	cp "$B/tls/ca.pem" "$SYS/AmiSSL/Certs/$(openssl x509 -hash -noout -in "$B/tls/ca.pem").0"
 fi
@@ -96,7 +118,7 @@ amiga_model = A1200/020
 kickstart_file = $ROM
 fast_memory = 8192
 hard_drive_0 = $SYS
-hard_drive_0_label = Workbench3.1
+hard_drive_0_label = $(basename "$SYS")
 hard_drive_1 = $B
 hard_drive_1_label = VELOX
 bsdsocket_library = 1
@@ -162,7 +184,11 @@ while [ $t -lt "$TIMEOUT" ] && [ ! -e "$B/alldone" ]; do
 	sleep 1
 	t=$((t + 1))
 done
-[ -e "$B/alldone" ] || echo "TIMEOUT after ${TIMEOUT}s"
+if [ ! -e "$B/alldone" ]; then
+	echo "TIMEOUT after ${TIMEOUT}s (screen: $B/timeout.png)"
+	win=$(xwininfo -root -tree | grep -i 'fs-uae' | grep -v 'has no name' | head -1 | awk '{print $1}')
+	[ -n "$win" ] && import -window "$win" "$B/timeout.png"
+fi
 # let host drivers finish writing their results
 for p in $DRIVERS; do
 	n=0

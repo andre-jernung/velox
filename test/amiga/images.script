@@ -1,0 +1,6 @@
+; images: PNG, GIF, JPEG through datatypes (test/amiga/images.host)
+Echo >VELOX:r/images.txt "images"
+Echo >VELOX:r/images.start ""
+VELOX:velox http://127.0.0.1:8080/images.html LOG=VELOX:r/images.log
+Echo >>VELOX:r/images.txt "exit rc=$RC"
+Echo >>VELOX:r/images.txt "done"

@@ -20,6 +20,7 @@
 	xref	NavGo,NavBack,NavForward,NavReload,NavHome,NavLink,UrlFixup
 	xref	DomGetAttr,LogEvent,FormStateOf,FormIsControl,FormActivate
 	xref	FormEditKey,FormLeave,SaveDownload
+	xref	ImagesPending,ImagesStep,ImagesFree,ImagePaint
 
 PROP_FONT	equ	0
 SCROLL_W	equ	18
@@ -71,6 +72,12 @@ GuiOpen:
 	beq	.fail
 	bsr	FontsInit
 	beq	.fail
+	lea	DtName(pc),a1		; optional: images
+	moveq	#39,d0
+	EXEC	OpenLibrary
+	move.l	d0,g_DataTypesBase(a4)
+	lea	ImagesFree,a0
+	move.l	a0,g_PageFreeHook(a4)
 	lea	g_MeasRP(a4),a1
 	GFX	InitRastPort
 	moveq	#-1,d0
@@ -172,7 +179,14 @@ GuiClose:
 	move.l	g_GList(a4),a0
 	clr.l	g_GList(a4)
 	GT	FreeGadgets
-	bsr	PensRelease
+	jsr	ImagesFree		; (before the screen goes)
+	clr.l	g_PageFreeHook(a4)
+	move.l	g_DataTypesBase(a4),d0
+	beq.s	.nodt
+	clr.l	g_DataTypesBase(a4)
+	move.l	d0,a1
+	EXEC	CloseLibrary
+.nodt:	bsr	PensRelease
 	bsr	FontsExit
 	move.l	g_VisualInfo(a4),a0
 	clr.l	g_VisualInfo(a4)
@@ -242,6 +256,8 @@ FontsInit:
 .x:	movem.l	(sp)+,d2-d3/a2-a3
 	rts
 
+DtName:		dc.b	"datatypes.library",0
+	even
 PropSizes:	dc.w	9,11,13,15,18,24
 MonoSizes:	dc.w	11,11,13,15,18,24
 PropName:	dc.b	"helvetica.font",0
@@ -760,7 +776,25 @@ PaintRun:
 	cmp.b	#RT_BOX,d0
 	beq.s	.box
 	cmp.b	#RT_IMAGE,d0
-	beq.s	.box
+	bne.s	.notimg
+	movem.l	d4-d5,-(sp)		; a loaded image is blitted
+	move.l	g_PageY(a4),d4
+	move.l	d4,d5
+	add.l	g_PageH(a4),d5
+	subq.l	#1,d5
+	move.l	a2,a0
+	move.l	a3,a1
+	movem.l	d2-d3,-(sp)
+	move.l	ru_Y(a2),d3		; (unclamped window y)
+	sub.l	g_ScrollY(a4),d3
+	add.l	g_PageY(a4),d3
+	jsr	ImagePaint
+	movem.l	(sp)+,d2-d3
+	movem.l	(sp)+,d4-d5
+	tst.l	d0
+	bne	.x
+	bra.s	.box
+.notimg:
 	cmp.b	#RT_BULLET,d0
 	bne.s	.fill
 	cmp.l	#LIST_CIRCLE,ru_Len(a2)
@@ -1565,7 +1599,19 @@ GuiEventLoop:
 	movem.l	d2-d7/a2,-(sp)
 .wait:	tst.l	g_Quit(a4)
 	bne.s	.x
-	move.l	g_WinSigMask(a4),d0
+	jsr	ImagesPending		; images to load: no waiting, just
+	beq.s	.idle			; look at the messages in between
+	moveq	#0,d0
+	move.l	#SIGBREAKF_CTRL_C,d1
+	EXEC	SetSignal
+	btst	#SIGBREAKB_CTRL_C,d0
+	bne.s	.x
+	bsr	HandleMessages
+	tst.l	g_Quit(a4)
+	bne.s	.x
+	jsr	ImagesStep
+	bra.s	.wait
+.idle:	move.l	g_WinSigMask(a4),d0
 	or.l	#SIGBREAKF_CTRL_C,d0
 	EXEC	Wait
 	btst	#SIGBREAKB_CTRL_C,d0

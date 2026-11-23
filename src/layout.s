@@ -939,13 +939,21 @@ LayoutReplaced:
 	move.l	a1,a3
 	cmp.w	#TAG_IMG,n_Tag(a5)
 	bne.s	.notimg
+	move.l	n_Data2(a5),d0		; loaded: its size
+	beq.s	.unl
+	move.l	d0,a0
 	moveq	#0,d2
+	move.w	im_W(a0),d2
+	moveq	#0,d3
+	move.w	im_H(a0),d3
+	bra.s	.box
+.unl:	moveq	#0,d2
 	move.w	st_Width(a3),d2
 	ble.s	.alt
 	moveq	#0,d3
 	move.w	st_Height(a3),d3
 	ble.s	.alt
-	move.l	d3,d4			; sits on the baseline
+.box:	move.l	d3,d4			; sits on the baseline
 	moveq	#RT_IMAGE,d5
 	bsr	PlaceBox
 	bra	.x

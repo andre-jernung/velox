@@ -12,7 +12,7 @@
 	xref	DomNewNode,DomAppend,DomGetAttr,StrCopyN,StrCopy,StrIPrefix,StrLen
 	xref	Alloc,Free,ErrorText,FmtDec,LayoutDocument
 	xref	GuiStatus,GuiSetUrl,GuiSetTitle,GuiPaintAll,GuiBusy,GuiNetHook
-	xref	GuiPageWidth,GuiScrollTo,LogEvent,CssLoad,BufFree
+	xref	GuiPageWidth,GuiScrollTo,LogEvent,CssLoad,BufFree,ImagesStart
 
 HIST_MAX	equ	HIST_ENTRIES
 NAV_HISTORY	equ	1
@@ -623,6 +623,7 @@ ShowPage:
 	suba.l	a1,a1
 	move.l	g_ScrollY(a4),d0
 	jsr	LogEvent
+	jsr	ImagesStart		; then the images, from the event loop
 	movem.l	(sp)+,a2
 	rts
 

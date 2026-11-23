@@ -1,0 +1,12 @@
+#!/bin/sh
+# checks for images.script.  OS 3.1 has only the ILBM datatype (1 image);
+# OS 3.2 also has PNG and GIF (4 images).  Neither has a JPEG datatype
+# (the JPEG shows its box) and the missing image never loads.
+d=$(dirname "$1"); fail=0
+want=1
+[ "${OS:-3.1}" = 3.2 ] && want=4
+sed 's/^/driver: /' "$d/images.driver"
+grep -q "^images $want\$" "$d/images.driver" || { echo "expected $want images"; fail=1; }
+grep -q '^ok$' "$d/images.driver" || fail=1
+grep -q '^exit rc=0' "$1" || { echo "velox exit code: $(grep exit "$1")"; fail=1; }
+exit $fail

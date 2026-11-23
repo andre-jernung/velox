@@ -303,6 +303,16 @@ fs_Label	rs.l	1		; button / select label
 FS_SIZEOF	rs.b	0
 
 ;--------------------------------------------------------------------
+; ImageInfo - a loaded image (in the <img> element's n_Data2)
+;--------------------------------------------------------------------
+	RSRESET
+im_Next		rs.l	1		; all images of the page
+im_BitMap	rs.l	1		; our bitmap, drawn as is
+im_W		rs.w	1
+im_H		rs.w	1
+IMG_SIZEOF	rs.b	0
+
+;--------------------------------------------------------------------
 ; Global data block, addressed as xxx(a4)
 ;--------------------------------------------------------------------
 	RSRESET
@@ -449,6 +459,21 @@ g_SslState	rs.l	1		; 0 = not tried, 1 = ready, -1 = unavailable
 g_Errno		rs.l	1
 g_Insecure	rs.l	1		; don't verify certificates (tests)
 g_TlsHost	rs.l	1		; host name for SNI / verification
+; images
+g_DataTypesBase	rs.l	1
+g_ImgQueue	rs.l	1		; <img> elements to load
+g_ImgCount	rs.l	1
+g_ImgNext	rs.l	1
+g_ImgLoaded	rs.l	1
+g_ImgRelayout	rs.l	1
+g_ImgList	rs.l	1		; loaded ImageInfos
+g_NoImages	rs.l	1		; Velox/NoImages
+g_PageFreeHook	rs.l	1		; called when a page is freed
+g_DtMsg		rs.l	3
+g_DtBmhd	rs.l	1
+g_DtBitMap	rs.l	1
+g_DtDestBM	rs.l	1
+g_Bsa		rs.b	48		; struct BitScaleArgs
 ; downloads
 g_Download	rs.b	BUF_SIZEOF	; the last file that was not a page
 g_DownloadName	rs.b	108

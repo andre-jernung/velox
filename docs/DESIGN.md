@@ -61,15 +61,23 @@ JS is not on the roadmap yet, but it must stay possible to add. That means:
 ## Milestones
 
 1. [x] Toolchain, a window that opens and closes cleanly (CLI and Workbench).
-2. [x] CLI fetch: `velox URL DUMP` / `INFO` (bsdsocket). Verified in FS-UAE
-   against `test/server.py`: chunked, redirects, 100 KB body, errors, no leaks.
-3. [x] HTML tokenizer + DOM, charsets and entities (golden tests).
-4. [x] Layout and GUI: fonts, styles, lists, tables, links, scrolling,
-   history, URL field, keyboard navigation (emulator test `browse`).
-5. [~] Forms [x] (GET/POST, all common controls, emulator test `forms`),
-   images via datatypes.library [ ], CSS subset [ ]
-6. [ ] HTTPS via AmiSSL and via proxy
-7. [ ] Cookies, downloads, menus, settings
+2. [x] HTTP fetch over bsdsocket: chunked, redirects, errors.
+3. [x] HTML tokenizer + DOM, charsets and entities.
+4. [x] Layout and GUI: fonts, lists, tables, links, scrolling, history,
+   URL field, keyboard navigation, menus.
+5. [x] Forms (GET/POST), CSS subset, images via datatypes.library.
+6. [x] HTTPS via AmiSSL 6 and via tools/velox-proxy.py.
+7. [x] Session cookies, downloads (ASL requester).
+
+Everything is tested on AmigaOS 3.1 and 3.2 (see CLAUDE.md).
+
+## Images
+
+Pictures are decoded by whatever picture datatypes the system has.
+OS 3.1 ships only ILBM. OS 3.2 adds PNG, GIF and BMP. JPEG needs a
+third-party datatype. The akJFIF datatype from Aminet did not work in the
+OS 3.2 test system, even in MultiView. Images that cannot be decoded keep
+their placeholder box (with width/height) or show their alt text.
 
 ## Known issues
 

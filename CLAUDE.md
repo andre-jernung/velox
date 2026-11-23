@@ -27,6 +27,9 @@ and a single event dispatch point.
   `LOG=` event log.
 - FS-UAE turns cursor keys into a joystick unless `joystick_port_1 = none`
   is set, which the test config does.
+- `OS=3.2 test/emu.sh --auto` runs the same tests on AmigaOS 3.2 (Kickstart
+  3.2 and Workbench/Classes/Fonts disks from the user's 3.2 CD in
+  `~/amiga/os32/cd`). Run both before calling GUI or image work done.
 - Toolchain lives in `tools/` and is not committed. `tools/bootstrap.sh`
   rebuilds it (vasm, vlink, and the AmigaOS 3.2 NDK from Aminet).
   `tools/venv` holds amitools (xdftool, vamos).
