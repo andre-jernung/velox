@@ -32,7 +32,7 @@ bmh_Height		equ	2
 	xdef	ImagesStart,ImagesStep,ImagesPending,ImagesFree,ImagePaint
 	xref	PageAlloc,DomGetAttr,UrlResolve,HttpGetCached,ParseDec,BufFree
 	xref	BufAppend,BufClear,GuiStatus,GuiRelayout,GuiPaintAll,GuiPageWidth
-	xref	FmtDec,StrCopy,LogEvent,GuiNetHook
+	xref	FmtDec,StrCopy,LogEvent,ImgNetHook
 
 MAX_IMAGES	equ	64
 MAX_IMAGE	equ	2*1024*1024	; bytes of an image file
@@ -167,12 +167,22 @@ ImagesStep:
 	move.l	g_WinSigMask(a4),d0
 	or.l	#SIGBREAKF_CTRL_C,d0
 	move.l	d0,g_AbortMask(a4)
-	lea	GuiNetHook,a0
+	lea	ImgNetHook,a0
 	move.l	a0,g_NetSigHook(a4)
 	lea	g_LinkUrl(a4),a0
 	jsr	HttpGetCached
 	clr.l	g_NetSigHook(a4)
-	cmp.l	#200,d0
+	tst.l	d0			; (the clr changed the flags)
+	bne.s	.got
+	cmp.l	#ERR_ABORT,g_Error(a4)	; stopped for the user: this image
+	bne	.free			; again after the events
+	tst.l	g_Quit(a4)
+	bne	.free
+	subq.l	#1,g_ImgNext(a4)
+	lea	g_Resp+r_Body(a4),a0
+	jsr	BufFree
+	bra	.x
+.got:	cmp.l	#200,d0
 	bne	.free
 	move.l	g_Resp+r_Body+buf_Len(a4),d0
 	beq	.free

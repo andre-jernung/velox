@@ -70,6 +70,36 @@ JS is not on the roadmap yet, but it must stay possible to add. That means:
 7. [x] Session cookies, downloads (ASL requester).
 8. [x] Keep-alive connections, bookmarks, `file:` pages, home page,
    Workbench icon with tool types.
+9. [x] Find in page, memory cache (Back/Forward, style sheets, images),
+   persistent cookies, meta refresh, frames as links, view source, copy
+   address, `:not()`/`:is()` and structural selectors, tables squeezed
+   to the window.
+
+## Modules
+
+| Module      | Job                                                            |
+|-------------|----------------------------------------------------------------|
+| main.s      | startup (CLI/Workbench, tool types), settings, CLI fetch        |
+| mem.s       | application and page pools, growable buffers                    |
+| util.s      | strings, numbers, output, event log (`LOG=`), error texts       |
+| url.s       | parsing, resolving (RFC 3986), fixing typed addresses           |
+| conn.s      | sockets, AmiSSL, abortable I/O through `WaitSelect`              |
+| http.s      | requests, responses, redirects, keep-alive                      |
+| cache.s     | memory cache of recent responses                                |
+| cookies.s   | cookie store, persistent cookies in ENVARC:                     |
+| charset.s   | UTF-8 / Windows-1252 / Latin-1 to Latin-1, entities              |
+| html.s      | tokenizer and tree builder (DOM)                                |
+| dom.s       | nodes, attributes, tag table                                    |
+| style.s     | computed style from the user-agent rules and HTML attributes     |
+| css.s       | author style sheets: parsing, matching, cascade                 |
+| layout.s    | blocks, inline text, replaced elements: the run list            |
+| table.s     | automatic table layout                                          |
+| forms.s     | form controls, editing, submission                              |
+| img.s       | images through datatypes.library                                |
+| gui.s       | window, gadgets, menus, painting, events                        |
+| find.s      | find in page                                                    |
+| clip.s      | clipboard                                                       |
+| nav.s       | navigation, history, built-in pages, bookmarks, downloads        |
 
 Everything is tested on AmigaOS 3.1 and 3.2 (see CLAUDE.md).
 

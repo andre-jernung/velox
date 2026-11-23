@@ -7,7 +7,9 @@ out = open(os.path.join(r, "real.driver"), "w")
 def step(m): out.write(m + "\n"); out.flush()
 a = Amiga()
 for i, url in enumerate(["http://68k.news/", "http://frogfind.com/?q=amiga",
-                         "https://example.com/", "https://en.wikipedia.org/wiki/Amiga"]):
+                         "https://example.com/", "https://en.wikipedia.org/wiki/Amiga",
+                         "http://aminet.net/", "https://lite.cnn.com/",
+                         "https://text.npr.org/"]):
     try:
         if i:
             a.key("ctrl+l"); a.type(url); a.key("Return")

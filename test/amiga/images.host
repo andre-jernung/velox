@@ -16,6 +16,19 @@ try:
     time.sleep(2)
     a.shot(os.path.join(r, "images.png"))
     out.write([l for l in lines if l.startswith("images ")][-1] + "\n")
+    # typing while slow images load: the keys reach the URL field
+    a.key("ctrl+l")
+    a.type("127.0.0.1:8080/slow.html")
+    a.key("Return")
+    wait_log(log, "page http://127.0.0.1:8080/slow.html")
+    time.sleep(1.5)
+    a.key("ctrl+l")
+    a.type("127.0.0.1:8080/second.html")
+    t0 = time.time()
+    a.key("Return")
+    wait_log(log, "page http://127.0.0.1:8080/second.html", timeout=40)
+    dt = time.time() - t0
+    out.write("typed during image loading: %s\n" % ("in time" if dt < 4 else "late (%.1f s)" % dt))
     a.key("ctrl+q")
     out.write("ok\n")
 except Exception as e:

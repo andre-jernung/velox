@@ -15,7 +15,7 @@
 
 	xdef	GuiOpen,GuiClose,GuiEventLoop,GuiPaintAll,GuiStatus
 	xdef	GuiSetUrl,GuiSetTitle,GuiScrollTo,GuiNetHook,GuiBusy
-	xdef	GuiRelayout,GuiPageWidth,GuiAbout,DrawStatus
+	xdef	GuiRelayout,GuiPageWidth,GuiAbout,DrawStatus,ImgNetHook
 	xref	FindStart,FindKey,FindHighlight,KeyToChars,NavRefresh
 	xref	CopyAddress,ViewSource
 	xref	LayoutDocument,RunCount,RunPtr,StrLen,StrCopyN
@@ -2191,6 +2191,50 @@ GuiNetHook:
 	bra.s	.x
 .abort:	moveq	#1,d0
 .x:	movem.l	(sp)+,d2-d7/a2
+	rts
+
+;--------------------------------------------------------------------
+; ImgNetHook - the network hook while an image loads: anything the user
+; does (keys, clicks, menus, gadgets) stops the image, which is fetched
+; again later, and stays queued for the event loop; ticks, mouse moves
+; and refreshes are handled here
+; In: d0 = signals; Out: d0 = 1 to abort
+;--------------------------------------------------------------------
+ImgNetHook:
+	movem.l	d2/a2,-(sp)
+	btst	#SIGBREAKB_CTRL_C,d0
+	bne.s	.abort
+.next:	move.l	g_Window(a4),a0
+	move.l	wd_UserPort(a0),a2
+	move.l	MP_MSGLIST+LH_HEAD(a2),a1	; peek at the first message
+	tst.l	LN_SUCC(a1)
+	beq.s	.none
+	move.l	im_Class(a1),d2
+	cmp.l	#IDCMP_INTUITICKS,d2
+	beq.s	.take
+	cmp.l	#IDCMP_MOUSEMOVE,d2
+	beq.s	.take
+	cmp.l	#IDCMP_REFRESHWINDOW,d2
+	bne.s	.abort
+.take:	move.l	a2,a0
+	GT	GT_GetIMsg
+	tst.l	d0
+	beq.s	.none
+	move.l	d0,a1
+	move.l	im_Class(a1),d2
+	GT	GT_ReplyIMsg
+	cmp.l	#IDCMP_REFRESHWINDOW,d2
+	bne.s	.next
+	move.l	g_Window(a4),a0
+	GT	GT_BeginRefresh
+	move.l	g_Window(a4),a0
+	moveq	#-1,d0
+	GT	GT_EndRefresh
+	bra.s	.next
+.none:	moveq	#0,d0
+	bra.s	.x
+.abort:	moveq	#1,d0
+.x:	movem.l	(sp)+,d2/a2
 	rts
 
 ;====================================================================
