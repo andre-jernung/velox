@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+"""Host side of download.script: save /big through the ASL requester."""
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from xdrive import Amiga, wait_log  # noqa: E402
+
+r = sys.argv[1]
+log = os.path.join(r, "download.log")
+out = open(os.path.join(r, "download.driver"), "w")
+
+
+def step(msg):
+    out.write(msg + "\n")
+    out.flush()
+
+
+try:
+    a = Amiga()
+    wait_log(log, "page http://127.0.0.1:8080/big")
+    time.sleep(1)
+    a.key("Tab")
+    wait_log(log, "focus about:save")
+    a.key("Return")             # opens the requester
+    time.sleep(3)
+    a.shot(os.path.join(r, "download-asl.png"))
+    a.key("Return")             # accept "big" in VELOX:r
+    lines = wait_log(log, "saved ")
+    step([l for l in lines if l.startswith("saved ")][-1])
+    a.key("ctrl+q")
+    step("ok")
+except Exception as e:
+    step("FAIL " + repr(e))
+    try:
+        Amiga().key("ctrl+q")
+    except Exception:
+        pass

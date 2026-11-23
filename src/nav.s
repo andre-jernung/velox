@@ -3,14 +3,16 @@
 ;
 
 	include	"velox.i"
+	include	"lvo/asl_lib.i"
 
 	xdef	NavGo,NavBack,NavForward,NavReload,NavHome,NavLink,NavExit,NavPost
+	xdef	SaveDownload
 	xref	HttpGet,UrlResolve,PageNew,BufReserve,BufAppend,BufAppendStr
 	xref	BufAppendByte,BufClear,CharsetDetect,DecodeCharset,HtmlParse
 	xref	DomNewNode,DomAppend,DomGetAttr,StrCopyN,StrCopy,StrIPrefix,StrLen
 	xref	Alloc,Free,ErrorText,FmtDec,LayoutDocument
 	xref	GuiStatus,GuiSetUrl,GuiSetTitle,GuiPaintAll,GuiBusy,GuiNetHook
-	xref	GuiPageWidth,GuiScrollTo,LogEvent,CssLoad
+	xref	GuiPageWidth,GuiScrollTo,LogEvent,CssLoad,BufFree
 
 HIST_MAX	equ	HIST_ENTRIES
 NAV_HISTORY	equ	1
@@ -24,6 +26,15 @@ NAV_HISTORY	equ	1
 NavGo:
 	movem.l	d2-d3/a2,-(sp)
 	move.l	d0,d3
+	move.l	a0,-(sp)		; "about:save": save the download,
+	lea	AboutSave(pc),a1	; stay on the page
+	jsr	StrIPrefix
+	movem.l	(sp)+,a0
+	tst.l	d0
+	beq.s	.go
+	bsr	SaveDownload
+	bra	.x
+.go:
 	lea	g_NavUrl(a4),a1
 	move.l	#URL_MAX-1,d0
 	jsr	StrCopyN
@@ -89,6 +100,7 @@ NavGo:
 	rts
 
 AboutPrefix:	dc.b	"about:",0
+AboutSave:	dc.b	"about:save",0
 LogGo:		dc.b	"go",0
 LogPage:	dc.b	"page",0
 LogTitle:	dc.b	"title",0
@@ -311,6 +323,17 @@ PgErr3:	dc.b	"</p><p>Check the address, or use Reload to try again.</p>",0
 BinaryPage:
 	movem.l	d2,-(sp)
 	move.l	g_PageSrc+buf_Len(a4),d2
+	lea	g_Download(a4),a0	; the body becomes the download
+	jsr	BufFree
+	lea	g_PageSrc(a4),a0
+	lea	g_Download(a4),a1
+	move.l	(a0),(a1)+
+	move.l	4(a0),(a1)+
+	move.l	8(a0),(a1)+
+	clr.l	(a0)+
+	clr.l	(a0)+
+	clr.l	(a0)+
+	bsr	DownloadName
 	bsr	GenStart
 	lea	PgBin1(pc),a1
 	bsr	Gen
@@ -333,7 +356,8 @@ BinaryPage:
 
 PgBin1:	dc.b	"<title>File</title><h2>This is not a web page</h2><p>Type: <b>",0
 PgBin2:	dc.b	"</b><br>Size: ",0
-PgBin3:	dc.b	" bytes</p><p>Velox cannot display this file.</p>",0
+PgBin3:	dc.b	" bytes</p><p>Velox cannot display this file, but it can "
+	dc.b	'<a href="about:save">save it</a> (Amiga+S).</p>',0
 	even
 
 ; AboutPage - internal pages (about:velox is the start page)
@@ -368,6 +392,155 @@ PgStart:
 	dc.b	"scroll. Backspace goes back. Click Reload while a page is "
 	dc.b	"loading to stop it.</p></body></html>",0
 	even
+
+;--------------------------------------------------------------------
+; DownloadName - file name for the download: the last part of the URL
+; path (without query), or "download"
+;--------------------------------------------------------------------
+DownloadName:
+	lea	g_Resp+r_Url(a4),a0
+	move.l	a0,a1			; a1 = after the last '/'
+.l:	move.b	(a0)+,d0
+	beq.s	.e
+	cmp.b	#'?',d0
+	beq.s	.e
+	cmp.b	#'#',d0
+	beq.s	.e
+	cmp.b	#'/',d0
+	bne.s	.l
+	move.l	a0,a1
+	bra.s	.l
+.e:	subq.l	#1,a0
+	move.l	a0,d1
+	sub.l	a1,d1			; length
+	lea	g_DownloadName(a4),a0
+	tst.l	d1
+	beq.s	.def
+	cmp.l	#100,d1
+	bls.s	.c
+	moveq	#100,d1
+.c:	subq.l	#1,d1
+.cl:	move.b	(a1)+,d0
+	cmp.b	#':',d0			; no ':' or '/' in Amiga file names
+	bne.s	.ok
+	moveq	#'_',d0
+.ok:	move.b	d0,(a0)+
+	dbf	d1,.cl
+	clr.b	(a0)
+	rts
+.def:	lea	SDownload(pc),a1
+.dl:	move.b	(a1)+,(a0)+
+	bne.s	.dl
+	rts
+
+SDownload:	dc.b	"download",0
+	even
+
+;--------------------------------------------------------------------
+; SaveDownload - ask for a file name and save the last download
+;--------------------------------------------------------------------
+SaveDownload:
+	movem.l	d2-d4/a2-a3,-(sp)
+	move.l	g_Download+buf_Data(a4),d0
+	beq	.none
+	lea	AslName(pc),a1
+	moveq	#38,d0
+	EXEC	OpenLibrary
+	move.l	d0,g_AslBase(a4)
+	beq	.fail
+	move.l	g_Window(a4),AslTagWin+4
+	lea	g_DownloadName(a4),a0
+	move.l	a0,AslTagFile+4
+	lea	g_DownloadDir(a4),a0
+	move.l	a0,AslTagDir+4
+	moveq	#ASL_FileRequest,d0
+	suba.l	a0,a0
+	move.l	g_AslBase(a4),a6
+	jsr	_LVOAllocAslRequest(a6)
+	move.l	d0,a2
+	tst.l	d0
+	beq	.close
+	move.l	a2,a0
+	lea	AslTags,a1
+	move.l	g_AslBase(a4),a6
+	jsr	_LVOAslRequest(a6)
+	tst.l	d0
+	beq.s	.free			; cancelled
+	; path = drawer + file
+	move.l	fr_Drawer(a2),a0
+	lea	g_UrlTmp2(a4),a1
+	move.l	#URL_MAX-1,d0
+	jsr	StrCopyN
+	lea	g_UrlTmp2(a4),a0
+	move.l	a0,d1
+	move.l	fr_File(a2),d2
+	move.l	#URL_MAX,d3
+	DOS	AddPart
+	lea	g_UrlTmp2(a4),a0
+	move.l	a0,d1
+	move.l	#MODE_NEWFILE,d2
+	DOS	Open
+	move.l	d0,d4
+	beq.s	.werr
+	move.l	d4,d1
+	move.l	g_Download+buf_Data(a4),d2
+	move.l	g_Download+buf_Len(a4),d3
+	DOS	Write
+	move.l	d0,d2
+	move.l	d4,d1
+	DOS	Close
+	cmp.l	g_Download+buf_Len(a4),d2
+	bne.s	.werr
+	lea	MsgSaved(pc),a0
+	lea	g_StatusBuf(a4),a1
+	jsr	StrCopy
+	lea	g_UrlTmp2(a4),a0
+	move.l	#STATUS_MAX-20,d0
+	jsr	StrCopyN
+	lea	LogSaved(pc),a0
+	lea	g_UrlTmp2(a4),a1
+	move.l	g_Download+buf_Len(a4),d0
+	jsr	LogEvent
+	lea	g_StatusBuf(a4),a0
+	jsr	GuiStatus
+	bra.s	.free
+.werr:	lea	MsgWriteErr(pc),a0
+	jsr	GuiStatus
+.free:	move.l	a2,a0
+	move.l	g_AslBase(a4),a6
+	jsr	_LVOFreeAslRequest(a6)
+.close:	move.l	g_AslBase(a4),a1
+	clr.l	g_AslBase(a4)
+	EXEC	CloseLibrary
+	bra.s	.x
+.none:	lea	MsgNoDownload(pc),a0
+	jsr	GuiStatus
+	bra.s	.x
+.fail:	lea	MsgNoAsl(pc),a0
+	jsr	GuiStatus
+.x:	movem.l	(sp)+,d2-d4/a2-a3
+	rts
+
+AslName:	dc.b	"asl.library",0
+MsgSaved:	dc.b	"Saved ",0
+LogSaved:	dc.b	"saved",0
+MsgWriteErr:	dc.b	"Could not write the file",0
+MsgNoDownload:	dc.b	"There is no file to save",0
+MsgNoAsl:	dc.b	"asl.library is missing",0
+	even
+
+	section	data,data
+AslTags:
+	dc.l	ASLFR_TitleText,AslTitle
+AslTagWin:	dc.l	ASLFR_Window,0
+AslTagFile:	dc.l	ASLFR_InitialFile,0
+AslTagDir:	dc.l	ASLFR_InitialDrawer,0
+	dc.l	ASLFR_DoSaveMode,1
+	dc.l	ASLFR_SleepWindow,1
+	dc.l	TAG_DONE
+AslTitle:	dc.b	"Save file as",0
+	even
+	section	code,code
 
 ;--------------------------------------------------------------------
 ; ShowPage - lay out the new page and show it

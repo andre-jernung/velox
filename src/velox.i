@@ -24,6 +24,7 @@ VELOX_I	SET	1
 	include	"workbench/startup.i"
 	include	"utility/tagitem.i"
 	include	"libraries/gadtools.i"
+	include	"libraries/asl.i"
 
 	include	"lvo/exec_lib.i"
 	include	"lvo/dos_lib.i"
@@ -384,6 +385,7 @@ g_VisualInfo	rs.l	1
 g_GList		rs.l	1
 g_GadUrl	rs.l	1
 g_GadScroll	rs.l	1
+g_Menu		rs.l	1
 g_NewGad	rs.b	gng_SIZEOF
 g_ScreenFont	rs.l	1
 g_FontPtr	rs.l	FONT_COUNT
@@ -447,6 +449,11 @@ g_SslState	rs.l	1		; 0 = not tried, 1 = ready, -1 = unavailable
 g_Errno		rs.l	1
 g_Insecure	rs.l	1		; don't verify certificates (tests)
 g_TlsHost	rs.l	1		; host name for SNI / verification
+; downloads
+g_Download	rs.b	BUF_SIZEOF	; the last file that was not a page
+g_DownloadName	rs.b	108
+g_DownloadDir	rs.b	256		; Velox/DownloadDir or "RAM:"
+g_AslBase	rs.l	1
 ; cookies
 g_Cookies	rs.l	1		; list, oldest first
 g_CookieCount	rs.l	1

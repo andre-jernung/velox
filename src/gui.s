@@ -11,14 +11,15 @@
 	include	"lvo/gadtools_lib.i"
 	include	"lvo/layers_lib.i"
 	include	"lvo/diskfont_lib.i"
+	include	"lvo/asl_lib.i"
 
 	xdef	GuiOpen,GuiClose,GuiEventLoop,GuiPaintAll,GuiStatus
 	xdef	GuiSetUrl,GuiSetTitle,GuiScrollTo,GuiNetHook,GuiBusy
-	xdef	GuiRelayout,GuiPageWidth
+	xdef	GuiRelayout,GuiPageWidth,GuiAbout
 	xref	LayoutDocument,RunCount,RunPtr,StrLen,StrCopyN
 	xref	NavGo,NavBack,NavForward,NavReload,NavHome,NavLink,UrlFixup
 	xref	DomGetAttr,LogEvent,FormStateOf,FormIsControl,FormActivate
-	xref	FormEditKey,FormLeave
+	xref	FormEditKey,FormLeave,SaveDownload
 
 PROP_FONT	equ	0
 SCROLL_W	equ	18
@@ -117,11 +118,32 @@ GuiOpen:
 	GFX	SetDrMd
 	bsr	CreateGadgets
 	beq.s	.fail
+	bsr	CreateMenus		; (no menus is not fatal)
 	moveq	#1,d0
 	bra.s	.x
 .fail:	moveq	#0,d0
 .x:	movem.l	(sp)+,d2/a2
 	rts
+
+; CreateMenus - GadTools menus for the window
+CreateMenus:
+	lea	NewMenus,a0
+	suba.l	a1,a1
+	GT	CreateMenusA
+	move.l	d0,g_Menu(a4)
+	beq.s	.x
+	move.l	d0,a0
+	move.l	g_VisualInfo(a4),a1
+	lea	MenuTags(pc),a2
+	GT	LayoutMenusA
+	tst.l	d0
+	beq.s	.x
+	move.l	g_Window(a4),a0
+	move.l	g_Menu(a4),a1
+	INTUI	SetMenuStrip
+.x:	rts
+
+MenuTags:	dc.l	GTMN_NewLookMenus,1,TAG_DONE
 
 ;--------------------------------------------------------------------
 ; GuiClose - close everything GuiOpen opened (safe on partial opens)
@@ -129,6 +151,12 @@ GuiOpen:
 GuiClose:
 	move.l	g_Window(a4),d0
 	beq.s	.nowin
+	tst.l	g_Menu(a4)
+	beq.s	.nomenu
+	move.l	d0,a0
+	INTUI	ClearMenuStrip
+	move.l	g_Window(a4),d0
+.nomenu:
 	move.l	d0,a0
 	move.l	g_GList(a4),d0
 	beq.s	.nogl
@@ -138,7 +166,10 @@ GuiClose:
 .nogl:	move.l	g_Window(a4),a0
 	clr.l	g_Window(a4)
 	INTUI	CloseWindow
-.nowin:	move.l	g_GList(a4),a0
+.nowin:	move.l	g_Menu(a4),a0
+	clr.l	g_Menu(a4)
+	GT	FreeMenus
+	move.l	g_GList(a4),a0
 	clr.l	g_GList(a4)
 	GT	FreeGadgets
 	bsr	PensRelease
@@ -1605,7 +1636,9 @@ HandleEvent:
 	bne.s	.x
 	move.l	d3,d0
 	bra	GuiScrollTo
-.ngd:	cmp.l	#IDCMP_MOUSEBUTTONS,d2
+.ngd:	cmp.l	#IDCMP_MENUPICK,d2
+	beq	OnMenu
+	cmp.l	#IDCMP_MOUSEBUTTONS,d2
 	beq	OnClick
 	cmp.l	#IDCMP_RAWKEY,d2
 	bne.s	.x
@@ -1910,6 +1943,66 @@ AnHref:	dc.b	"href",0
 AnName:	dc.b	"name",0
 	even
 
+; OnMenu - menu selection(s); d3 = menu number
+OnMenu:
+	movem.l	d2/a2,-(sp)
+	move.l	d3,d2
+.l:	cmp.w	#MENUNULL,d2
+	beq.s	.x
+	tst.l	g_Quit(a4)
+	bne.s	.x
+	move.l	g_Menu(a4),a0
+	moveq	#0,d0
+	move.w	d2,d0
+	INTUI	ItemAddress
+	tst.l	d0
+	beq.s	.x
+	move.l	d0,a2
+	move.w	mi_NextSelect(a2),d2
+	move.l	mi_SIZEOF(a2),d0	; user data: the action
+	lea	MenuActions(pc),a0
+	add.w	d0,d0
+	add.w	(a0,d0.w),a0
+	jsr	(a0)
+	bra.s	.l
+.x:	movem.l	(sp)+,d2/a2
+	rts
+
+MA_OPEN		equ	0
+MA_SAVE		equ	1
+MA_ABOUT	equ	2
+MA_QUIT		equ	3
+MA_BACK		equ	4
+MA_FWD		equ	5
+MA_RELOAD	equ	6
+MA_HOME		equ	7
+MenuActions:
+	dc.w	ActivateUrl-MenuActions,MenuSave-MenuActions
+	dc.w	GuiAbout-MenuActions,MenuQuit-MenuActions
+	dc.w	ToNavBack-MenuActions,ToNavForward-MenuActions
+	dc.w	ToNavReload-MenuActions,ToNavHome-MenuActions
+
+MenuSave:	jmp	SaveDownload
+MenuQuit:	moveq	#1,d0
+		move.l	d0,g_Quit(a4)
+		rts
+
+; GuiAbout - the About requester
+GuiAbout:
+	move.l	a2,-(sp)
+	move.l	g_Window(a4),a0
+	lea	AboutEasy(pc),a1
+	suba.l	a2,a2
+	move.l	a3,-(sp)
+	suba.l	a3,a3
+	INTUI	EasyRequestArgs
+	move.l	(sp)+,a3
+	move.l	(sp)+,a2
+	rts
+
+AboutEasy:
+	dc.l	EasyStruct_SIZEOF,0,AboutTitle,AboutText,AboutOk
+
 ; OnClick - follow a link / use a control on button release over it
 OnClick:
 	cmp.w	#IECODE_LBUTTON,d3
@@ -2032,7 +2125,7 @@ WinTagScr:
 	dc.l	WA_Activate,1
 	dc.l	WA_ReportMouse,1
 	dc.l	WA_NewLookMenus,1
-	dc.l	WA_IDCMP,IDCMP_CLOSEWINDOW|IDCMP_NEWSIZE|IDCMP_REFRESHWINDOW|IDCMP_GADGETUP|IDCMP_GADGETDOWN|IDCMP_MOUSEMOVE|IDCMP_MOUSEBUTTONS|IDCMP_RAWKEY|IDCMP_INTUITICKS
+	dc.l	WA_IDCMP,IDCMP_CLOSEWINDOW|IDCMP_NEWSIZE|IDCMP_REFRESHWINDOW|IDCMP_GADGETUP|IDCMP_GADGETDOWN|IDCMP_MOUSEMOVE|IDCMP_MOUSEBUTTONS|IDCMP_RAWKEY|IDCMP_INTUITICKS|IDCMP_MENUPICK
 	dc.l	TAG_DONE
 
 UrlTags:
@@ -2060,4 +2153,52 @@ BusyTags:
 	dc.l	TAG_DONE
 
 WinTitle:	dc.b	"Velox",0
+
+NM	MACRO	; type, label, key, action
+	dc.b	\1,0
+	dc.l	\2,\3
+	dc.w	0
+	dc.l	0,\4
+	ENDM
+NewMenus:
+	NM	NM_TITLE,MProject,0,0
+	NM	NM_ITEM,MOpen,KeyL,MA_OPEN
+	NM	NM_ITEM,MSave,KeyS,MA_SAVE
+	NM	NM_ITEM,NM_BARLABEL,0,0
+	NM	NM_ITEM,MAbout,KeyA,MA_ABOUT
+	NM	NM_ITEM,NM_BARLABEL,0,0
+	NM	NM_ITEM,MQuit,KeyQ,MA_QUIT
+	NM	NM_TITLE,MNavigate,0,0
+	NM	NM_ITEM,MBack,KeyB,MA_BACK
+	NM	NM_ITEM,MFwd,KeyF,MA_FWD
+	NM	NM_ITEM,MReload,KeyR,MA_RELOAD
+	NM	NM_ITEM,MHome,KeyH,MA_HOME
+	NM	NM_END,0,0,0
+
+MProject:	dc.b	"Project",0
+MOpen:		dc.b	"Open location",0
+MSave:		dc.b	"Save file...",0
+MAbout:		dc.b	"About...",0
+MQuit:		dc.b	"Quit",0
+MNavigate:	dc.b	"Navigate",0
+MBack:		dc.b	"Back",0
+MFwd:		dc.b	"Forward",0
+MReload:	dc.b	"Reload",0
+MHome:		dc.b	"Home",0
+KeyL:		dc.b	"L",0
+KeyS:		dc.b	"S",0
+KeyA:		dc.b	"?",0
+KeyQ:		dc.b	"Q",0
+KeyB:		dc.b	"B",0
+KeyF:		dc.b	"F",0
+KeyR:		dc.b	"R",0
+KeyH:		dc.b	"H",0
+AboutTitle:	dc.b	"About Velox",0
+AboutText:	dc.b	"Velox "
+		VERSION_STR
+		dc.b	10,"A web browser for AmigaOS 3.x,",10
+		dc.b	"written in 68k assembly.",10,10
+		dc.b	"HTTPS needs AmiSSL 6 or a proxy",10
+		dc.b	"(tools/velox-proxy.py).",0
+AboutOk:	dc.b	"OK",0
 	even

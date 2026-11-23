@@ -189,7 +189,20 @@ LoadSettings:
 	ble.s	.np
 	lea	g_VarBuf(a4),a0
 	bsr	SetProxy
-.np:	lea	VarInsecure(pc),a0	; Velox/InsecureTLS: no certificate
+.np:	lea	VarDlDir(pc),a0		; Velox/DownloadDir (default RAM:)
+	move.l	a0,d1
+	lea	g_DownloadDir(a4),a0
+	move.l	a0,d2
+	move.l	#255,d3
+	moveq	#0,d4
+	DOS	GetVar
+	tst.l	d0
+	bgt.s	.dl
+	lea	g_DownloadDir(a4),a1
+	lea	SRam(pc),a0
+.dc:	move.b	(a0)+,(a1)+
+	bne.s	.dc
+.dl:	lea	VarInsecure(pc),a0	; Velox/InsecureTLS: no certificate
 	move.l	a0,d1			; checks (testing with self-signed
 	lea	g_VarBuf(a4),a0		; certificates only!)
 	move.l	a0,d2
@@ -205,6 +218,8 @@ LoadSettings:
 
 VarProxy:	dc.b	"Velox/Proxy",0
 VarInsecure:	dc.b	"Velox/InsecureTLS",0
+VarDlDir:	dc.b	"Velox/DownloadDir",0
+SRam:		dc.b	"RAM:",0
 	even
 
 ;--------------------------------------------------------------------
