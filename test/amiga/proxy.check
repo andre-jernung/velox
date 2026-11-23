@@ -1,0 +1,31 @@
+#!/usr/bin/env python3
+"""checks for proxy.script"""
+import os
+import sys
+
+r = sys.argv[1]
+d = os.path.dirname(r)
+res = open(r).read().splitlines()
+fail = []
+
+
+def out(n):
+    return open(os.path.join(d, "proxy-%s.out" % n), "rb").read()
+
+
+for name, rc in (("hello", 0), ("chunked", 0), ("redirect", 0), ("env", 0)):
+    if "%s rc=%d" % (name, rc) not in res:
+        fail.append("%s: rc" % name)
+if out("hello") != b"Hello from the Velox test server\n":
+    fail.append("hello: %r" % out("hello")[:80])
+if out("chunked") != b"chunk one, chunk two, chunk three\n":
+    fail.append("chunked: %r" % out("chunked")[:80])
+if b"url: https://127.0.0.1:8443/hello\n" not in out("redirect"):
+    fail.append("redirect: %r" % out("redirect"))
+big = bytes((i * 7 + 13) % 251 for i in range(100000))
+if out("big") != big:
+    fail.append("big via ENV:Velox/Proxy: %d bytes" % len(out("big")))
+print("direct https without proxy:", out("direct").decode("latin-1").strip())
+for f in fail:
+    print(f)
+sys.exit(1 if fail else 0)

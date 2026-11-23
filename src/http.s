@@ -36,9 +36,15 @@ HttpGet:
 	beq	.fail
 	move.l	g_Parts+up_Scheme(a4),d1
 	bmi	.badscheme
+	move.l	g_ProxyPort(a4),d0	; through the proxy (plain HTTP to
+	beq.s	.direct			; it, also for https URLs)
+	lea	g_ProxyHost(a4),a0
+	moveq	#0,d1
+	bra.s	.conn
+.direct:
 	lea	g_Parts+up_Host(a4),a0
 	move.l	g_Parts+up_Port(a4),d0
-	bsr	ConnOpen
+.conn:	bsr	ConnOpen
 	beq	.fail
 	move.l	d0,a2
 	bsr	BuildRequest
@@ -121,8 +127,18 @@ BuildRequest:
 	REQSTR	RqPost
 	bra.s	.meth
 .get:	REQSTR	RqGet
-.meth:
-
+.meth:	tst.l	g_ProxyPort(a4)		; proxies get the absolute URL
+	beq.s	.origin
+	lea	SchHttpP(pc),a1
+	tst.l	g_Parts+up_Scheme(a4)
+	beq.s	.sch
+	lea	SchHttpsP(pc),a1
+.sch:	lea	g_ReqBuf(a4),a0
+	bsr	BufAppendStr
+	beq	ReqNoMem
+	bsr	AppendHostPort
+	beq	ReqNoMem
+.origin:
 	; path: escape blanks, controls and 8-bit characters
 	move.l	g_Parts+up_Path(a4),a2
 	move.l	g_Parts+up_PathLen(a4),d2
@@ -164,29 +180,8 @@ BuildRequest:
 	bra.s	.path
 .pathend:
 	REQSTR	RqHost
-	lea	g_ReqBuf(a4),a0
-	lea	g_Parts+up_Host(a4),a1
-	bsr	BufAppendStr
+	bsr	AppendHostPort
 	beq	ReqNoMem
-	; ":port" unless it is the scheme's default
-	move.l	g_Parts+up_Port(a4),d0
-	moveq	#80,d1
-	tst.l	g_Parts+up_Scheme(a4)
-	beq.s	.def
-	move.l	#443,d1
-.def:	cmp.l	d1,d0
-	beq.s	.noport
-	lea	-16(sp),sp
-	move.l	sp,a0
-	move.b	#':',(a0)+
-	bsr	FmtDec
-	lea	g_ReqBuf(a4),a0
-	move.l	sp,a1
-	bsr	BufAppendStr
-	lea	16(sp),sp
-	tst.l	d0
-	beq.s	ReqNoMem
-.noport:
 	tst.l	g_PostData(a4)
 	beq.s	.nopost
 	REQSTR	RqPostHdr
@@ -218,6 +213,38 @@ ReqNoMem:
 	movem.l	(sp)+,d2-d3/a2
 	rts
 
+;--------------------------------------------------------------------
+; AppendHostPort - append "host" or "host:port" (when not the default
+; port of the scheme) of g_Parts to the request
+; Out: d0 = 0 when out of memory
+;--------------------------------------------------------------------
+AppendHostPort:
+	lea	g_ReqBuf(a4),a0
+	lea	g_Parts+up_Host(a4),a1
+	bsr	BufAppendStr
+	beq.s	.x
+	move.l	g_Parts+up_Port(a4),d0
+	moveq	#80,d1
+	tst.l	g_Parts+up_Scheme(a4)
+	beq.s	.def
+	move.l	#443,d1
+.def:	cmp.l	d1,d0
+	beq.s	.ok
+	lea	-16(sp),sp
+	move.l	sp,a0
+	move.b	#':',(a0)+
+	bsr	FmtDec
+	lea	g_ReqBuf(a4),a0
+	move.l	sp,a1
+	bsr	BufAppendStr
+	lea	16(sp),sp
+	tst.l	d0
+	rts
+.ok:	moveq	#1,d0
+.x:	rts
+
+SchHttpP:	dc.b	"http://",0
+SchHttpsP:	dc.b	"https://",0
 HexDigits:	dc.b	"0123456789ABCDEF"
 RqGet:		dc.b	"GET ",0
 RqPost:		dc.b	"POST ",0

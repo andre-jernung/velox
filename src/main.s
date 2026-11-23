@@ -7,7 +7,7 @@
 	xdef	G
 	xref	MemInit,MemExit,NetExit,HttpGet,UrlFixup
 	xref	PutStr,PutBuf,PutNum,PutNL,FlushOut,ErrorText
-	xref	GuiOpen,GuiClose,GuiEventLoop,NavGo,NavExit
+	xref	GuiOpen,GuiClose,GuiEventLoop,NavGo,NavExit,StrIPrefix,ParseDec
 
 STACK_SIZE	equ	65536
 
@@ -80,6 +80,7 @@ ARG_URL		equ	0
 ARG_DUMP	equ	4
 ARG_INFO	equ	8
 ARG_LOG		equ	12
+ARG_PROXY	equ	16
 
 Main:
 	movem.l	d2-d3,-(sp)
@@ -92,6 +93,7 @@ Main:
 	beq	.cleanup
 	bsr	MemInit
 	beq	.cleanup
+	bsr	LoadSettings
 	tst.l	g_WBMsg(a4)
 	bne.s	.gui
 	DOS	Output
@@ -112,6 +114,11 @@ Main:
 	moveq	#RC_FAIL,d2
 	bra.s	.cleanup
 .args:
+	move.l	g_ArgArray+ARG_PROXY(a4),d0	; PROXY= wins over ENV:
+	beq.s	.noproxy
+	move.l	d0,a0
+	bsr	SetProxy
+.noproxy:
 	tst.l	g_ArgArray+ARG_DUMP(a4)
 	bne.s	.cli
 	tst.l	g_ArgArray+ARG_INFO(a4)
@@ -161,9 +168,61 @@ Main:
 	movem.l	(sp)+,d2-d3
 	rts
 
-ArgTemplate:	dc.b	"URL,DUMP/S,INFO/S,LOG/K",0
+ArgTemplate:	dc.b	"URL,DUMP/S,INFO/S,LOG/K,PROXY/K",0
 ProgName:	dc.b	"velox",0
 StartUrl:	dc.b	"about:velox",0
+	even
+
+;--------------------------------------------------------------------
+; LoadSettings - read ENV:Velox/... variables
+;--------------------------------------------------------------------
+LoadSettings:
+	movem.l	d2-d4,-(sp)
+	lea	VarProxy(pc),a0
+	move.l	a0,d1
+	lea	g_VarBuf(a4),a0
+	move.l	a0,d2
+	move.l	#255,d3
+	moveq	#0,d4
+	DOS	GetVar
+	tst.l	d0
+	ble.s	.x
+	lea	g_VarBuf(a4),a0
+	bsr	SetProxy
+.x:	movem.l	(sp)+,d2-d4
+	rts
+
+VarProxy:	dc.b	"Velox/Proxy",0
+	even
+
+;--------------------------------------------------------------------
+; SetProxy - set the proxy from "host:port" (an "http://" in front and
+; a "/" after are allowed).  An empty string or port 0 means none.
+; In: a0 = text
+;--------------------------------------------------------------------
+SetProxy:
+	clr.l	g_ProxyPort(a4)
+	lea	SHttp(pc),a1
+	bsr	StrIPrefix		; skip "http://" (a0 moves past it)
+	lea	g_ProxyHost(a4),a1
+	move.w	#HOST_MAX-2,d1
+.h:	move.b	(a0)+,d0
+	beq.s	.x
+	cmp.b	#':',d0
+	beq.s	.port
+	cmp.b	#' ',d0
+	bls.s	.x
+	move.b	d0,(a1)+
+	clr.b	(a1)
+	dbf	d1,.h
+	bra.s	.x
+.port:	bsr	ParseDec
+	cmp.l	#65535,d0
+	bhi.s	.x
+	move.l	d0,g_ProxyPort(a4)
+.x:	rts
+
+SHttp:	dc.b	"http://",0
 	even
 
 ;--------------------------------------------------------------------

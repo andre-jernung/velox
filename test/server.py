@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Deterministic HTTP test server for the Velox emulator tests.
 
-usage: server.py PORT [DOCROOT]
+usage: server.py PORT [DOCROOT] [TLSPORT CERT KEY]
 
 Fixed routes are below; anything else is served from DOCROOT (test/www).
 """
@@ -78,5 +78,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    import ssl
+    import threading
     port = int(sys.argv[1])
+    if len(sys.argv) > 5:  # the same site over TLS as well
+        tls = http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[3])), Handler)
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(sys.argv[4], sys.argv[5])
+        tls.socket = ctx.wrap_socket(tls.socket, server_side=True)
+        threading.Thread(target=tls.serve_forever, daemon=True).start()
     http.server.ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()

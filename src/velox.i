@@ -370,6 +370,10 @@ g_FormBuf	rs.b	BUF_SIZEOF	; encoded form data
 g_PageCharset	rs.l	1		; CS_xxx the page was decoded from
 g_PostData	rs.l	1		; body for the next request (POST) or 0
 g_PostLen	rs.l	1
+; settings
+g_ProxyPort	rs.l	1		; 0 = no proxy
+g_ProxyHost	rs.b	HOST_MAX
+g_VarBuf	rs.b	256
 g_PressLink	rs.l	1
 g_StatusText	rs.b	STATUS_MAX
 g_StatusBuf	rs.b	STATUS_MAX

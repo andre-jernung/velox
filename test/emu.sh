@@ -8,7 +8,8 @@
 #                                  (default: all) in one boot, then check
 #                                  the results with test/amiga/TEST.check
 #
-# test/server.py runs on 127.0.0.1:8080 for the duration.
+# test/server.py runs on 127.0.0.1:8080 (and https on 8443), and
+# tools/velox-proxy.py on 8888, for the duration.
 # Needs: fs-uae, Xvfb (automated runs), xwininfo + import (ImageMagick),
 # tools/venv (amitools, python-xlib).
 # AMIGA_DIR (default ~/amiga) must hold a1200.rom, wb31-02-workbench.adf and
@@ -81,8 +82,17 @@ window_width = 960
 window_height = 600
 EOF
 
-python3 "$ROOT/test/server.py" 8080 "$ROOT/test/www" 2>"$B/server.log" &
+# test server: http on 8080, https (self-signed) on 8443; and the proxy
+if [ ! -e "$B/tls/cert.pem" ]; then
+	mkdir -p "$B/tls"
+	openssl req -x509 -newkey rsa:2048 -nodes -keyout "$B/tls/key.pem" \
+		-out "$B/tls/cert.pem" -days 3650 -subj "/CN=127.0.0.1" 2>/dev/null
+fi
+python3 "$ROOT/test/server.py" 8080 "$ROOT/test/www" 8443 "$B/tls/cert.pem" "$B/tls/key.pem" \
+	2>"$B/server.log" &
 SRV=$!
+python3 "$ROOT/tools/velox-proxy.py" --port 8888 --insecure 2>"$B/proxy.log" &
+SRV="$SRV $!"
 XVFB=""
 if [ $AUTO = 1 ]; then
 	# automated runs use a private X display: nothing appears on the

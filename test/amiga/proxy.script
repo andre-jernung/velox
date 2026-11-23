@@ -1,0 +1,15 @@
+; proxy: https:// and http:// through tools/velox-proxy.py
+Echo >VELOX:r/proxy.txt "proxy"
+VELOX:velox https://127.0.0.1:8443/hello DUMP PROXY=127.0.0.1:8888 >VELOX:r/proxy-hello.out
+Echo >>VELOX:r/proxy.txt "hello rc=$RC"
+VELOX:velox http://127.0.0.1:8080/chunked DUMP PROXY=127.0.0.1:8888 >VELOX:r/proxy-chunked.out
+Echo >>VELOX:r/proxy.txt "chunked rc=$RC"
+VELOX:velox https://127.0.0.1:8443/redirect INFO PROXY=127.0.0.1:8888 >VELOX:r/proxy-redirect.out
+Echo >>VELOX:r/proxy.txt "redirect rc=$RC"
+SetEnv Velox/Proxy 127.0.0.1:8888
+VELOX:velox https://127.0.0.1:8443/big DUMP >VELOX:r/proxy-big.out
+Echo >>VELOX:r/proxy.txt "env rc=$RC"
+UnSetEnv Velox/Proxy
+VELOX:velox https://127.0.0.1:8443/hello INFO >VELOX:r/proxy-direct.out
+Echo >>VELOX:r/proxy.txt "direct rc=$RC"
+Echo >>VELOX:r/proxy.txt "done"
