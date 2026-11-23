@@ -33,6 +33,19 @@ for name, data in cases.items():
     with open(os.path.join(d, name + ".txt"), "wb") as f:
         f.write(data)
 
+# charset fixtures for the html tests
+hd = os.path.join(os.path.dirname(d.rstrip("/")) or ".", "html")
+os.makedirs(hd, exist_ok=True)
+fixtures = {
+    "utf8": "<p>Grüße – “quotes” … € ł</p>".encode("utf-8"),
+    "latin1": b"<p>caf\xe9 \x93hi\x94</p>",
+    "metalatin1": b"<meta charset=iso-8859-1><p>\xc3\xa9</p>",
+    "nul": b"<p>a\x00b</p>",
+}
+for name, data in fixtures.items():
+    with open(os.path.join(hd, name + ".html"), "wb") as f:
+        f.write(data)
+
 # checksum used by vtest httpinfo: sum of byte * (1-based position), 32 bit
 s = sum(b * (i + 1) for i, b in enumerate(big)) & 0xFFFFFFFF
 if s >= 0x80000000:

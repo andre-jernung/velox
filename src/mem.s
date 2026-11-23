@@ -7,7 +7,7 @@
 
 	include	"velox.i"
 
-	xdef	MemInit,MemExit,Alloc,Free
+	xdef	MemInit,MemExit,Alloc,Free,PageNew,PageFree,PageAlloc
 	xdef	BufReserve,BufAppend,BufAppendByte,BufAppendStr,BufClear,BufFree
 
 	section	code,code
@@ -28,9 +28,10 @@ MemInit:
 	rts
 
 ;--------------------------------------------------------------------
-; MemExit - free all memory of the application pool
+; MemExit - free the page and all memory of the application pool
 ;--------------------------------------------------------------------
 MemExit:
+	bsr	PageFree
 	move.l	g_AppPool(a4),d0
 	beq.s	.x
 	clr.l	g_AppPool(a4)
@@ -70,6 +71,53 @@ Free:
 	move.l	-(a1),d0
 	move.l	g_AppPool(a4),a0
 	EXEC	FreePooled
+.x:	rts
+
+;--------------------------------------------------------------------
+; PageNew - drop the current page's memory and start a new page pool
+; Out: d0 = 0 on failure
+;--------------------------------------------------------------------
+PageNew:
+	movem.l	d2,-(sp)
+	bsr.s	PageFree
+	move.l	#MEMF_ANY|MEMF_CLEAR,d0
+	move.l	#32768,d1
+	move.l	#8192,d2
+	EXEC	CreatePool
+	move.l	d0,g_PagePool(a4)
+	movem.l	(sp)+,d2
+	tst.l	d0
+	bne.s	.x
+	SETERR	ERR_NOMEM
+.x:	rts
+
+;--------------------------------------------------------------------
+; PageFree - free the page pool and the page source
+;--------------------------------------------------------------------
+PageFree:
+	lea	g_PageSrc(a4),a0
+	bsr	BufFree
+	clr.l	g_Doc(a4)
+	clr.l	g_Title(a4)
+	clr.l	g_BaseHref(a4)
+	move.l	g_PagePool(a4),d0
+	beq.s	.x
+	clr.l	g_PagePool(a4)
+	move.l	d0,a0
+	EXEC	DeletePool
+.x:	rts
+
+;--------------------------------------------------------------------
+; PageAlloc - allocate cleared memory that lives as long as the page
+; In:  d0 = size
+; Out: d0 = pointer or 0 (g_Error = ERR_NOMEM)
+;--------------------------------------------------------------------
+PageAlloc:
+	move.l	g_PagePool(a4),a0
+	EXEC	AllocPooled
+	tst.l	d0
+	bne.s	.x
+	SETERR	ERR_NOMEM
 .x:	rts
 
 ;--------------------------------------------------------------------

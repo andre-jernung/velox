@@ -41,7 +41,11 @@ and a single event dispatch point.
 - Library calls use the `EXEC`/`DOS`/`INTUI`/`GFX` macros, which load a6
   themselves.
 - OS calls take LONG arguments. Clear upper words (`moveq #0,dN`) before
-  loading a `.w` or `.b` value into an argument register.
+  loading a `.w` or `.b` value into an argument register. The same goes for
+  counters used by `dbf`, and for indexes: `move.b` into a register that
+  still holds a code point made `dbf` copy 8 KB (this bug happened).
+- vasm does not process `\` escapes in strings. Write special bytes as
+  numbers, e.g. `dc.b 92,"n"`.
 - Each routine gets a header comment stating In/Out.
 - Cleanup routines must be safe to call when the resource was never
   acquired (test, clear, then free).

@@ -29,6 +29,7 @@ VELOX_I	SET	1
 	include	"lvo/intuition_lib.i"
 	include	"lvo/graphics_lib.i"
 	include	"lvo_bsdsocket.i"
+	include	"tags.i"
 
 VERSION_STR	MACRO
 	dc.b	"0.2"
@@ -115,6 +116,38 @@ r_Location	rs.b	URL_MAX		; Location header
 RESP_SIZEOF	rs.b	0
 
 ;--------------------------------------------------------------------
+; DOM.  Nodes and their strings live in the page pool.
+;--------------------------------------------------------------------
+DN_ELEMENT	equ	1
+DN_TEXT		equ	3
+DN_DOCUMENT	equ	9
+
+	RSRESET
+n_Parent	rs.l	1
+n_First		rs.l	1		; first child
+n_Last		rs.l	1		; last child
+n_Next		rs.l	1		; next sibling
+n_Type		rs.b	1		; DN_xxx
+n_Flags		rs.b	1
+n_Tag		rs.w	1		; TAG_xxx (elements)
+n_Data		rs.l	1		; element: first Attr; text: text
+n_Data2		rs.l	1		; element: aux data; text: length
+NODE_SIZEOF	rs.b	0
+
+	RSRESET
+at_Next		rs.l	1
+at_Name		rs.l	1		; lower case, NUL terminated
+at_Value	rs.l	1		; NUL terminated, entities decoded
+ATTR_SIZEOF	rs.b	0
+
+MAX_DEPTH	equ	256		; deepest element nesting kept
+
+; character sets for DecodeCharset
+CS_AUTO		equ	0
+CS_UTF8		equ	1
+CS_LATIN1	equ	2		; also Windows-1252
+
+;--------------------------------------------------------------------
 ; Global data block, addressed as xxx(a4)
 ;--------------------------------------------------------------------
 	RSRESET
@@ -142,6 +175,18 @@ g_Line		rs.b	LINE_MAX	; current header line
 g_UrlTmp	rs.b	URL_MAX		; scratch for UrlResolve
 g_UrlTmp2	rs.b	URL_MAX		; scratch for callers of UrlResolve
 g_Resp		rs.b	RESP_SIZEOF
+; page
+g_PagePool	rs.l	1		; memory for the current page
+g_PageSrc	rs.b	BUF_SIZEOF	; page source (DOM strings point here)
+g_Doc		rs.l	1		; document node
+g_Title		rs.l	1		; <title> text node or 0
+g_BaseHref	rs.l	1		; <base href> value or 0
+; parser state
+g_Depth		rs.l	1		; open element stack depth
+g_PreDepth	rs.l	1		; open elements that preserve blanks
+g_TagName	rs.b	32		; current tag name, lower case
+g_AttrName	rs.b	32		; current attribute name, lower case
+g_OpenStack	rs.l	MAX_DEPTH
 g_SIZEOF	rs.b	0
 
 ;--------------------------------------------------------------------

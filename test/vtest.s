@@ -9,6 +9,7 @@
 ;   fixup TEXT           UrlFixup
 ;   http FILE            HttpReadResponse on a canned response file
 ;   httpinfo FILE        same, but print body length and checksum only
+;   html FILE            parse an HTML file and dump the DOM
 ;
 
 	include	"velox.i"
@@ -17,6 +18,8 @@
 	xref	MemInit,MemExit,UrlParse,UrlResolve,UrlFixup
 	xref	ConnOpenFile,ConnClose,ConnReadLine,HttpReadResponse
 	xref	PutStr,PutBuf,PutNum,PutNL,PutChar,FlushOut,ErrorText
+	xref	PageNew,BufReserve,BufClear,CharsetDetect,DecodeCharset
+	xref	HtmlParse,TagNameOf
 
 T_LINEMAX	equ	2048
 T_MAXWORDS	equ	4
@@ -160,6 +163,7 @@ Commands:
 	dc.w	CnFixup-Commands,CmdFixup-Commands
 	dc.w	CnHttp-Commands,CmdHttp-Commands
 	dc.w	CnHttpInfo-Commands,CmdHttpInfo-Commands
+	dc.w	CnHtml-Commands,CmdHtml-Commands
 	dc.w	0
 
 CnParse:	dc.b	"parse",0
@@ -167,6 +171,7 @@ CnResolve:	dc.b	"resolve",0
 CnFixup:	dc.b	"fixup",0
 CnHttp:		dc.b	"http",0
 CnHttpInfo:	dc.b	"httpinfo",0
+CnHtml:		dc.b	"html",0
 Empty:		dc.b	0
 ResultSep:	dc.b	" => ",0
 MsgUnknown:	dc.b	"unknown command",0
@@ -336,6 +341,187 @@ MsgBody:	dc.b	"] body=",0
 MsgBodyOpen:	dc.b	10,"<<<",0
 MsgBodyClose:	dc.b	">>>",0
 MsgSum:		dc.b	" sum=",0
+	even
+
+;--------------------------------------------------------------------
+; LoadPage - read a file into g_PageSrc, decode it to Latin-1
+; In:  a0 = file name
+; Out: d0 = 0 on failure
+;--------------------------------------------------------------------
+LoadPage:
+	movem.l	d2-d4,-(sp)
+	move.l	a0,d1
+	move.l	#MODE_OLDFILE,d2
+	DOS	Open
+	move.l	d0,d4
+	beq.s	.fail
+	bsr	PageNew
+	lea	g_PageSrc(a4),a0
+	bsr	BufClear
+.rd:	lea	g_PageSrc(a4),a0
+	move.l	#8192,d0
+	bsr	BufReserve
+	beq.s	.close
+	move.l	d4,d1
+	move.l	g_PageSrc+buf_Data(a4),d2
+	add.l	g_PageSrc+buf_Len(a4),d2
+	move.l	#8192,d3
+	DOS	Read
+	tst.l	d0
+	ble.s	.eof
+	add.l	d0,g_PageSrc+buf_Len(a4)
+	bra.s	.rd
+.eof:	move.l	g_PageSrc+buf_Data(a4),a0
+	add.l	g_PageSrc+buf_Len(a4),a0
+	clr.b	(a0)
+	suba.l	a0,a0
+	move.l	g_PageSrc+buf_Data(a4),a1
+	bsr	CharsetDetect
+	move.l	d0,d1
+	move.l	g_PageSrc+buf_Data(a4),a0
+	move.l	g_PageSrc+buf_Len(a4),d0
+	bsr	DecodeCharset
+	move.l	d0,g_PageSrc+buf_Len(a4)
+	move.l	d4,d1
+	DOS	Close
+	moveq	#1,d0
+	bra.s	.x
+.close:	move.l	d4,d1
+	DOS	Close
+.fail:	SETERR	ERR_FILE
+	moveq	#0,d0
+.x:	movem.l	(sp)+,d2-d4
+	rts
+
+CmdHtml:
+	move.l	T_Words+4,a0
+	bsr	LoadPage
+	beq	PutError
+	bsr	PutNL
+	move.l	g_PageSrc+buf_Data(a4),a0
+	bsr	HtmlParse
+	tst.l	d0
+	beq	PutError
+	move.l	d0,a0
+	moveq	#0,d0
+	bra.s	DumpNode
+
+; DumpNode - print a node and its subtree
+; In: a0 = node, d0 = depth
+DumpNode:
+	movem.l	d2/a2-a3,-(sp)
+	move.l	a0,a2
+	move.l	d0,d2
+	move.l	d2,d0			; indent
+	add.l	d0,d0
+.ind:	subq.l	#1,d0
+	bmi.s	.indd
+	move.l	d0,-(sp)
+	moveq	#' ',d0
+	bsr	PutChar
+	movem.l	(sp)+,d0
+	bra.s	.ind
+.indd:	move.b	n_Type(a2),d0
+	cmp.b	#DN_TEXT,d0
+	beq.s	.text
+	cmp.b	#DN_ELEMENT,d0
+	beq.s	.elem
+	lea	MsgDoc(pc),a0
+	bsr	PutStr
+	bra.s	.kids
+.text:	moveq	#'"',d0
+	bsr	PutChar
+	move.l	n_Data(a2),a0
+	move.l	n_Data2(a2),d0
+	bsr	PutEscaped
+	moveq	#'"',d0
+	bsr	PutChar
+	bsr	PutNL
+	bra.s	.x
+.elem:	moveq	#'<',d0
+	bsr	PutChar
+	move.w	n_Tag(a2),d0
+	bsr	TagNameOf
+	bsr	PutStr
+	move.l	n_Data(a2),a3
+.attr:	move.l	a3,d0
+	beq.s	.ae
+	moveq	#' ',d0
+	bsr	PutChar
+	move.l	at_Name(a3),a0
+	bsr	PutStr
+	lea	MsgEqQ(pc),a0
+	bsr	PutStr
+	move.l	at_Value(a3),a0
+	moveq	#-1,d0
+	bsr	PutEscaped
+	moveq	#'"',d0
+	bsr	PutChar
+	move.l	at_Next(a3),a3
+	bra.s	.attr
+.ae:	moveq	#'>',d0
+	bsr	PutChar
+.kids:	bsr	PutNL
+	move.l	n_First(a2),a3
+.k:	move.l	a3,d0
+	beq.s	.x
+	move.l	a3,a0
+	move.l	d2,d0
+	addq.l	#1,d0
+	bsr	DumpNode
+	move.l	n_Next(a3),a3
+	bra.s	.k
+.x:	movem.l	(sp)+,d2/a2-a3
+	rts
+
+; PutEscaped - print text with controls and 8-bit characters as \xNN
+; In: a0 = text, d0 = length (-1: NUL terminated)
+PutEscaped:
+	movem.l	d2/a2,-(sp)
+	move.l	a0,a2
+	move.l	d0,d2
+.l:	subq.l	#1,d2
+	cmp.l	#-1,d2
+	beq.s	.x			; length exhausted
+	moveq	#0,d0
+	move.b	(a2)+,d0
+	bne.s	.nz
+	tst.l	d2			; NUL ends a terminated string
+	bmi.s	.x
+.nz:	cmp.b	#10,d0
+	bne.s	.notnl
+	lea	MsgBsN(pc),a0
+	bsr	PutStr
+	bra.s	.l
+.notnl:	cmp.b	#' ',d0
+	blo.s	.hex
+	cmp.b	#$7f,d0
+	bhs.s	.hex
+	bsr	PutChar
+	bra.s	.l
+.hex:	move.l	d0,-(sp)
+	lea	MsgBsX(pc),a0
+	bsr	PutStr
+	movem.l	(sp)+,d0
+	lea	Hex(pc),a0
+	move.l	d0,-(sp)
+	lsr.b	#4,d0
+	move.b	(a0,d0.w),d0
+	bsr	PutChar
+	movem.l	(sp)+,d0
+	and.w	#15,d0
+	lea	Hex(pc),a0
+	move.b	(a0,d0.w),d0
+	bsr	PutChar
+	bra.s	.l
+.x:	movem.l	(sp)+,d2/a2
+	rts
+
+MsgDoc:		dc.b	"#document",0
+MsgEqQ:		dc.b	'="',0
+MsgBsN:		dc.b	92,"n",0
+MsgBsX:		dc.b	92,"x",0
+Hex:		dc.b	"0123456789abcdef"
 	even
 
 ;====================================================================
