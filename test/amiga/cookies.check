@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+"""checks for cookies.script"""
+import os
+import re
+import sys
+
+r = sys.argv[1]
+d = os.path.dirname(r)
+fail = []
+res = open(r).read()
+for want in ("first rc=0", "second rc=0"):
+    if want not in res:
+        fail.append("missing " + want)
+
+
+def cookie_line(name):
+    p = os.path.join(d, name)
+    txt = open(p, encoding="latin-1").read() if os.path.exists(p) else ""
+    m = re.search(r"^Cookie: (.*)$", txt, re.M)
+    return m.group(1) if m else ""
+
+
+first = cookie_line("cookies1.out")
+second = cookie_line("cookies2.out")
+print("first run: ", first)
+print("second run:", second)
+for c in ("sess=2", "keep=1", "far=3"):
+    if c not in first:
+        fail.append("first run lacks " + c)
+for c in ("keep=1", "far=3"):
+    if c not in second:
+        fail.append("second run lacks " + c)
+if "sess=2" in second:
+    fail.append("the session cookie survived")
+p = os.path.join(d, "Cookies.saved")
+saved = open(p, encoding="latin-1").read() if os.path.exists(p) else ""
+lines = saved.splitlines()
+print("saved:", lines)
+# 2060-01-01 in seconds since 1978-01-01 (above 2^31: written unsigned)
+if not any(l.startswith("2587680000\t") and l.endswith("\tfar\t3") for l in lines):
+    fail.append("far=3 not saved with its expiry")
+if len(lines) != 2:
+    fail.append("expected 2 saved cookies")
+for f in fail:
+    print(f)
+sys.exit(1 if fail else 0)

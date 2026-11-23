@@ -1,0 +1,10 @@
+; cookies: persistent cookies survive a restart, session cookies do not
+Echo >VELOX:r/cookies.txt "cookies"
+Delete >NIL: ENVARC:Velox/Cookies
+VELOX:velox http://127.0.0.1:8080/setcookie2 DUMP >VELOX:r/cookies1.out
+Echo >>VELOX:r/cookies.txt "first rc=$RC"
+VELOX:velox http://127.0.0.1:8080/echo/cookie DUMP >VELOX:r/cookies2.out
+Echo >>VELOX:r/cookies.txt "second rc=$RC"
+Copy ENVARC:Velox/Cookies VELOX:r/Cookies.saved
+Delete >NIL: ENVARC:Velox/Cookies
+Echo >>VELOX:r/cookies.txt "done"

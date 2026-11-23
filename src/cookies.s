@@ -1,14 +1,18 @@
 ;
-; cookies.s - HTTP cookies (RFC 6265 subset), kept for the session
+; cookies.s - HTTP cookies (RFC 6265 subset)
 ;
 ; A cookie is one allocation: the Cookie header followed by its strings.
+; Cookies with Max-Age or Expires are persistent: they are kept in
+; ENVARC:Velox/Cookies between runs (one per line: expiry, flags,
+; domain, path, name, value, separated by tabs; times in seconds since
+; 1978 as the Amiga clock counts).  The others last for the session.
 ;
 
 	include	"velox.i"
 
-	xdef	CookieSet,CookieHeader,CookieFreeAll
+	xdef	CookieSet,CookieHeader,CookieFreeAll,CookiesLoad,CookiesSave
 	xref	Alloc,Free,ToLower,StrIPrefix,SkipSpace,ParseDec,BufAppendStr
-	xref	BufAppendByte,BufAppend
+	xref	BufAppendByte,BufAppend,FmtUDec,StrLen
 
 MAX_COOKIES	equ	300
 MAX_COOKIE	equ	4096
@@ -21,6 +25,7 @@ ck_Domain	rs.l	1		; lower case, no leading dot
 ck_Path		rs.l	1
 ck_Name		rs.l	1
 ck_Value	rs.l	1
+ck_Expires	rs.l	1		; seconds since 1978, 0 = session
 ck_Flags	rs.b	1
 ck_pad		rs.b	3
 CK_SIZEOF	rs.b	0
@@ -89,6 +94,8 @@ CookieSet:
 	moveq	#0,d5			; domain
 	moveq	#0,d6			; path
 	suba.l	a5,a5			; 1 = delete
+	clr.l	g_CookieExp(a4)		; Expires
+	clr.l	g_CookieAge(a4)		; Max-Age (wins over Expires)
 	moveq	#1,d1
 .attr:	cmp.l	d7,d1
 	bhs	.done
@@ -133,30 +140,40 @@ CookieSet:
 	beq.s	.del
 	jsr	ParseDec
 	tst.l	d0
-	bne.s	.an
+	beq.s	.del
+	move.l	d0,g_CookieAge(a4)
+	bra.s	.an
 .del:	move.w	#1,a5
 	bra.s	.an
 .a5:	move.l	a3,a0
 	lea	AtExpires(pc),a1
 	jsr	StrIPrefix
 	beq.s	.an
-.ey:	move.b	(a0),d0			; the year: a 4 digit number
-	beq.s	.an
-	sub.b	#'0',d0
-	cmp.b	#9,d0
-	bhi.s	.en
-	jsr	ParseDec
-	cmp.l	#4,d1
-	bne.s	.ey
-	cmp.l	#2000,d0		; long ago: the site deletes it
-	blo.s	.del
-	bra.s	.an
-.en:	addq.l	#1,a0
-	bra.s	.ey
+	bsr	AttrValue
+	bsr	ParseDate
+	move.l	d0,g_CookieExp(a4)
 .an:	move.l	(sp)+,d1
 	addq.l	#1,d1
 	bra	.attr
-.done:	; the domain must match the request host
+.done:	; expiry: Max-Age, else Expires; in the past: a delete
+	bsr	Now
+	move.l	d0,d7
+	move.l	g_CookieAge(a4),d1
+	beq.s	.exp
+	add.l	d1,d7			; now + Max-Age
+	bcc.s	.ttl
+	moveq	#-1,d7
+	bra.s	.ttl
+.exp:	move.l	g_CookieExp(a4),d1
+	beq.s	.sess
+	cmp.l	d0,d1
+	bls.s	.gone
+	move.l	d1,d7
+	bra.s	.ttl
+.gone:	move.w	#1,a5
+.sess:	moveq	#0,d7
+.ttl:
+	; the domain must match the request host
 	lea	g_Parts+up_Host(a4),a1
 	tst.l	d5
 	beq.s	.host
@@ -198,14 +215,33 @@ CookieSet:
 	addq.l	#1,a3
 .cut:	clr.b	(a3)
 .haspath:
-	; replace a cookie with the same domain, path and name
+	move.l	a5,d0
+	beq.s	.keep
+	move.l	d5,a0			; a delete
+	move.l	d6,a1
+	move.l	d2,d0
+	bsr	CookieRemove
+	bra.s	.x
+.keep:	bsr	Store
+.x:	lea	MAX_SEGS*4(sp),sp
+	movem.l	(sp)+,d2-d7/a2-a3/a5
+	rts
+
+;--------------------------------------------------------------------
+; Store - add a cookie, replacing one with the same domain, path and
+; name.  In: d2 = name, d3 = value, d4 = flags, d5 = domain, d6 = path,
+; d7 = expiry (0 = session)
+;--------------------------------------------------------------------
+Store:
+	movem.l	d1-d7/a2-a3,-(sp)
 	move.l	d5,a0
 	move.l	d6,a1
 	move.l	d2,d0
 	bsr	CookieRemove
-	move.l	a5,d0
-	bne	.x			; it was a delete
-	; one allocation for the cookie and its strings
+	tst.l	d7
+	beq.s	.nd
+	st	g_CookiesDirty(a4)	; the file changes
+.nd:	; one allocation for the cookie and its strings
 	move.l	d5,a0
 	bsr	Len
 	move.l	d0,d1
@@ -239,6 +275,7 @@ CookieSet:
 	move.l	d3,a0
 	bsr	Cpy
 	move.b	d4,ck_Flags(a3)
+	move.l	d7,ck_Expires(a3)
 	cmp.l	#MAX_COOKIES,g_CookieCount(a4)
 	blo.s	.add
 	bsr	DropOldest
@@ -249,8 +286,7 @@ CookieSet:
 	bra.s	.ap
 .ape:	move.l	a3,(a0)			; (ck_Next is at offset 0)
 	addq.l	#1,g_CookieCount(a4)
-.x:	lea	MAX_SEGS*4(sp),sp
-	movem.l	(sp)+,d2-d7/a2-a3/a5
+.x:	movem.l	(sp)+,d1-d7/a2-a3
 	rts
 
 ; Trim - In: a0 = NUL terminated string (writable)
@@ -388,7 +424,10 @@ CookieRemove:
 	move.l	d4,a1
 	bsr	StrEq
 	beq.s	.n
-	move.l	ck_Next(a2),(a3)	; unlink and free
+	tst.l	ck_Expires(a2)
+	beq.s	.ns
+	st	g_CookiesDirty(a4)
+.ns:	move.l	ck_Next(a2),(a3)	; unlink and free
 	subq.l	#1,g_CookieCount(a4)
 	move.l	a2,a1
 	jsr	Free
@@ -415,12 +454,19 @@ DropOldest:
 ; Out: d0 = 0 when out of memory
 ;--------------------------------------------------------------------
 CookieHeader:
-	movem.l	d2-d3/a2-a3,-(sp)
+	movem.l	d2-d4/a2-a3,-(sp)
 	move.l	a0,a3
+	bsr	Now
+	move.l	d0,d4			; d4 = now
 	moveq	#0,d3			; cookies written
 	move.l	g_Cookies(a4),a2
 .l:	move.l	a2,d0
 	beq	.done
+	move.l	ck_Expires(a2),d0	; expired?
+	beq.s	.live
+	cmp.l	d4,d0
+	bls	.n
+.live:
 	; secure cookies only over https
 	btst	#0,ck_Flags(a2)
 	beq.s	.s
@@ -490,7 +536,7 @@ CookieHeader:
 .done:	moveq	#1,d0
 	bra.s	.x
 .fail:	moveq	#0,d0
-.x:	movem.l	(sp)+,d2-d3/a2-a3
+.x:	movem.l	(sp)+,d2-d4/a2-a3
 	rts
 
 SCookie:	dc.b	13,10,"Cookie: ",0
@@ -506,3 +552,285 @@ CookieFreeAll:
 	bsr	DropOldest
 	bra.s	.l
 .x:	rts
+
+;--------------------------------------------------------------------
+; Now - the time in seconds since 1978 (g_TestNow if set, for tests)
+;--------------------------------------------------------------------
+Now:
+	move.l	g_TestNow(a4),d0
+	bne.s	.x
+	lea	-12(sp),sp
+	move.l	sp,d1
+	DOS	DateStamp
+	move.l	(sp),d0			; days
+	mulu.l	#86400,d0
+	move.l	4(sp),d1		; minutes
+	mulu.w	#60,d1
+	add.l	d1,d0
+	move.l	8(sp),d1		; ticks
+	divu.w	#50,d1
+	and.l	#$ffff,d1
+	add.l	d1,d0
+	lea	12(sp),sp
+.x:	rts
+
+;--------------------------------------------------------------------
+; ParseDate - an HTTP date ("Wed, 21 Oct 2026 07:28:00 GMT", also
+; with dashes or a 2 digit year) to seconds since 1978
+; In:  a0 = text; Out: d0 = seconds, or 0 if there is no year
+;--------------------------------------------------------------------
+ParseDate:
+	movem.l	d2-d6,-(sp)
+	moveq	#1,d2			; day
+	moveq	#0,d3			; month 0-11
+	moveq	#0,d4			; year
+	moveq	#0,d5			; seconds of the day
+.tok:	move.b	(a0),d0
+	beq	.calc
+	sub.b	#'0',d0
+	cmp.b	#9,d0
+	bls.s	.num
+	move.b	(a0),d0			; a month name?
+	jsr	ToLower
+	move.b	d0,d1
+	lsl.w	#8,d1
+	move.b	1(a0),d0
+	jsr	ToLower
+	move.b	d0,d1
+	swap	d1
+	move.b	2(a0),d0
+	jsr	ToLower
+	lsl.w	#8,d0
+	move.w	d0,d1
+	lea	Months(pc),a1
+	moveq	#0,d6
+.m:	move.l	(a1)+,d0
+	beq.s	.skip
+	and.l	#$ffffff00,d1
+	cmp.l	d0,d1
+	beq.s	.mon
+	addq.l	#1,d6
+	bra.s	.m
+.mon:	move.l	d6,d3
+.skip:	addq.l	#1,a0
+	bra.s	.tok
+.num:	jsr	ParseDec		; d0 = value, d1 = digits
+	cmp.b	#':',(a0)
+	bne.s	.notime
+	mulu.l	#3600,d0		; hh:mm:ss
+	move.l	d0,d5
+	addq.l	#1,a0
+	jsr	ParseDec
+	mulu.w	#60,d0
+	add.l	d0,d5
+	cmp.b	#':',(a0)
+	bne.s	.tok
+	addq.l	#1,a0
+	jsr	ParseDec
+	add.l	d0,d5
+	bra.s	.tok
+.notime:
+	cmp.l	#2,d1
+	bhi.s	.year
+	tst.l	d4			; 2 digits: the day, then the year
+	bne.s	.yy
+	cmp.l	#1,d2
+	bne.s	.yy
+	move.l	d0,d2
+	bra.s	.tok
+.yy:	add.l	#1900,d0		; 70-99: 19xx, else 20xx
+	cmp.l	#1970,d0
+	bhs.s	.year
+	add.l	#100,d0
+.year:	move.l	d0,d4
+	bra	.tok
+.calc:	moveq	#0,d0
+	cmp.l	#1978,d4		; before the Amiga's epoch: long gone
+	blo.s	.old
+	cmp.l	#2099,d4		; the far future: 2099
+	bls.s	.y
+	move.l	#2099,d4
+.y:	move.l	d4,d0			; days: years, leap days, months, day
+	sub.l	#1978,d0
+	mulu.l	#365,d0
+	move.l	d4,d1
+	subq.l	#1,d1
+	lsr.l	#2,d1
+	sub.l	#1977/4,d1		; leap years since 1978
+	add.l	d1,d0
+	lea	MonthDays(pc),a1
+	add.w	(a1,d3.l*2),d0
+	cmp.l	#2,d3			; past February in a leap year
+	blo.s	.nl
+	moveq	#3,d1
+	and.l	d4,d1
+	bne.s	.nl
+	addq.l	#1,d0
+.nl:	add.l	d2,d0
+	subq.l	#1,d0
+	mulu.l	#86400,d0
+	add.l	d5,d0
+	bne.s	.x
+.old:	moveq	#1,d0			; (0 means "no date")
+.x:	movem.l	(sp)+,d2-d6
+	rts
+
+Months:		dc.b	"jan",0,"feb",0,"mar",0,"apr",0,"may",0,"jun",0
+		dc.b	"jul",0,"aug",0,"sep",0,"oct",0,"nov",0,"dec",0
+		dc.l	0
+MonthDays:	dc.w	0,31,59,90,120,151,181,212,243,273,304,334
+
+;--------------------------------------------------------------------
+; CookiesSave - write the persistent cookies (if they changed)
+;--------------------------------------------------------------------
+CookiesSave:
+	movem.l	d2-d5/a2,-(sp)
+	tst.b	g_CookiesDirty(a4)
+	beq	.x
+	lea	CkDir(pc),a0		; ENVARC:Velox may not exist yet
+	move.l	a0,d1
+	DOS	CreateDir
+	move.l	d0,d1
+	beq.s	.nodir
+	DOS	UnLock
+.nodir:	lea	CkFile(pc),a0
+	move.l	a0,d1
+	move.l	#MODE_NEWFILE,d2
+	DOS	Open
+	move.l	d0,d4
+	beq	.x
+	bsr	Now
+	move.l	d0,d5
+	move.l	g_Cookies(a4),a2
+.l:	move.l	a2,d0
+	beq.s	.done
+	move.l	ck_Expires(a2),d0	; persistent and not expired
+	beq.s	.n
+	cmp.l	d5,d0
+	bls.s	.n
+	lea	-16(sp),sp
+	move.l	sp,a0
+	jsr	FmtUDec
+	move.l	sp,a0
+	bsr	.put
+	lea	16(sp),sp
+	moveq	#'0',d2
+	add.b	ck_Flags(a2),d2
+	bsr	.tab
+	move.l	d4,d1
+	DOS	FPutC
+	move.l	ck_Domain(a2),a0
+	bsr	.field
+	move.l	ck_Path(a2),a0
+	bsr	.field
+	move.l	ck_Name(a2),a0
+	bsr	.field
+	move.l	ck_Value(a2),a0
+	bsr	.field
+	moveq	#10,d2
+	move.l	d4,d1
+	DOS	FPutC
+.n:	move.l	ck_Next(a2),a2
+	bra.s	.l
+.done:	move.l	d4,d1
+	DOS	Close
+	clr.b	g_CookiesDirty(a4)
+.x:	movem.l	(sp)+,d2-d5/a2
+	rts
+.field:	move.l	a0,-(sp)		; tab, then the string
+	move.l	d2,-(sp)
+	bsr.s	.tab
+	move.l	(sp)+,d2
+	move.l	(sp)+,a0
+.put:	move.l	a0,d2
+	move.l	d4,d1
+	DOS	FPuts
+	rts
+.tab:	move.l	d2,-(sp)
+	moveq	#9,d2
+	move.l	d4,d1
+	DOS	FPutC
+	move.l	(sp)+,d2
+	rts
+
+;--------------------------------------------------------------------
+; CookiesLoad - read the persistent cookies of earlier runs
+;--------------------------------------------------------------------
+CookiesLoad:
+	movem.l	d2-d7/a2-a3/a5,-(sp)
+	lea	CkFile(pc),a0
+	move.l	a0,d1
+	move.l	#MODE_OLDFILE,d2
+	DOS	Open
+	move.l	d0,d7
+	beq	.x
+	move.l	#MAX_FILE,d0
+	jsr	Alloc
+	move.l	d0,a5
+	tst.l	d0
+	beq	.close
+	move.l	d7,d1
+	move.l	a5,d2
+	move.l	#MAX_FILE-1,d3
+	DOS	Read
+	tst.l	d0
+	bpl.s	.rd
+	moveq	#0,d0
+.rd:	clr.b	(a5,d0.l)
+	move.l	d7,d1
+	DOS	Close
+	bsr	Now
+	move.l	d0,g_CookieExp(a4)	; (now)
+	move.l	a5,a3			; a3 = the next line
+.line:	tst.b	(a3)
+	beq.s	.free
+	move.l	a3,a0			; the end of the line
+.eol:	move.b	(a0),d0
+	beq.s	.eole
+	addq.l	#1,a0
+	cmp.b	#10,d0
+	bne.s	.eol
+	clr.b	-1(a0)
+.eole:	move.l	a0,-(sp)		; the next line
+	lea	-24(sp),sp		; six fields, split at tabs
+	move.l	sp,a2
+	moveq	#5,d0
+.f:	move.l	a3,(a2)+
+.fc:	move.b	(a3)+,d1
+	beq.s	.fe
+	cmp.b	#9,d1
+	bne.s	.fc
+	clr.b	-1(a3)
+	dbf	d0,.f
+	bra.s	.bad			; too many fields
+.fe:	tst.w	d0			; exactly six?
+	bne.s	.bad
+	move.l	(sp),a0
+	jsr	ParseDec
+	move.l	d0,d7			; expiry
+	cmp.l	g_CookieExp(a4),d7
+	bls.s	.bad			; expired
+	move.l	4(sp),a0
+	jsr	ParseDec
+	move.l	d0,d4			; flags
+	move.l	8(sp),d5		; domain
+	move.l	12(sp),d6		; path
+	move.l	16(sp),d2		; name
+	move.l	20(sp),d3		; value
+	bsr	Store
+.bad:	lea	24(sp),sp
+	move.l	(sp)+,a3
+	bra.s	.line
+.free:	move.l	a5,a1
+	jsr	Free
+	clr.b	g_CookiesDirty(a4)	; as on disk
+	bra.s	.x
+.close:	move.l	d7,d1
+	DOS	Close
+.x:	movem.l	(sp)+,d2-d7/a2-a3/a5
+	rts
+
+MAX_FILE	equ	64*1024
+CkDir:		dc.b	"ENVARC:Velox",0
+CkFile:		dc.b	"ENVARC:Velox/Cookies",0
+	even

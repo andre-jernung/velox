@@ -10,7 +10,7 @@
 	xref	MemInit,MemExit,NetExit,HttpGet,UrlFixup
 	xref	PutStr,PutBuf,PutNum,PutNL,FlushOut,ErrorText
 	xref	GuiOpen,GuiClose,GuiEventLoop,NavGo,NavExit,StrIPrefix,ParseDec
-	xref	StrCopyN,CacheInit
+	xref	StrCopyN,CacheInit,CookiesLoad,CookiesSave
 
 STACK_SIZE	equ	65536
 
@@ -98,6 +98,7 @@ Main:
 	beq	.cleanup
 	jsr	CacheInit
 	bsr	LoadSettings
+	jsr	CookiesLoad
 	tst.l	g_WBMsg(a4)
 	beq.s	.notwb
 	bsr	ToolTypes
@@ -176,7 +177,10 @@ Main:
 	DOS	FreeArgs
 .noargs:
 	jsr	FlushOut
-	jsr	NetExit
+	tst.l	g_AppPool(a4)		; (cookies live there)
+	beq.s	.nock
+	jsr	CookiesSave
+.nock:	jsr	NetExit
 	jsr	MemExit
 	bsr	CloseLibs
 	move.l	d2,d0

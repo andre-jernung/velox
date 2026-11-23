@@ -21,3 +21,10 @@ cookies http://www.example.com/a/b/other
 setcookie http://h/ =bad
 setcookie http://h/ novalue
 cookies http://h/
+# expiry: Max-Age, Expires in the past (not stored) and future, 2 digit years
+setcookie http://p.example/ keep=1;|Max-Age=3600
+setcookie http://p.example/ old=1;|Expires=Wed,|01|Jan|2020|00:00:00|GMT
+setcookie http://p.example/ far=1;|expires=Mon,|01-Jan-2060|00:00:00|GMT
+setcookie http://p.example/ two=1;|expires=Thursday,|01-Jan-70|00:00:00|GMT
+setcookie http://p.example/ age=1;|Max-Age=0;|Expires=Mon,|01|Jan|2060|00:00:00|GMT
+cookies http://p.example/

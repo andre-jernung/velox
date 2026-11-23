@@ -24,7 +24,7 @@ A small, fast web browser for classic AmigaOS 3.x, written entirely in
 - Images through datatypes.library, scaled and remapped to the screen,
   loaded while the page is already usable
 - http and https (AmiSSL with certificate checks, or through a proxy),
-  keep-alive connections, redirects, chunked transfers, session cookies
+  keep-alive connections, redirects, chunked transfers, cookies
 - A memory cache: Back and Forward, style sheets and images do not
   fetch again (Reload does)
 - Downloads of anything that is not a page, with a file requester
@@ -52,7 +52,8 @@ icon (remove the parentheses to enable one) or environment variables
 |                      | `Velox/InsecureTLS` | skip certificate checks (testing)   |
 
 Bookmarks are kept in `ENVARC:Velox/Bookmarks.html`, an ordinary page
-you can edit.
+you can edit. Cookies that a site wants kept (with an expiry date) are
+saved in `ENVARC:Velox/Cookies`; delete that file to forget them.
 
 ## Keys
 

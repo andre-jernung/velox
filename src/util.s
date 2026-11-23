@@ -6,7 +6,7 @@
 	include	"velox.i"
 
 	xdef	StrLen,StrCopy,StrCopyN,ToLower,StrIPrefix,StrIFind
-	xdef	ParseDec,ParseHex,FmtDec,SkipSpace
+	xdef	ParseDec,ParseHex,FmtDec,FmtUDec,SkipSpace
 	xdef	PutStr,PutBuf,PutChar,PutNum,PutNL,FlushOut
 	xdef	ErrorText,LogEvent
 
@@ -189,12 +189,14 @@ ParseHex:
 ; Out: a0 = points at the NUL written
 ;--------------------------------------------------------------------
 FmtDec:
-	move.l	d2,-(sp)
 	tst.l	d0
-	bpl.s	.pos
+	bpl.s	FmtUDec
 	move.b	#'-',(a0)+
 	neg.l	d0
-.pos:	lea	-12(sp),sp		; digits are produced in reverse
+; FmtUDec - the same for an unsigned number
+FmtUDec:
+	move.l	d2,-(sp)
+	lea	-12(sp),sp		; digits are produced in reverse
 	move.l	sp,a1
 .l:	divul.l	#10,d1:d0		; d0 = quotient, d1 = remainder
 	add.b	#'0',d1
