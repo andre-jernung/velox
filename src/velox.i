@@ -23,6 +23,7 @@ VELOX_I	SET	1
 	include	"graphics/rastport.i"
 	include	"workbench/startup.i"
 	include	"utility/tagitem.i"
+	include	"libraries/gadtools.i"
 
 	include	"lvo/exec_lib.i"
 	include	"lvo/dos_lib.i"
@@ -41,6 +42,9 @@ HOST_MAX	equ	256
 CONN_BUFSIZE	equ	4096
 NET_TIMEOUT	equ	60		; seconds without data before giving up
 MAX_REDIRECTS	equ	8
+STATUS_MAX	equ	160		; status line / title buffers
+PEN_CACHE	equ	64		; colours with an allocated pen
+HIST_ENTRIES	equ	32
 
 RC_OK		equ	0
 RC_WARN		equ	5
@@ -289,6 +293,53 @@ g_MeasMin	rs.l	1		; table measuring
 g_MeasPref	rs.l	1
 g_MeasLine	rs.l	1
 g_StackSwap	rs.l	3		; StackSwapStruct
+; GUI
+g_GadToolsBase	rs.l	1
+g_LayersBase	rs.l	1
+g_DiskfontBase	rs.l	1
+g_Screen	rs.l	1		; locked public screen
+g_ColorMap	rs.l	1
+g_VisualInfo	rs.l	1
+g_GList		rs.l	1
+g_GadUrl	rs.l	1
+g_GadScroll	rs.l	1
+g_NewGad	rs.b	gng_SIZEOF
+g_ScreenFont	rs.l	1
+g_FontPtr	rs.l	FONT_COUNT
+g_FontOwned	rs.b	FONT_COUNT
+g_TextAttr	rs.l	2		; struct TextAttr
+g_MeasRP	rs.b	rp_SIZEOF	; RastPort for measuring text
+g_MeasFont	rs.l	2		; font index / soft style set in g_MeasRP
+g_PaintFont	rs.l	2		; the same for the window RastPort
+g_PenCache	rs.l	PEN_CACHE*2	; $RRGGBB, pen
+g_PenCount	rs.l	1
+g_PageX		rs.l	1		; page view in window coordinates
+g_PageY		rs.l	1
+g_PageW		rs.l	1
+g_PageH		rs.l	1
+g_StatusY	rs.l	1
+g_ScrollY	rs.l	1		; document line at the top of the view
+g_ClipRect	rs.w	4		; struct Rectangle
+g_Quit		rs.l	1
+g_AbortReq	rs.l	1
+g_HoverLink	rs.l	1
+g_FocusLink	rs.l	1		; link with the keyboard focus or 0
+g_FocusIdx	rs.l	1		; its first run, or -1
+g_LogFH		rs.l	1		; LOG=file handle or 0
+g_PressLink	rs.l	1
+g_StatusText	rs.b	STATUS_MAX
+g_StatusBuf	rs.b	STATUS_MAX
+g_TitleText	rs.b	STATUS_MAX
+; navigation
+g_FragName	rs.l	1		; #fragment of the page URL or 0
+g_FragY		rs.l	1		; its position after layout or -1
+g_WantScroll	rs.l	1		; scroll position to restore or -1
+g_HistPos	rs.l	1		; current history entry or -1
+g_HistCount	rs.l	1
+g_Hist		rs.l	HIST_ENTRIES*2	; URL, scroll position
+g_PageUrl	rs.b	URL_MAX		; URL of the page shown
+g_NavUrl	rs.b	URL_MAX		; URL being loaded
+g_LinkUrl	rs.b	URL_MAX
 g_SIZEOF	rs.b	0
 
 ;--------------------------------------------------------------------
@@ -311,6 +362,16 @@ INTUI	MACRO
 
 GFX	MACRO
 	move.l	g_GfxBase(a4),a6
+	jsr	_LVO\1(a6)
+	ENDM
+
+GT	MACRO
+	move.l	g_GadToolsBase(a4),a6
+	jsr	_LVO\1(a6)
+	ENDM
+
+LAYERS	MACRO
+	move.l	g_LayersBase(a4),a6
 	jsr	_LVO\1(a6)
 	ENDM
 

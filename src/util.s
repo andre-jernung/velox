@@ -8,7 +8,7 @@
 	xdef	StrLen,StrCopy,StrCopyN,ToLower,StrIPrefix,StrIFind
 	xdef	ParseDec,ParseHex,FmtDec,SkipSpace
 	xdef	PutStr,PutBuf,PutChar,PutNum,PutNL,FlushOut
-	xdef	ErrorText
+	xdef	ErrorText,LogEvent
 
 	section	code,code
 
@@ -268,6 +268,49 @@ FlushOut:
 	beq.s	.x
 	DOS	Flush
 .x:	rts
+
+;--------------------------------------------------------------------
+; LogEvent - write "text1[ text2][ number]" as a line to the log file
+; (LOG=file argument), if there is one
+; In: a0 = text1, a1 = text2 or 0, d0 = number or $80000000 for none
+;--------------------------------------------------------------------
+LogEvent:
+	movem.l	d2-d4/a2-a3,-(sp)
+	move.l	g_LogFH(a4),d4
+	beq.s	.x
+	move.l	a1,a3
+	move.l	d0,d3
+	move.l	d4,d1
+	move.l	a0,d2
+	DOS	FPuts
+	move.l	a3,d0
+	beq.s	.nt2
+	move.l	d4,d1
+	moveq	#' ',d2
+	DOS	FPutC
+	move.l	d4,d1
+	move.l	a3,d2
+	DOS	FPuts
+.nt2:	cmp.l	#$80000000,d3
+	beq.s	.nl
+	move.l	d4,d1
+	moveq	#' ',d2
+	DOS	FPutC
+	lea	-16(sp),sp
+	move.l	d3,d0
+	move.l	sp,a0
+	bsr	FmtDec
+	move.l	d4,d1
+	move.l	sp,d2
+	DOS	FPuts
+	lea	16(sp),sp
+.nl:	move.l	d4,d1
+	moveq	#10,d2
+	DOS	FPutC
+	move.l	d4,d1
+	DOS	Flush
+.x:	movem.l	(sp)+,d2-d4/a2-a3
+	rts
 
 ;--------------------------------------------------------------------
 ; ErrorText - message for an error code

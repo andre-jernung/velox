@@ -124,6 +124,14 @@ LayoutNode:
 	move.b	st_Display(a3),d0
 	cmp.b	#DISP_NONE,d0
 	beq.s	.pop
+	tst.l	g_FragName(a4)		; the #fragment target?
+	beq.s	.nofrag
+	tst.l	g_FragY(a4)
+	bpl.s	.nofrag
+	move.l	a5,a0
+	bsr	CheckFragment
+	move.b	st_Display(a3),d0
+.nofrag:
 	move.w	n_Tag(a5),d1
 	cmp.w	#TAG_BR,d1
 	beq.s	.br
@@ -156,6 +164,41 @@ LayoutNode:
 	subq.l	#1,g_LayDepth(a4)
 .x:	movem.l	(sp)+,a2-a3/a5
 	rts
+
+; CheckFragment - set g_FragY if element a0 has id= or name= equal to
+; the fragment
+CheckFragment:
+	movem.l	a2-a3,-(sp)
+	move.l	a0,a3
+	lea	AnId(pc),a1
+	bsr	.cmp
+	beq.s	.hit
+	move.l	a3,a0
+	lea	AnName(pc),a1
+	bsr	.cmp
+	bne.s	.x
+.hit:	move.l	g_LayY(a4),d0
+	add.l	g_PendMargin(a4),d0
+	move.l	d0,g_FragY(a4)
+.x:	movem.l	(sp)+,a2-a3
+	rts
+.cmp:	bsr	DomGetAttr		; Z set if the attribute matches
+	tst.l	d0
+	beq.s	.ne
+	move.l	d0,a0
+	move.l	g_FragName(a4),a1
+.c:	move.b	(a0)+,d0
+	beq.s	.end
+	cmp.b	(a1)+,d0
+	beq.s	.c
+.ne:	moveq	#1,d0
+	rts
+.end:	tst.b	(a1)
+	rts
+
+AnId:	dc.b	"id",0
+AnName:	dc.b	"name",0
+	even
 
 ;--------------------------------------------------------------------
 ; LayoutBlock - a block-level element (incl. list items and tables)

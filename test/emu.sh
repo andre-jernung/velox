@@ -10,7 +10,8 @@
 #
 # test/server.py runs on 127.0.0.1:8080 for the duration.
 # Needs: fs-uae, xwininfo + import (ImageMagick), tools/venv (amitools).
-# AMIGA_DIR (default ~/amiga) must hold a1200.rom and wb31-02-workbench.adf.
+# AMIGA_DIR (default ~/amiga) must hold a1200.rom, wb31-02-workbench.adf and
+# wb31-06-fonts.adf.
 set -eu
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -34,6 +35,13 @@ if [ ! -d "$SYS" ]; then
 	"$ROOT/tools/venv/bin/xdftool" "$AMIGA_DIR/wb31-02-workbench.adf" unpack "$ROOT/tools/amiga"
 	sed -i 's/^EndCLI >NIL:$/IF EXISTS VELOX:autotest\n  Execute VELOX:autotest\nEndIF\nEndCLI >NIL:/' \
 		"$SYS/S/Startup-Sequence"
+fi
+# Fonts from the Workbench 3.1 fonts disk (Velox uses helvetica/courier)
+if [ ! -d "$SYS/Fonts" ]; then
+	t=$(mktemp -d)
+	"$ROOT/tools/venv/bin/xdftool" "$AMIGA_DIR/wb31-06-fonts.adf" unpack "$t"
+	cp -r "$t"/*/ "$SYS/Fonts"
+	rm -rf "$t"
 fi
 
 rm -rf "$B/r" "$B/t" "$B/shot.req" "$B/autotest" "$B/alldone" "$B/screenshot.png"
@@ -81,7 +89,18 @@ if [ $AUTO = 0 ]; then
 fi
 
 t=0
+started=""
 while [ $t -lt "$TIMEOUT" ] && [ ! -e "$B/alldone" ]; do
+	# host-side drivers (test/amiga/NAME.host) start when NAME.start appears
+	for n in $TESTS; do
+		if [ -e "$B/r/$n.start" ] && [ -x "$ROOT/test/amiga/$n.host" ]; then
+			case " $started " in *" $n "*) ;; *)
+				started="$started $n"
+				"$ROOT/tools/venv/bin/python" "$ROOT/test/amiga/$n.host" "$B/r" \
+					>"$B/r/$n.host.log" 2>&1 &
+			esac
+		fi
+	done
 	if [ -e "$B/shot.req" ] && [ ! -e "$B/screenshot.png" ]; then
 		win=$(xwininfo -root -tree | grep -i 'fs-uae' | grep -v 'has no name' | head -1 | awk '{print $1}')
 		if [ -n "$win" ]; then
