@@ -1,6 +1,6 @@
 #!/bin/sh
 # Fetch and build the Velox toolchain into tools/bin and tools/ndk.
-# Needs: git, curl, gcc, make, 7z.
+# Needs: git, curl, gcc, make, 7z, python3 with venv (python3.13-venv).
 set -eu
 cd "$(dirname "$0")"
 mkdir -p src bin ndk
@@ -19,5 +19,9 @@ if [ ! -d ndk/Include_I ]; then
 	(cd src/ndk && 7z x -y ../NDK3.2.lha >/dev/null)
 	cp -r src/ndk/Include_I src/ndk/FD src/ndk/SFD ndk/
 	cp -r "src/ndk/SANA+RoadshowTCP-IP/sfd" ndk/net_sfd
+fi
+if [ ! -x venv/bin/vamos ]; then
+	python3 -m venv venv
+	venv/bin/pip install amitools greenlet machine68k
 fi
 echo "toolchain ready"
