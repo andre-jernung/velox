@@ -133,7 +133,7 @@ CharsetDetect:
 	move.l	a0,d0
 	beq.s	.doc
 	lea	CsKey(pc),a1
-	bsr	StrIFind
+	jsr	StrIFind
 	beq.s	.doc
 	bsr.s	CharsetName
 	tst.l	d0
@@ -141,7 +141,7 @@ CharsetDetect:
 .doc:	; <meta charset="..."> or http-equiv content="...; charset=..."
 	move.l	a3,a0
 	lea	CsKey(pc),a1
-	bsr	StrIFind
+	jsr	StrIFind
 	beq.s	.auto
 	move.l	a0,d0
 	sub.l	a3,d0
@@ -167,7 +167,7 @@ CharsetName:
 	beq.s	.x
 	move.l	a2,a0
 	move.l	a3,a1
-	bsr	StrIPrefix
+	jsr	StrIPrefix
 	bne.s	.found
 .skip:	tst.b	(a3)+
 	bne.s	.skip

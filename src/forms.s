@@ -53,7 +53,7 @@ FormStateOf:
 	movem.l	d2-d3/a2-a3/a5,-(sp)
 	move.l	a0,a5
 	moveq	#FS_SIZEOF,d0
-	bsr	PageAlloc
+	jsr	PageAlloc
 	beq	.fail
 	move.l	d0,a3
 	move.w	#20,fs_Size(a3)
@@ -74,12 +74,12 @@ FormStateOf:
 	beq.s	.bt
 	move.l	d0,a0
 	lea	SReset(pc),a1
-	bsr	StrIPrefix
+	jsr	StrIPrefix
 	beq.s	.bb
 	moveq	#FK_RESET,d2
 	bra.s	.bt
 .bb:	lea	SButton(pc),a1
-	bsr	StrIPrefix
+	jsr	StrIPrefix
 	beq.s	.bt
 	moveq	#FK_BUTTON,d2
 .bt:	move.b	d2,fs_Kind(a3)
@@ -99,7 +99,7 @@ FormStateOf:
 	move.l	d3,a0
 	move.l	a2,a1
 	move.b	d1,-(sp)
-	bsr	StrIPrefix
+	jsr	StrIPrefix
 	move.b	(sp)+,d1
 	tst.l	d0
 	beq.s	.tskip
@@ -194,7 +194,7 @@ FormStateOf:
 	beq.s	.sod
 	move.l	d0,a0
 	lea	AnSelected(pc),a1
-	bsr	DomGetAttr
+	jsr	DomGetAttr
 	tst.l	d0
 	beq.s	.son
 	move.w	d2,fs_Sel(a3)
@@ -213,7 +213,7 @@ FormStateOf:
 ; AttrA5 - In: a5 = element, a1 = name; Out: d0 = value or 0 (CCR set)
 AttrA5:
 	move.l	a5,a0
-	bsr	DomGetAttr
+	jsr	DomGetAttr
 	tst.l	d0
 	rts
 
@@ -222,7 +222,7 @@ NumAttrA5:
 	bsr.s	AttrA5
 	beq.s	.x
 	move.l	d0,a0
-	bsr	ParseDec
+	jsr	ParseDec
 	tst.l	d0
 .x:	rts
 
@@ -231,7 +231,7 @@ NumAttrA5:
 AllocValue:
 	move.l	fs_Max(a3),d0
 	addq.l	#1,d0
-	bsr	PageAlloc
+	jsr	PageAlloc
 	move.l	d0,fs_Value(a3)
 	rts
 
@@ -318,7 +318,7 @@ FormTextContent:
 	bsr	WalkText
 	move.l	d2,d0
 	addq.l	#1,d0
-	bsr	PageAlloc
+	jsr	PageAlloc
 	beq.s	.x
 	move.l	d0,a3			; pass 2: copy
 	move.l	d0,a2
@@ -425,7 +425,7 @@ FormControlSize:
 	sub.l	a0,d1
 	subq.l	#1,d1
 	move.l	d4,d0
-	bsr	Measure
+	jsr	Measure
 	bra.s	.lw
 .nol:	moveq	#0,d0
 .lw:	add.l	#16,d0
@@ -443,7 +443,7 @@ FormControlSize:
 	lea	CharN(pc),a0
 	moveq	#1,d1
 	move.l	d4,d0
-	bsr	Measure
+	jsr	Measure
 	moveq	#0,d1
 	move.w	fs_Size(a3),d1
 	mulu.l	d1,d0
@@ -529,7 +529,7 @@ FormActivate:
 	moveq	#0,d1			; after the last: wrap around
 .s2:	move.w	d1,fs_Sel(a3)
 	bsr	SelectLabel
-.paint:	bsr	GuiPaintAll
+.paint:	jsr	GuiPaintAll
 .x:	movem.l	(sp)+,d2/a2-a3/a5
 	rts
 
@@ -544,7 +544,7 @@ UncheckGroup:
 	movem.l	a2/a5,-(sp)
 	move.l	a0,a5
 	lea	AnName(pc),a1
-	bsr	DomGetAttr
+	jsr	DomGetAttr
 	move.l	d0,g_FormName(a4)
 	beq.s	.x
 	move.l	a5,a0
@@ -565,7 +565,7 @@ UncheckGroup:
 	bne.s	.ox
 	move.l	a5,a0
 	lea	AnName(pc),a1
-	bsr	DomGetAttr
+	jsr	DomGetAttr
 	tst.l	d0
 	beq.s	.ox
 	move.l	d0,a0
@@ -629,7 +629,7 @@ FormLeave:
 	tst.l	g_EditField(a4)
 	beq.s	.x
 	clr.l	g_EditField(a4)
-	bra	GuiPaintAll
+	jmp	GuiPaintAll
 .x:	rts
 
 ;--------------------------------------------------------------------
@@ -740,7 +740,7 @@ FormEditKey:
 .chn:	subq.l	#1,d4
 	bne.s	.ch
 .changed:
-	bsr	GuiPaintAll
+	jsr	GuiPaintAll
 .yes:	moveq	#1,d0
 	bra.s	.x
 .no:	moveq	#0,d0
@@ -789,43 +789,43 @@ FormSubmit:
 	beq	.x
 	move.l	d0,a5			; a5 = form
 	lea	g_FormBuf(a4),a0
-	bsr	BufClear
+	jsr	BufClear
 	move.l	a5,a0
 	lea	AddField(pc),a1
 	bsr	ForControls
 	; action URL, resolved against the page (or <base href>)
 	move.l	a5,a0
 	lea	AnAction(pc),a1
-	bsr	DomGetAttr
+	jsr	DomGetAttr
 	move.l	d0,a1
 	tst.l	d0
 	bne.s	.act
 	lea	SEmpty(pc),a1
 .act:	lea	g_PageUrl(a4),a0
 	lea	g_LinkUrl(a4),a2
-	bsr	UrlResolve
+	jsr	UrlResolve
 	tst.l	d0
 	beq	.x
 	move.l	g_FormBuf+buf_Data(a4),d0	; make sure there is a string
 	bne.s	.hasd
 	lea	g_FormBuf(a4),a0
 	moveq	#0,d0
-	bsr	BufAppendByte
+	jsr	BufAppendByte
 	lea	g_FormBuf(a4),a0
 	clr.l	buf_Len(a0)
 .hasd:	move.l	a5,a0
 	lea	AnMethod(pc),a1
-	bsr	DomGetAttr
+	jsr	DomGetAttr
 	tst.l	d0
 	beq.s	.get
 	move.l	d0,a0
 	lea	SPost(pc),a1
-	bsr	StrIPrefix
+	jsr	StrIPrefix
 	beq.s	.get
 	lea	g_LinkUrl(a4),a0
 	move.l	g_FormBuf+buf_Data(a4),a1
 	move.l	g_FormBuf+buf_Len(a4),d0
-	bsr	NavPost
+	jsr	NavPost
 	bra.s	.x
 .get:	; GET: replace the query of the action URL with the form data
 	lea	g_LinkUrl(a4),a0
@@ -847,7 +847,7 @@ FormSubmit:
 .ce:	clr.b	(a0)
 	lea	g_LinkUrl(a4),a0
 	moveq	#1,d0			; NAV_HISTORY
-	bsr	NavGo
+	jsr	NavGo
 .x:	movem.l	(sp)+,d2/a2-a3/a5
 	rts
 
@@ -915,7 +915,7 @@ AddField:
 	move.l	d0,a0
 	move.l	a0,-(sp)
 	lea	AnValue(pc),a1
-	bsr	DomGetAttr
+	jsr	DomGetAttr
 	movem.l	(sp)+,a0
 	tst.l	d0
 	bne.s	.pair
@@ -928,13 +928,13 @@ AddField:
 	bsr	Encode
 	lea	SImgX(pc),a1
 	lea	g_FormBuf(a4),a0
-	bsr	BufAppendStr
+	jsr	BufAppendStr
 	bsr	Amp
 	move.l	a2,a0
 	bsr	Encode
 	lea	SImgY(pc),a1
 	lea	g_FormBuf(a4),a0
-	bsr	BufAppendStr
+	jsr	BufAppendStr
 	bra.s	.x
 .pair:	move.l	d0,d2			; d2 = value
 	bsr	Amp
@@ -942,7 +942,7 @@ AddField:
 	bsr	Encode
 	lea	g_FormBuf(a4),a0
 	moveq	#'=',d0
-	bsr	BufAppendByte
+	jsr	BufAppendByte
 	move.l	d2,a0
 	bsr	Encode
 .x:	movem.l	(sp)+,d2/a2-a3/a5
@@ -954,7 +954,7 @@ Amp:
 	beq.s	.x
 	lea	g_FormBuf(a4),a0
 	moveq	#'&',d0
-	bra	BufAppendByte
+	jmp	BufAppendByte
 .x:	rts
 
 ; Encode - append text URL-encoded (application/x-www-form-urlencoded).
@@ -981,7 +981,7 @@ Encode:
 	beq.s	.esc
 	move.l	d2,d0
 .put:	lea	g_FormBuf(a4),a0
-	bsr	BufAppendByte
+	jsr	BufAppendByte
 	bra.s	.l
 .esc:	cmp.b	#$80,d2
 	blo.s	.pct
@@ -1005,19 +1005,19 @@ Pct:
 	move.b	d0,d2
 	lea	g_FormBuf(a4),a0
 	moveq	#'%',d0
-	bsr	BufAppendByte
+	jsr	BufAppendByte
 	moveq	#0,d0
 	move.b	d2,d0
 	lsr.b	#4,d0
 	move.b	HexU(pc,d0.w),d0
 	lea	g_FormBuf(a4),a0
-	bsr	BufAppendByte
+	jsr	BufAppendByte
 	moveq	#0,d0
 	move.b	d2,d0
 	and.b	#15,d0
 	move.b	HexU(pc,d0.w),d0
 	lea	g_FormBuf(a4),a0
-	bsr	BufAppendByte
+	jsr	BufAppendByte
 	movem.l	(sp)+,d2
 	rts
 HexU:	dc.b	"0123456789ABCDEF"

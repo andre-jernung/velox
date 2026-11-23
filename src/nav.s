@@ -10,7 +10,7 @@
 	xref	DomNewNode,DomAppend,DomGetAttr,StrCopyN,StrCopy,StrIPrefix,StrLen
 	xref	Alloc,Free,ErrorText,FmtDec,LayoutDocument
 	xref	GuiStatus,GuiSetUrl,GuiSetTitle,GuiPaintAll,GuiBusy,GuiNetHook
-	xref	GuiPageWidth,GuiScrollTo,LogEvent
+	xref	GuiPageWidth,GuiScrollTo,LogEvent,CssLoad
 
 HIST_MAX	equ	HIST_ENTRIES
 NAV_HISTORY	equ	1
@@ -26,7 +26,7 @@ NavGo:
 	move.l	d0,d3
 	lea	g_NavUrl(a4),a1
 	move.l	#URL_MAX-1,d0
-	bsr	StrCopyN
+	jsr	StrCopyN
 	bsr	SaveScroll
 	; a fragment of the page we are on: just scroll
 	bsr	SamePage
@@ -34,34 +34,33 @@ NavGo:
 	lea	g_NavUrl(a4),a0
 	lea	g_PageUrl(a4),a1
 	move.l	#URL_MAX-1,d0
-	bsr	StrCopyN
+	jsr	StrCopyN
 	moveq	#-1,d0
 	move.l	d0,g_WantScroll(a4)
 	bsr	ShowPage
 	bra	.hist
-.load:	lea	LogGo(pc),a0
+.load:	move.l	g_WinSigMask(a4),d0	; window events and Ctrl-C can stop
+	or.l	#SIGBREAKF_CTRL_C,d0	; the page and its style sheets
+	move.l	d0,g_AbortMask(a4)
+	lea	GuiNetHook,a0
+	move.l	a0,g_NetSigHook(a4)
+	lea	LogGo(pc),a0
 	lea	g_NavUrl(a4),a1
 	move.l	#$80000000,d0
-	bsr	LogEvent
+	jsr	LogEvent
 	lea	MsgLoading(pc),a0
 	bsr	StatusWithUrl
 	moveq	#1,d0
-	bsr	GuiBusy
+	jsr	GuiBusy
 	lea	g_NavUrl(a4),a0
 	lea	AboutPrefix(pc),a1
-	bsr	StrIPrefix
+	jsr	StrIPrefix
 	beq.s	.net
 	bsr	AboutPage
 	lea	g_NavUrl(a4),a0
 	bra.s	.built
-.net:	move.l	g_WinSigMask(a4),d0
-	or.l	#SIGBREAKF_CTRL_C,d0
-	move.l	d0,g_AbortMask(a4)
-	lea	GuiNetHook,a0
-	move.l	a0,g_NetSigHook(a4)
-	lea	g_NavUrl(a4),a0
-	bsr	HttpGet
-	clr.l	g_NetSigHook(a4)
+.net:	lea	g_NavUrl(a4),a0
+	jsr	HttpGet
 	tst.l	d0
 	bne.s	.ok
 	tst.l	g_Quit(a4)		; window closed while loading
@@ -73,7 +72,11 @@ NavGo:
 	lea	g_Resp+r_Url(a4),a0
 .built:	lea	g_PageUrl(a4),a1
 	move.l	#URL_MAX-1,d0
-	bsr	StrCopyN
+	jsr	StrCopyN
+	jsr	CssLoad
+	clr.l	g_NetSigHook(a4)
+	tst.l	g_Quit(a4)
+	bne	.x
 	bsr	ShowPage
 .hist:	btst	#0,d3
 	beq.s	.nohist
@@ -81,7 +84,7 @@ NavGo:
 	bsr	HistoryPush
 .nohist:
 	moveq	#0,d0
-	bsr	GuiBusy
+	jsr	GuiBusy
 .x:	movem.l	(sp)+,d2-d3/a2
 	rts
 
@@ -96,12 +99,12 @@ MsgLoading:	dc.b	"Loading ",0
 ; StatusWithUrl - status line "<a0>g_NavUrl"
 StatusWithUrl:
 	lea	g_StatusBuf(a4),a1
-	bsr	StrCopy
+	jsr	StrCopy
 	lea	g_NavUrl(a4),a0
 	move.l	#STATUS_MAX-20,d0
-	bsr	StrCopyN
+	jsr	StrCopyN
 	lea	g_StatusBuf(a4),a0
-	bra	GuiStatus
+	jmp	GuiStatus
 
 ; SamePage - is g_NavUrl a #fragment of the current page?
 ; Out: d0 = 1 if yes
@@ -134,7 +137,7 @@ SamePage:
 ; TakeResponse - make the page from g_Resp
 TakeResponse:
 	movem.l	a2,-(sp)
-	bsr	PageNew
+	jsr	PageNew
 	lea	g_Resp+r_Body(a4),a0	; the body becomes the page source
 	lea	g_PageSrc(a4),a1
 	move.l	(a0),(a1)+
@@ -145,7 +148,7 @@ TakeResponse:
 	clr.l	(a0)+
 	lea	g_PageSrc(a4),a0	; make sure there is a terminated buffer
 	moveq	#1,d0
-	bsr	BufReserve
+	jsr	BufReserve
 	move.l	g_PageSrc+buf_Data(a4),a0
 	add.l	g_PageSrc+buf_Len(a4),a0
 	clr.b	(a0)
@@ -154,15 +157,15 @@ TakeResponse:
 	beq.s	.html
 	move.l	a2,a0
 	lea	CtHtml(pc),a1
-	bsr	StrIPrefix
+	jsr	StrIPrefix
 	bne.s	.html
 	move.l	a2,a0
 	lea	CtXhtml(pc),a1
-	bsr	StrIPrefix
+	jsr	StrIPrefix
 	bne.s	.html
 	move.l	a2,a0
 	lea	CtText(pc),a1
-	bsr	StrIPrefix
+	jsr	StrIPrefix
 	bne.s	.plain
 	bsr	BinaryPage
 	bra.s	.x
@@ -182,65 +185,65 @@ CtText:		dc.b	"text/",0
 ; In: a0 = Content-Type or 0
 HtmlPage:
 	move.l	g_PageSrc+buf_Data(a4),a1
-	bsr	CharsetDetect
+	jsr	CharsetDetect
 	move.l	d0,d1
 	move.l	g_PageSrc+buf_Data(a4),a0
 	move.l	g_PageSrc+buf_Len(a4),d0
-	bsr	DecodeCharset
+	jsr	DecodeCharset
 	move.l	d0,g_PageSrc+buf_Len(a4)
 	move.l	g_PageSrc+buf_Data(a4),a0
-	bra	HtmlParse
+	jmp	HtmlParse
 
 ; PlainPage - show g_PageSrc as preformatted text
 PlainPage:
 	movem.l	a2-a3,-(sp)
 	lea	g_Resp+r_CType(a4),a0
 	move.l	g_PageSrc+buf_Data(a4),a1
-	bsr	CharsetDetect
+	jsr	CharsetDetect
 	move.l	d0,d1
 	move.l	g_PageSrc+buf_Data(a4),a0
 	move.l	g_PageSrc+buf_Len(a4),d0
-	bsr	DecodeCharset
+	jsr	DecodeCharset
 	move.l	d0,g_PageSrc+buf_Len(a4)
 	moveq	#DN_DOCUMENT,d0
 	moveq	#0,d1
-	bsr	DomNewNode
+	jsr	DomNewNode
 	move.l	d0,g_Doc(a4)
 	beq.s	.x
 	move.l	d0,a2
 	moveq	#DN_ELEMENT,d0
 	moveq	#TAG_PRE,d1
-	bsr	DomNewNode
+	jsr	DomNewNode
 	tst.l	d0
 	beq.s	.x
 	move.l	d0,a3
 	move.l	a2,a0
 	move.l	a3,a1
-	bsr	DomAppend
+	jsr	DomAppend
 	moveq	#DN_TEXT,d0
 	moveq	#0,d1
-	bsr	DomNewNode
+	jsr	DomNewNode
 	tst.l	d0
 	beq.s	.x
 	move.l	d0,a1
 	move.l	g_PageSrc+buf_Data(a4),n_Data(a1)
 	move.l	g_PageSrc+buf_Len(a4),n_Data2(a1)
 	move.l	a3,a0
-	bsr	DomAppend
+	jsr	DomAppend
 .x:	movem.l	(sp)+,a2-a3
 	rts
 
 ; GenStart - start a generated HTML page in g_PageSrc
 GenStart:
-	bsr	PageNew
+	jsr	PageNew
 	lea	g_PageSrc(a4),a0
-	bra	BufClear
+	jmp	BufClear
 
 ; Gen - append a string; Gen0 - append an HTML-escaped string
 ; In: a1 = string
 Gen:
 	lea	g_PageSrc(a4),a0
-	bra	BufAppendStr
+	jmp	BufAppendStr
 GenEsc:
 	movem.l	d2/a2,-(sp)
 	move.l	a1,a2
@@ -258,7 +261,7 @@ GenEsc:
 	beq.s	.esc
 	lea	g_PageSrc(a4),a0
 	move.l	d2,d0
-	bsr	BufAppendByte
+	jsr	BufAppendByte
 	bra.s	.l
 .esc:	bsr.s	Gen
 	bra.s	.l
@@ -277,9 +280,9 @@ GenEnd:
 	moveq	#CS_LATIN1,d1
 	move.l	d0,a0
 	move.l	g_PageSrc+buf_Len(a4),d0
-	bsr	DecodeCharset
+	jsr	DecodeCharset
 	move.l	g_PageSrc+buf_Data(a4),a0
-	bsr	HtmlParse
+	jsr	HtmlParse
 .x:	rts
 
 ; ErrorPage - page explaining g_Error for g_NavUrl
@@ -288,7 +291,7 @@ ErrorPage:
 	lea	PgErr1(pc),a1
 	bsr	Gen
 	move.l	g_Error(a4),d0
-	bsr	ErrorText
+	jsr	ErrorText
 	move.l	a0,a1
 	bsr	GenEsc
 	lea	PgErr2(pc),a1
@@ -318,7 +321,7 @@ BinaryPage:
 	lea	-16(sp),sp
 	move.l	d2,d0
 	move.l	sp,a0
-	bsr	FmtDec
+	jsr	FmtDec
 	move.l	sp,a1
 	bsr	Gen
 	lea	16(sp),sp
@@ -338,7 +341,7 @@ AboutPage:
 	bsr	GenStart
 	lea	g_NavUrl(a4),a0
 	lea	AboutBlank(pc),a1
-	bsr	StrIPrefix
+	jsr	StrIPrefix
 	bne.s	.end
 	lea	PgStart(pc),a1
 	bsr	Gen
@@ -388,8 +391,8 @@ ShowPage:
 	clr.l	g_FocusLink(a4)
 	moveq	#-1,d0
 	move.l	d0,g_FocusIdx(a4)
-	bsr	GuiPageWidth
-	bsr	LayoutDocument
+	jsr	GuiPageWidth
+	jsr	LayoutDocument
 	move.l	g_WantScroll(a4),d0	; back/forward: old position
 	bpl.s	.scr
 	move.l	g_FragY(a4),d0
@@ -419,7 +422,7 @@ ShowPage:
 .notitle:
 	lea	g_PageUrl(a4),a0
 	move.l	#STATUS_MAX-1,d0
-	bsr	StrCopyN
+	jsr	StrCopyN
 	bra.s	.tset
 .tc:	subq.l	#1,d0
 	bmi.s	.te
@@ -427,26 +430,26 @@ ShowPage:
 	dbf	d0,.tcl
 .te:	clr.b	(a1)
 .tset:	lea	g_TitleText(a4),a0
-	bsr	GuiSetTitle
+	jsr	GuiSetTitle
 	lea	g_PageUrl(a4),a0
-	bsr	GuiSetUrl
+	jsr	GuiSetUrl
 	lea	g_TitleText(a4),a0
 	lea	g_StatusText(a4),a1
 	move.l	#STATUS_MAX-1,d0
-	bsr	StrCopyN
-	bsr	GuiPaintAll
+	jsr	StrCopyN
+	jsr	GuiPaintAll
 	lea	LogPage(pc),a0
 	lea	g_PageUrl(a4),a1
 	move.l	g_DocHeight(a4),d0
-	bsr	LogEvent
+	jsr	LogEvent
 	lea	LogTitle(pc),a0
 	lea	g_TitleText(a4),a1
 	move.l	#$80000000,d0
-	bsr	LogEvent
+	jsr	LogEvent
 	lea	LogTop(pc),a0
 	suba.l	a1,a1
 	move.l	g_ScrollY(a4),d0
-	bsr	LogEvent
+	jsr	LogEvent
 	movem.l	(sp)+,a2
 	rts
 
@@ -470,16 +473,16 @@ NavPost:
 NavLink:
 	move.l	a2,-(sp)
 	lea	AnHref(pc),a1
-	bsr	DomGetAttr
+	jsr	DomGetAttr
 	tst.l	d0
 	beq.s	.x
 	move.l	d0,a2
 	move.l	a2,a0
 	lea	JsPrefix(pc),a1
-	bsr	StrIPrefix
+	jsr	StrIPrefix
 	beq.s	.notjs
 	lea	MsgNoJs(pc),a0
-	bsr	GuiStatus
+	jsr	GuiStatus
 	bra.s	.x
 .notjs:	lea	g_PageUrl(a4),a0	; base: <base href> resolved, or the page
 	move.l	g_BaseHref(a4),d0
@@ -487,7 +490,7 @@ NavLink:
 	move.l	d0,a1
 	movem.l	a2,-(sp)
 	lea	g_UrlTmp2(a4),a2
-	bsr	UrlResolve
+	jsr	UrlResolve
 	movem.l	(sp)+,a2
 	lea	g_UrlTmp2(a4),a0
 	tst.l	d0
@@ -495,15 +498,15 @@ NavLink:
 	lea	g_PageUrl(a4),a0
 .res:	move.l	a2,a1
 	lea	g_LinkUrl(a4),a2
-	bsr	UrlResolve
+	jsr	UrlResolve
 	tst.l	d0
 	beq.s	.x
 	lea	g_LinkUrl(a4),a0
 	lea	MailPrefix(pc),a1
-	bsr	StrIPrefix
+	jsr	StrIPrefix
 	beq.s	.go
 	lea	MsgNoMail(pc),a0
-	bsr	GuiStatus
+	jsr	GuiStatus
 	bra.s	.x
 .go:	lea	g_LinkUrl(a4),a0
 	moveq	#NAV_HISTORY,d0
@@ -559,14 +562,14 @@ HistoryPush:
 	blo.s	.room
 	bsr	HistoryDropFirst
 .room:	move.l	a2,a0
-	bsr	StrLen
+	jsr	StrLen
 	addq.l	#1,d0
-	bsr	Alloc
+	jsr	Alloc
 	beq.s	.x
 	move.l	d0,a1
 	move.l	a2,a0
 	move.l	a1,-(sp)
-	bsr	StrCopy
+	jsr	StrCopy
 	move.l	(sp)+,d0
 	move.l	g_HistCount(a4),d1
 	lea	g_Hist(a4),a0
@@ -582,7 +585,7 @@ HistoryDropLast:
 	move.l	g_HistCount(a4),d0
 	lea	g_Hist(a4),a0
 	move.l	(a0,d0.l*8),a1
-	bra	Free
+	jmp	Free
 
 HistoryDropFirst:
 	lea	g_Hist(a4),a0
@@ -595,7 +598,7 @@ HistoryDropFirst:
 	dbf	d0,.m
 .f:	subq.l	#1,g_HistCount(a4)
 	subq.l	#1,g_HistPos(a4)
-	bra	Free
+	jmp	Free
 
 ; NavBack / NavForward / NavReload / NavHome
 NavBack:

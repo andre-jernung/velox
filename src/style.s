@@ -47,6 +47,7 @@ StyleCompute:
 	clr.l	st_MTop(a3)
 	clr.l	st_MLeft(a3)
 	clr.l	st_Width(a3)
+	bclr	#1,st_Flags(a3)		; SF_MAUTO
 
 	; user agent defaults
 	moveq	#0,d0
@@ -175,7 +176,7 @@ StyleCompute:
 	bra	.attrs
 .a:	move.l	a5,a0
 	lea	AnHref(pc),a1
-	bsr	DomGetAttr
+	jsr	DomGetAttr
 	tst.l	d0
 	beq	.attrs
 	move.l	a5,st_Link(a3)
@@ -184,7 +185,7 @@ StyleCompute:
 	bra	.attrs
 .font:	move.l	a5,a0
 	lea	AnColor(pc),a1
-	bsr	DomGetAttr
+	jsr	DomGetAttr
 	tst.l	d0
 	beq.s	.fsize
 	move.l	d0,a0
@@ -194,11 +195,11 @@ StyleCompute:
 	move.l	d0,st_Color(a3)
 .fsize:	move.l	a5,a0
 	lea	AnSize(pc),a1
-	bsr	DomGetAttr
+	jsr	DomGetAttr
 	tst.l	d0
 	beq.s	.fface
 	move.l	d0,a0
-	bsr	SkipSpace
+	jsr	SkipSpace
 	moveq	#0,d3			; relative: +n / -n from 3
 	move.b	(a0),d0
 	cmp.b	#'+',d0
@@ -229,31 +230,31 @@ StyleCompute:
 	move.b	d1,st_Font(a3)
 .fface:	move.l	a5,a0
 	lea	AnFace(pc),a1
-	bsr	DomGetAttr
+	jsr	DomGetAttr
 	tst.l	d0
 	beq.s	.attrs
 	move.l	d0,d4
 	move.l	d0,a0
 	lea	SCourier(pc),a1
-	bsr	StrIFind
+	jsr	StrIFind
 	bne.s	.mono
 	move.l	d4,a0
 	lea	SMono(pc),a1
-	bsr	StrIFind
+	jsr	StrIFind
 	beq.s	.attrs
 .mono:	or.b	#FONT_MONO,st_Font(a3)
 
 .attrs:	; presentational attributes common to many elements
 	move.l	a5,a0
 	lea	AnHidden(pc),a1
-	bsr	DomGetAttr
+	jsr	DomGetAttr
 	tst.l	d0
 	beq.s	.nohid
 	move.b	#DISP_NONE,st_Display(a3)
 	bra	.x
 .nohid:	move.l	a5,a0
 	lea	AnAlign(pc),a1
-	bsr	DomGetAttr
+	jsr	DomGetAttr
 	tst.l	d0
 	beq.s	.noalign
 	cmp.b	#DISP_IBLOCK,st_Display(a3)	; img/table align = floats
@@ -263,19 +264,19 @@ StyleCompute:
 	move.l	d0,a0
 	moveq	#ALIGN_LEFT,d1
 	lea	SCenter(pc),a1
-	bsr	StrIPrefix
+	jsr	StrIPrefix
 	beq.s	.al2
 	moveq	#ALIGN_CENTER,d1
 	bra.s	.setal
 .al2:	lea	SRight(pc),a1
-	bsr	StrIPrefix
+	jsr	StrIPrefix
 	beq.s	.setal
 	moveq	#ALIGN_RIGHT,d1
 .setal:	move.b	d1,st_Align(a3)
 .noalign:
 	move.l	a5,a0
 	lea	AnBgcolor(pc),a1
-	bsr	DomGetAttr
+	jsr	DomGetAttr
 	tst.l	d0
 	beq.s	.nobg
 	move.l	d0,a0
@@ -283,7 +284,7 @@ StyleCompute:
 	move.l	d0,st_Bg(a3)
 .nobg:	move.l	a5,a0
 	lea	AnText(pc),a1		; <body text=...>
-	bsr	DomGetAttr
+	jsr	DomGetAttr
 	tst.l	d0
 	beq.s	.notext
 	cmp.w	#TAG_BODY,n_Tag(a5)
@@ -296,14 +297,14 @@ StyleCompute:
 .notext:
 	move.l	a5,a0
 	lea	AnNowrap(pc),a1
-	bsr	DomGetAttr
+	jsr	DomGetAttr
 	tst.l	d0
 	beq.s	.nonowrap
 	move.b	#WS_NOWRAP,st_White(a3)
 .nonowrap:
 	move.l	a5,a0
 	lea	AnWidth(pc),a1
-	bsr	DomGetAttr
+	jsr	DomGetAttr
 	tst.l	d0
 	beq.s	.now
 	move.l	d0,a0
@@ -315,7 +316,7 @@ StyleCompute:
 .wpx:	move.w	d0,st_Width(a3)
 .now:	move.l	a5,a0
 	lea	AnHeight(pc),a1
-	bsr	DomGetAttr
+	jsr	DomGetAttr
 	tst.l	d0
 	beq.s	.x
 	move.l	d0,a0
@@ -369,7 +370,7 @@ ParseDecLocal:
 ;--------------------------------------------------------------------
 ParseColor:
 	movem.l	d2-d4/a2,-(sp)
-	bsr	SkipSpace
+	jsr	SkipSpace
 	move.l	a0,a2
 	cmp.b	#'#',(a2)
 	bne.s	.nohash
@@ -397,7 +398,7 @@ ParseColor:
 .nohash:
 	move.l	a2,a0
 	lea	SRgb(pc),a1
-	bsr	StrIPrefix
+	jsr	StrIPrefix
 	bne.s	.rgb
 	; a bare 6 digit hex value (legacy bgcolor="ffffff")
 	bsr	HexRun
@@ -414,7 +415,7 @@ ParseColor:
 .nc:	move.b	(a1)+,d1
 	beq.s	.nend
 	move.b	(a0)+,d0
-	bsr	ToLower
+	jsr	ToLower
 	cmp.b	d0,d1
 	beq.s	.nc
 .nskip:	tst.b	(a1)+			; skip the rest of the name
@@ -425,7 +426,7 @@ ParseColor:
 	move.l	d0,a1
 	bra.s	.nl
 .nend:	move.b	(a0),d0			; whole word must match
-	bsr	ToLower
+	jsr	ToLower
 	cmp.b	#'a',d0
 	blo.s	.nm
 	cmp.b	#'z',d0
@@ -438,7 +439,7 @@ ParseColor:
 .rgb:	; rgb(r, g, b) with 0-255 or percentages
 	moveq	#0,d2
 	moveq	#2,d3
-.rl:	bsr	SkipSpace
+.rl:	jsr	SkipSpace
 	bsr	ParseDecLocal
 	tst.l	d1
 	beq.s	.bad
@@ -453,7 +454,7 @@ ParseColor:
 	move.l	#255,d0
 .rc:	lsl.l	#8,d2
 	or.l	d0,d2
-	bsr	SkipSpace
+	jsr	SkipSpace
 	cmp.b	#',',(a0)
 	bne.s	.rs
 	addq.l	#1,a0
@@ -560,7 +561,7 @@ ParseLength:
 	movem.l	d2-d4,-(sp)
 	moveq	#0,d4
 	move.w	d0,d4			; em
-	bsr	SkipSpace
+	jsr	SkipSpace
 	moveq	#0,d3			; sign
 	cmp.b	#'-',(a0)
 	bne.s	.pos
@@ -595,7 +596,7 @@ ParseLength:
 	move.b	(a0),d0
 	cmp.b	#'%',d0
 	beq.s	.pct
-	bsr	ToLower
+	jsr	ToLower
 	cmp.b	#'e',d0
 	beq.s	.em
 	cmp.b	#'r',d0
@@ -603,14 +604,14 @@ ParseLength:
 	cmp.b	#'p',d0
 	bne.s	.px
 	move.b	1(a0),d0
-	bsr	ToLower
+	jsr	ToLower
 	cmp.b	#'t',d0
 	bne.s	.px
 	mulu.l	#4,d2			; pt = 4/3 px
 	divu.l	#3,d2
 	bra.s	.px
 .em:	move.b	1(a0),d0
-	bsr	ToLower
+	jsr	ToLower
 	mulu.l	d4,d2
 	cmp.b	#'x',d0
 	bne.s	.px

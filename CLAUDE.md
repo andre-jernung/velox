@@ -48,6 +48,10 @@ and a single event dispatch point.
   destroys the result flags the caller tests (this bug happened).
 - Library calls use the `EXEC`/`DOS`/`INTUI`/`GFX` macros, which load a6
   themselves.
+- Call routines in other modules with `jsr`/`jmp`, never `bsr`/`bra`. The
+  code is larger than 32 KB, so 16-bit branches between modules don't
+  reach. vasm turns `jsr` into a 32-bit `bsr.l` on the 68020. Conditional
+  branches to other modules need a local `jmp` trampoline.
 - OS calls take LONG arguments. Clear upper words (`moveq #0,dN`) before
   loading a `.w` or `.b` value into an argument register. The same goes for
   counters used by `dbf`, and for indexes: `move.b` into a register that

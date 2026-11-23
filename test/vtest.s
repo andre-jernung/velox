@@ -21,7 +21,7 @@
 	xref	ConnOpenFile,ConnClose,ConnReadLine,HttpReadResponse
 	xref	PutStr,PutBuf,PutNum,PutNL,PutChar,FlushOut,ErrorText
 	xref	PageNew,BufReserve,BufClear,CharsetDetect,DecodeCharset
-	xref	HtmlParse,TagNameOf,LayoutDocument,RunCount,RunPtr,ParseDec
+	xref	HtmlParse,TagNameOf,LayoutDocument,RunCount,RunPtr,ParseDec,CssLoad
 
 T_LINEMAX	equ	2048
 T_MAXWORDS	equ	4
@@ -39,7 +39,7 @@ Start:
 	jsr	_LVOOpenLibrary(a6)
 	move.l	d0,g_DOSBase(a4)
 	beq	.x
-	bsr	MemInit
+	jsr	MemInit
 	beq	.closedos
 	DOS	Output
 	move.l	d0,g_StdOut(a4)
@@ -52,24 +52,24 @@ Start:
 	move.l	d0,g_RDArgs(a4)
 	beq.s	.argerr
 	move.l	g_ArgArray(a4),a0
-	bsr	ConnOpenFile
+	jsr	ConnOpenFile
 	move.l	d0,T_Conn
 	beq.s	.fileerr
 .line:	move.l	T_Conn,a0
 	lea	T_Line,a1
 	move.l	#T_LINEMAX,d0
-	bsr	ConnReadLine
+	jsr	ConnReadLine
 	tst.l	d0
 	bmi.s	.eof
 	bsr	DoLine
 	bra.s	.line
 .eof:	move.l	T_Conn,a0
-	bsr	ConnClose
+	jsr	ConnClose
 	moveq	#RC_OK,d7
 	bra.s	.freeargs
 .fileerr:
 	lea	MsgNoFile(pc),a0
-	bsr	PutStr
+	jsr	PutStr
 .freeargs:
 	move.l	g_RDArgs(a4),d1
 	DOS	FreeArgs
@@ -79,8 +79,8 @@ Start:
 	move.l	d0,d1
 	moveq	#0,d2
 	DOS	PrintFault
-.mem:	bsr	FlushOut
-	bsr	MemExit
+.mem:	jsr	FlushOut
+	jsr	MemExit
 .closedos:
 	move.l	g_DOSBase(a4),a1
 	EXEC	CloseLibrary
@@ -99,7 +99,7 @@ MsgNoFile:	dc.b	"vtest: cannot open script",10,0
 DoLine:
 	movem.l	d2/a2-a3,-(sp)
 	lea	T_Line,a0
-	bsr	PutStr
+	jsr	PutStr
 	lea	T_Line,a0
 	move.b	(a0),d0
 	beq	.nl
@@ -137,7 +137,7 @@ DoLine:
 	dbf	d2,.w
 .split:
 	lea	ResultSep(pc),a0
-	bsr	PutStr
+	jsr	PutStr
 	lea	Commands(pc),a2
 .cmd:	tst.w	(a2)
 	beq.s	.unknown
@@ -154,8 +154,8 @@ DoLine:
 	bra.s	.nl
 .unknown:
 	lea	MsgUnknown(pc),a0
-	bsr	PutStr
-.nl:	bsr	PutNL
+	jsr	PutStr
+.nl:	jsr	PutNL
 	movem.l	(sp)+,d2/a2-a3
 	rts
 
@@ -196,10 +196,10 @@ StrEq:
 ; PutError - print "ERROR <message>"
 PutError:
 	lea	MsgError(pc),a0
-	bsr	PutStr
+	jsr	PutStr
 	move.l	g_Error(a4),d0
-	bsr	ErrorText
-	bra	PutStr
+	jsr	ErrorText
+	jmp	PutStr
 
 MsgError:	dc.b	"ERROR ",0
 	even
@@ -208,27 +208,27 @@ MsgError:	dc.b	"ERROR ",0
 CmdParse:
 	move.l	T_Words+4,a0
 	lea	g_Parts(a4),a1
-	bsr	UrlParse
+	jsr	UrlParse
 	beq.s	PutError
 	lea	MsgScheme(pc),a0
-	bsr	PutStr
+	jsr	PutStr
 	move.l	g_Parts+up_Scheme(a4),d0
-	bsr	PutNum
+	jsr	PutNum
 	lea	MsgPort(pc),a0
-	bsr	PutStr
+	jsr	PutStr
 	move.l	g_Parts+up_Port(a4),d0
-	bsr	PutNum
+	jsr	PutNum
 	lea	MsgHost(pc),a0
-	bsr	PutStr
+	jsr	PutStr
 	lea	g_Parts+up_Host(a4),a0
-	bsr	PutStr
+	jsr	PutStr
 	lea	MsgPath(pc),a0
-	bsr	PutStr
+	jsr	PutStr
 	move.l	g_Parts+up_Path(a4),a0
 	move.l	g_Parts+up_PathLen(a4),d0
-	bsr	PutBuf
+	jsr	PutBuf
 	moveq	#']',d0
-	bra	PutChar
+	jmp	PutChar
 
 MsgScheme:	dc.b	"scheme=",0
 MsgPort:	dc.b	" port=",0
@@ -241,19 +241,19 @@ CmdResolve:
 	move.l	T_Words+4,a0
 	move.l	T_Words+8,a1
 	lea	g_UrlTmp2(a4),a2
-	bsr	UrlResolve
+	jsr	UrlResolve
 	move.l	(sp)+,a2
 	tst.l	d0
 	beq.s	PutError
 	lea	g_UrlTmp2(a4),a0
-	bra	PutStr
+	jmp	PutStr
 
 CmdFixup:
 	move.l	T_Words+4,a0
 	lea	g_UrlTmp2(a4),a1
-	bsr	UrlFixup
+	jsr	UrlFixup
 	lea	g_UrlTmp2(a4),a0
-	bra	PutStr
+	jmp	PutStr
 
 CmdHttpInfo:
 	st	T_NoBody
@@ -264,47 +264,47 @@ CmdHttpInfo:
 CmdHttp:
 	movem.l	d2-d3/a2,-(sp)
 	move.l	T_Words+4,a0
-	bsr	ConnOpenFile
+	jsr	ConnOpenFile
 	move.l	d0,a2
 	tst.l	d0
 	beq.s	.err
 	move.l	a2,a0
-	bsr	HttpReadResponse
+	jsr	HttpReadResponse
 	move.l	d0,-(sp)
 	move.l	a2,a0
-	bsr	ConnClose
+	jsr	ConnClose
 	movem.l	(sp)+,d0
 	tst.l	d0
 	beq.s	.err
 	lea	g_Resp(a4),a2
 	lea	MsgStatus(pc),a0
-	bsr	PutStr
+	jsr	PutStr
 	move.l	r_Status(a2),d0
-	bsr	PutNum
+	jsr	PutNum
 	lea	MsgLength(pc),a0
-	bsr	PutStr
+	jsr	PutStr
 	move.l	r_Length(a2),d0
-	bsr	PutNum
+	jsr	PutNum
 	lea	MsgChunked(pc),a0
-	bsr	PutStr
+	jsr	PutStr
 	move.l	r_Chunked(a2),d0
-	bsr	PutNum
+	jsr	PutNum
 	lea	MsgType(pc),a0
-	bsr	PutStr
+	jsr	PutStr
 	lea	r_CType(a2),a0
-	bsr	PutStr
+	jsr	PutStr
 	lea	MsgLoc(pc),a0
-	bsr	PutStr
+	jsr	PutStr
 	lea	r_Location(a2),a0
-	bsr	PutStr
+	jsr	PutStr
 	lea	MsgBody(pc),a0
-	bsr	PutStr
+	jsr	PutStr
 	move.l	r_Body+buf_Len(a2),d0
-	bsr	PutNum
+	jsr	PutNum
 	tst.b	T_NoBody
 	beq.s	.withbody
 	lea	MsgSum(pc),a0		; checksum: sum of bytes * position
-	bsr	PutStr
+	jsr	PutStr
 	move.l	r_Body+buf_Data(a2),a0
 	move.l	r_Body+buf_Len(a2),d1
 	moveq	#0,d0
@@ -317,20 +317,20 @@ CmdHttp:
 	mulu.l	d2,d3
 	add.l	d3,d0
 	bra.s	.sum
-.sumd:	bsr	PutNum
+.sumd:	jsr	PutNum
 	movem.l	(sp)+,d2-d3/a2
 	rts
 .withbody:
 	lea	MsgBodyOpen(pc),a0
-	bsr	PutStr
+	jsr	PutStr
 	move.l	r_Body+buf_Data(a2),d0
 	beq.s	.nobody
 	move.l	d0,a0
 	move.l	r_Body+buf_Len(a2),d0
-	bsr	PutBuf
+	jsr	PutBuf
 .nobody:
 	lea	MsgBodyClose(pc),a0
-	bsr	PutStr
+	jsr	PutStr
 	movem.l	(sp)+,d2-d3/a2
 	rts
 .err:	movem.l	(sp)+,d2-d3/a2
@@ -359,12 +359,12 @@ LoadPage:
 	DOS	Open
 	move.l	d0,d4
 	beq.s	.fail
-	bsr	PageNew
+	jsr	PageNew
 	lea	g_PageSrc(a4),a0
-	bsr	BufClear
+	jsr	BufClear
 .rd:	lea	g_PageSrc(a4),a0
 	move.l	#8192,d0
-	bsr	BufReserve
+	jsr	BufReserve
 	beq.s	.close
 	move.l	d4,d1
 	move.l	g_PageSrc+buf_Data(a4),d2
@@ -380,11 +380,11 @@ LoadPage:
 	clr.b	(a0)
 	suba.l	a0,a0
 	move.l	g_PageSrc+buf_Data(a4),a1
-	bsr	CharsetDetect
+	jsr	CharsetDetect
 	move.l	d0,d1
 	move.l	g_PageSrc+buf_Data(a4),a0
 	move.l	g_PageSrc+buf_Len(a4),d0
-	bsr	DecodeCharset
+	jsr	DecodeCharset
 	move.l	d0,g_PageSrc+buf_Len(a4)
 	move.l	d4,d1
 	DOS	Close
@@ -401,9 +401,9 @@ CmdHtml:
 	move.l	T_Words+4,a0
 	bsr	LoadPage
 	beq	PutError
-	bsr	PutNL
+	jsr	PutNL
 	move.l	g_PageSrc+buf_Data(a4),a0
-	bsr	HtmlParse
+	jsr	HtmlParse
 	tst.l	d0
 	beq	PutError
 	move.l	d0,a0
@@ -422,7 +422,7 @@ DumpNode:
 	bmi.s	.indd
 	move.l	d0,-(sp)
 	moveq	#' ',d0
-	bsr	PutChar
+	jsr	PutChar
 	movem.l	(sp)+,d0
 	bra.s	.ind
 .indd:	move.b	n_Type(a2),d0
@@ -431,41 +431,41 @@ DumpNode:
 	cmp.b	#DN_ELEMENT,d0
 	beq.s	.elem
 	lea	MsgDoc(pc),a0
-	bsr	PutStr
+	jsr	PutStr
 	bra.s	.kids
 .text:	moveq	#'"',d0
-	bsr	PutChar
+	jsr	PutChar
 	move.l	n_Data(a2),a0
 	move.l	n_Data2(a2),d0
 	bsr	PutEscaped
 	moveq	#'"',d0
-	bsr	PutChar
-	bsr	PutNL
+	jsr	PutChar
+	jsr	PutNL
 	bra.s	.x
 .elem:	moveq	#'<',d0
-	bsr	PutChar
+	jsr	PutChar
 	move.w	n_Tag(a2),d0
-	bsr	TagNameOf
-	bsr	PutStr
+	jsr	TagNameOf
+	jsr	PutStr
 	move.l	n_Data(a2),a3
 .attr:	move.l	a3,d0
 	beq.s	.ae
 	moveq	#' ',d0
-	bsr	PutChar
+	jsr	PutChar
 	move.l	at_Name(a3),a0
-	bsr	PutStr
+	jsr	PutStr
 	lea	MsgEqQ(pc),a0
-	bsr	PutStr
+	jsr	PutStr
 	move.l	at_Value(a3),a0
 	moveq	#-1,d0
 	bsr	PutEscaped
 	moveq	#'"',d0
-	bsr	PutChar
+	jsr	PutChar
 	move.l	at_Next(a3),a3
 	bra.s	.attr
 .ae:	moveq	#'>',d0
-	bsr	PutChar
-.kids:	bsr	PutNL
+	jsr	PutChar
+.kids:	jsr	PutNL
 	move.l	n_First(a2),a3
 .k:	move.l	a3,d0
 	beq.s	.x
@@ -495,28 +495,28 @@ PutEscaped:
 .nz:	cmp.b	#10,d0
 	bne.s	.notnl
 	lea	MsgBsN(pc),a0
-	bsr	PutStr
+	jsr	PutStr
 	bra.s	.l
 .notnl:	cmp.b	#' ',d0
 	blo.s	.hex
 	cmp.b	#$7f,d0
 	bhs.s	.hex
-	bsr	PutChar
+	jsr	PutChar
 	bra.s	.l
 .hex:	move.l	d0,-(sp)
 	lea	MsgBsX(pc),a0
-	bsr	PutStr
+	jsr	PutStr
 	movem.l	(sp)+,d0
 	lea	Hex(pc),a0
 	move.l	d0,-(sp)
 	lsr.b	#4,d0
 	move.b	(a0,d0.w),d0
-	bsr	PutChar
+	jsr	PutChar
 	movem.l	(sp)+,d0
 	and.w	#15,d0
 	lea	Hex(pc),a0
 	move.b	(a0,d0.w),d0
-	bsr	PutChar
+	jsr	PutChar
 	bra.s	.l
 .x:	movem.l	(sp)+,d2/a2
 	rts
@@ -560,29 +560,30 @@ CmdLayout:
 	movem.l	d2-d3/a2,-(sp)
 	bsr	TestMetrics
 	move.l	T_Words+8,a0
-	bsr	ParseDec
+	jsr	ParseDec
 	move.l	d0,d3
 	move.l	T_Words+4,a0
 	bsr	LoadPage
 	beq	.err
 	move.l	g_PageSrc+buf_Data(a4),a0
-	bsr	HtmlParse
+	jsr	HtmlParse
 	tst.l	d0
 	beq	.err
+	jsr	CssLoad			; <style> sheets (no network here)
 	move.l	d3,d0
-	bsr	LayoutDocument
+	jsr	LayoutDocument
 	beq	.err
 	lea	MsgHeight(pc),a0
-	bsr	PutStr
+	jsr	PutStr
 	move.l	g_DocHeight(a4),d0
-	bsr	PutNum
-	bsr	PutNL
+	jsr	PutNum
+	jsr	PutNL
 	moveq	#0,d2
-.run:	bsr	RunCount
+.run:	jsr	RunCount
 	cmp.l	d0,d2
 	bhs	.x
 	move.l	d2,d0
-	bsr	RunPtr
+	jsr	RunPtr
 	move.l	a0,a2
 	moveq	#0,d0
 	move.b	ru_Type(a2),d0
@@ -590,7 +591,7 @@ CmdLayout:
 	subq.w	#1,d0
 	mulu.w	#6,d0
 	add.w	d0,a0
-	bsr	PutStr
+	jsr	PutStr
 	move.l	ru_Y(a2),d0
 	bsr	PutNumSp
 	move.w	ru_X(a2),d0
@@ -606,40 +607,40 @@ CmdLayout:
 	ext.l	d0
 	bsr	PutNumSp
 	lea	MsgF(pc),a0
-	bsr	PutStr
+	jsr	PutStr
 	moveq	#0,d0
 	move.b	ru_Font(a2),d0
-	bsr	PutNum
+	jsr	PutNum
 	lea	MsgS(pc),a0
-	bsr	PutStr
+	jsr	PutStr
 	moveq	#0,d0
 	move.b	ru_Soft(a2),d0
-	bsr	PutNum
+	jsr	PutNum
 	lea	MsgC(pc),a0
-	bsr	PutStr
+	jsr	PutStr
 	move.l	ru_Color(a2),d0
 	bsr	PutHex6
 	tst.l	ru_Link(a2)
 	beq.s	.nolink
 	lea	MsgLink(pc),a0
-	bsr	PutStr
+	jsr	PutStr
 .nolink:
 	cmp.b	#RT_TEXT,ru_Type(a2)
 	bne.s	.nt
 	lea	MsgQ(pc),a0
-	bsr	PutStr
+	jsr	PutStr
 	move.l	ru_Text(a2),a0
 	move.l	ru_Len(a2),d0
 	bsr	PutEscaped
 	moveq	#'"',d0
-	bsr	PutChar
+	jsr	PutChar
 .nt:	cmp.b	#RT_BULLET,ru_Type(a2)
 	bne.s	.nb
 	moveq	#' ',d0
-	bsr	PutChar
+	jsr	PutChar
 	move.l	ru_Len(a2),d0
-	bsr	PutNum
-.nb:	bsr	PutNL
+	jsr	PutNum
+.nb:	jsr	PutNL
 	addq.l	#1,d2
 	bra	.run
 .err:	bsr	PutError
@@ -647,9 +648,9 @@ CmdLayout:
 	rts
 
 PutNumSp:
-	bsr	PutNum
+	jsr	PutNum
 	moveq	#' ',d0
-	bra	PutChar
+	jmp	PutChar
 
 PutHex6:
 	movem.l	d2-d3,-(sp)
@@ -661,7 +662,7 @@ PutHex6:
 	and.w	#15,d0
 	lea	Hex(pc),a0
 	move.b	(a0,d0.w),d0
-	bsr	PutChar
+	jsr	PutChar
 	dbf	d3,.l
 	movem.l	(sp)+,d2-d3
 	rts

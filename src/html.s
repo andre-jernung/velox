@@ -34,7 +34,7 @@ HtmlParse:
 	move.l	a0,a2
 	moveq	#DN_DOCUMENT,d0
 	moveq	#0,d1
-	bsr	DomNewNode
+	jsr	DomNewNode
 	move.l	d0,g_Doc(a4)
 	beq	.x
 	move.l	d0,g_OpenStack(a4)
@@ -107,7 +107,7 @@ HtmlParse:
 	bsr	ReadTagName
 	bsr	SkipToGt
 	lea	g_TagName(a4),a0
-	bsr	TagLookup
+	jsr	TagLookup
 	bsr	EndTag
 	bra	.loop
 
@@ -115,13 +115,13 @@ HtmlParse:
 	addq.l	#1,a2
 	bsr	ReadTagName
 	lea	g_TagName(a4),a0
-	bsr	TagLookup
+	jsr	TagLookup
 	move.l	d0,d6
-	bsr	TagFlagsOf
+	jsr	TagFlagsOf
 	move.l	d0,d7
 	moveq	#DN_ELEMENT,d0
 	move.l	d6,d1
-	bsr	DomNewNode
+	jsr	DomNewNode
 	tst.l	d0
 	beq	.done
 	move.l	d0,a5
@@ -130,7 +130,7 @@ HtmlParse:
 	bsr	ImpliedClose
 	bsr	CurrentNode
 	move.l	a5,a1
-	bsr	DomAppend
+	jsr	DomAppend
 
 	cmp.w	#TAG_BASE,d6
 	bne.s	.nobase
@@ -138,7 +138,7 @@ HtmlParse:
 	bne.s	.nobase
 	move.l	a5,a0
 	lea	AnHref(pc),a1
-	bsr	DomGetAttr
+	jsr	DomGetAttr
 	move.l	d0,g_BaseHref(a4)
 .nobase:
 	btst	#0,d7			; TF_VOID
@@ -182,7 +182,7 @@ Push:
 	lea	g_OpenStack(a4),a1
 	move.l	a0,(a1,d0.l*4)
 	move.w	n_Tag(a0),d0
-	bsr	TagFlagsOf
+	jsr	TagFlagsOf
 	tst.b	d0			; TF_PRE is bit 7
 	bpl.s	.full
 	addq.l	#1,g_PreDepth(a4)
@@ -199,7 +199,7 @@ PopTo:
 	lea	g_OpenStack(a4),a0
 	move.l	(a0,d0.l*4),a0
 	move.w	n_Tag(a0),d0
-	bsr	TagFlagsOf
+	jsr	TagFlagsOf
 	tst.b	d0
 	bpl.s	.np
 	subq.l	#1,g_PreDepth(a4)
@@ -227,7 +227,7 @@ FindOpen:
 	beq.s	.found
 	cmp.w	d5,d0
 	beq.s	.found
-	bsr	TagFlagsOf
+	jsr	TagFlagsOf
 	and.w	d2,d0
 	bne.s	.nf
 	subq.l	#1,d3
@@ -267,7 +267,7 @@ ImpliedClose:
 	beq.s	.noh
 	bsr	CurrentNode
 	move.w	n_Tag(a0),d0
-	bsr	TagFlagsOf
+	jsr	TagFlagsOf
 	btst	#10,d0
 	beq.s	.noh
 	move.l	g_Depth(a4),d0
@@ -343,16 +343,16 @@ EndTag:
 	bne.s	.notbr
 	moveq	#DN_ELEMENT,d0
 	moveq	#TAG_BR,d1
-	bsr	DomNewNode
+	jsr	DomNewNode
 	tst.l	d0
 	beq.s	.x
 	move.l	d0,-(sp)
 	bsr	CurrentNode
 	move.l	(sp)+,a1
-	bsr	DomAppend
+	jsr	DomAppend
 	bra.s	.x
 .notbr:	move.l	d3,d0
-	bsr	TagFlagsOf
+	jsr	TagFlagsOf
 	moveq	#TF_SCOPE,d2		; normal: stop at scope boundaries
 	move.w	d0,d1
 	and.w	#TF_SCOPE,d1
@@ -379,7 +379,7 @@ AddText:
 	beq	.x
 	move.l	a2,a1
 	moveq	#0,d1
-	bsr	DecodeEntities
+	jsr	DecodeEntities
 	move.l	d0,d2			; length
 	tst.l	g_PreDepth(a4)
 	bne.s	.pre
@@ -412,19 +412,19 @@ AddText:
 	cmp.b	#DN_DOCUMENT,n_Type(a3)
 	beq.s	.x
 	move.w	n_Tag(a3),d0
-	bsr	TagFlagsOf
+	jsr	TagFlagsOf
 	btst	#6,d0			; TF_NOWS
 	bne.s	.x
 .add:	moveq	#DN_TEXT,d0
 	moveq	#0,d1
-	bsr	DomNewNode
+	jsr	DomNewNode
 	tst.l	d0
 	beq.s	.x
 	move.l	d0,a1
 	move.l	a2,n_Data(a1)
 	move.l	d2,n_Data2(a1)
 	move.l	a3,a0
-	bsr	DomAppend
+	jsr	DomAppend
 .x:	movem.l	(sp)+,d2-d3/a2-a3
 	rts
 
@@ -479,7 +479,7 @@ ReadTagName:
 	addq.l	#1,a2
 	tst.w	d1
 	bmi.s	.l			; too long: skip the rest
-	bsr	ToLower
+	jsr	ToLower
 	move.b	d0,(a1)+
 	subq.w	#1,d1
 	bra.s	.l
@@ -558,7 +558,7 @@ ParseAttrs:
 .nc:	move.b	(a2)+,d0
 	tst.w	d1
 	bmi.s	.nl
-	bsr	ToLower
+	jsr	ToLower
 	move.b	d0,(a1)+
 	subq.w	#1,d1
 	bra.s	.nl
@@ -619,21 +619,21 @@ AddAttr:
 	beq.s	.skip			; empty name ("<a =x>")
 	move.l	d3,d0			; copy and decode the value
 	addq.l	#1,d0
-	bsr	PageAlloc
+	jsr	PageAlloc
 	beq.s	.x
 	move.l	d0,a2
 	move.l	a3,a0
 	move.l	d3,d0
 	move.l	a2,a1
 	moveq	#1,d1
-	bsr	DecodeEntities
+	jsr	DecodeEntities
 	clr.b	(a2,d0.l)
 	bsr	AttrName		; a0 = name to store
 	beq.s	.x
 	move.l	a0,a1
 	move.l	a5,a0
 	move.l	a2,d0
-	bsr	DomAddAttr
+	jsr	DomAddAttr
 .x:	movem.l	(sp)+,d2/a2
 	rts
 .skip:	moveq	#1,d0
@@ -661,7 +661,7 @@ AttrName:
 	bne.s	.next
 	bra.s	.l
 .copy:	moveq	#32,d0
-	bsr	PageAlloc
+	jsr	PageAlloc
 	beq.s	.x
 	move.l	d0,a3
 	lea	g_AttrName(a4),a0
@@ -688,7 +688,7 @@ RawText:
 	bne.s	.n
 	lea	2(a2),a0
 	lea	g_TagName(a4),a1
-	bsr	StrIPrefix
+	jsr	StrIPrefix
 	beq.s	.n
 	move.b	(a0),d0			; "</title" must end the name
 	cmp.b	#'>',d0
@@ -708,7 +708,7 @@ RawText:
 	beq.s	.raw
 	move.l	a3,a1
 	moveq	#0,d1
-	bsr	DecodeEntities
+	jsr	DecodeEntities
 	move.l	d0,d2
 	btst	#7,d7			; TF_PRE (textarea) keeps blanks
 	bne.s	.raw
@@ -727,14 +727,14 @@ RawText:
 	beq.s	.close
 .node:	moveq	#DN_TEXT,d0
 	moveq	#0,d1
-	bsr	DomNewNode
+	jsr	DomNewNode
 	tst.l	d0
 	beq.s	.close
 	move.l	d0,a1
 	move.l	a3,n_Data(a1)
 	move.l	d2,n_Data2(a1)
 	move.l	a5,a0
-	bsr	DomAppend
+	jsr	DomAppend
 	cmp.w	#TAG_TITLE,d6
 	bne.s	.close
 	tst.l	g_Title(a4)

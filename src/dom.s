@@ -23,7 +23,7 @@ DomNewNode:
 	move.l	d0,d2
 	move.l	d1,d3
 	moveq	#NODE_SIZEOF,d0
-	bsr	PageAlloc
+	jsr	PageAlloc
 	beq.s	.x
 	move.l	d0,a0
 	move.b	d2,n_Type(a0)
@@ -84,7 +84,7 @@ DomAddAttr:
 	move.l	a1,a3
 	move.l	d0,d2
 	moveq	#ATTR_SIZEOF,d0
-	bsr	PageAlloc
+	jsr	PageAlloc
 	beq.s	.x
 	move.l	d0,a0
 	move.l	a3,at_Name(a0)

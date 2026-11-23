@@ -1,0 +1,39 @@
+# CSS: selectors, cascade, media queries, properties
+layout test/unit/layout/css.html 400 => 
+height 194
+text 13 8 8 20 18 f5 s2 c000000 "T"
+text 46 8 64 10 8 f1 s4 c000000 "after h1"
+text 56 8 24 10 8 f1 s0 cff0000 "red"
+text 66 8 32 10 8 f1 s2 cff0000 "note"
+text 86 28 24 10 8 f1 s0 c000000 "one"
+bull 88 8 4 4 6 f0 s0 c000000 0
+text 96 28 40 10 8 f1 s0 c000000 "three"
+bull 98 8 4 4 6 f0 s0 c000000 0
+text 116 8 48 10 8 f1 s2 c0000ff "inline"
+rect 126 150 100 10 0 f0 s0 ccccccc
+text 126 150 24 10 8 f1 s0 c000000 "box"
+text 136 8 32 10 8 f1 s0 c000000 "wide"
+text 146 8 32 10 8 f1 s1 c000000 "attr"
+wdgt 156 8 8 8 8 f1 s0 c000000 L
+text 164 8 24 20 18 f5 s0 c000000 "big"
+text 184 8 32 10 8 f9 s0 c000000 "mono"
+
+layout test/unit/layout/css.html 250 => 
+height 194
+text 13 8 8 20 18 f5 s2 c000000 "T"
+text 46 8 64 10 8 f1 s4 c000000 "after h1"
+text 56 8 24 10 8 f1 s0 cff0000 "red"
+text 66 8 32 10 8 f1 s2 cff0000 "note"
+text 86 28 24 10 8 f1 s0 c000000 "one"
+bull 88 8 4 4 6 f0 s0 c000000 0
+text 96 28 40 10 8 f1 s0 c000000 "three"
+bull 98 8 4 4 6 f0 s0 c000000 0
+text 116 8 48 10 8 f1 s2 c0000ff "inline"
+rect 126 75 100 10 0 f0 s0 ccccccc
+text 126 75 24 10 8 f1 s0 c000000 "box"
+text 136 8 48 10 8 f1 s0 c000000 "narrow"
+text 146 8 32 10 8 f1 s1 c000000 "attr"
+wdgt 156 8 8 8 8 f1 s0 c000000 L
+text 164 8 24 20 18 f5 s0 c000000 "big"
+text 184 8 32 10 8 f9 s0 c000000 "mono"
+

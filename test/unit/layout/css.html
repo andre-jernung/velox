@@ -1,0 +1,31 @@
+<style>
+p { margin: 0 }
+.red { color: #f00 }
+#main .note { font-weight: bold }
+ul > li.x { display: none }
+h1 + p { font-style: italic }
+.hide { display: none !important }
+div.box { width: 160px; margin: 0 auto; background: #ccc }
+@media (max-width: 300px) { .wide { display: none } }
+@media (min-width: 301px) { .narrow { display: none } }
+@media print { p { display: none } }
+a:hover { color: red }
+[data-x] { text-decoration: underline }
+input[type=text] { display: none }
+.big { font-size: 2em }
+.mono { font-family: Menlo, monospace }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0) }
+</style>
+<h1>T</h1>
+<p>after h1</p>
+<p class="red">red</p>
+<div id=main><p class="note red">note</p></div>
+<ul><li>one<li class=x>hidden<li>three</ul>
+<p class="hide" style="display:block">gone</p>
+<p style="color: blue; font-weight: bold">inline</p>
+<div class=box>box</div>
+<p class=wide>wide</p><p class=narrow>narrow</p>
+<p data-x=1>attr</p>
+<p><input type=text name=q><input type=checkbox name=c></p>
+<p class=big>big</p><p class=mono>mono</p>
+<span class=sr-only>skip</span>

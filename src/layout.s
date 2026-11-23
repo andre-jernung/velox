@@ -17,7 +17,7 @@
 	xdef	ApplyPendingMargin,IntAttr
 	xref	StyleRoot,StyleCompute,BufClear,BufReserve,PageAlloc,FmtDec
 	xref	DomGetAttr,ParseDec,LayoutTable,CssApply
-	xref	FormIsControl,FormControlSize
+	xref	FormIsControl,FormControlSize,CssInvalidate
 
 	IFNE	RUN_SIZEOF-32
 	FAIL	"RunCount/RunPtr assume RUN_SIZEOF = 32"
@@ -37,8 +37,15 @@ MAX_LAYDEPTH	equ	200
 LayoutDocument:
 	movem.l	d2/a2,-(sp)
 	move.l	d0,g_LayWidth(a4)
+	tst.l	g_CssHasMq(a4)		; media queries: matches depend on
+	beq.s	.nomq			; the width
+	cmp.l	g_CssCacheW(a4),d0
+	beq.s	.nomq
+	move.l	d0,g_CssCacheW(a4)
+	jsr	CssInvalidate
+.nomq:
 	lea	g_Runs(a4),a0
-	bsr	BufClear
+	jsr	BufClear
 	clr.l	g_LayY(a4)
 	clr.l	g_PendMargin(a4)
 	clr.l	g_DocHeight(a4)
@@ -62,7 +69,7 @@ LayoutDocument:
 	bsr	LineReset
 	lea	-STYLE_SIZEOF(sp),sp
 	move.l	sp,a0
-	bsr	StyleRoot
+	jsr	StyleRoot
 	move.l	g_Doc(a4),d0
 	beq.s	.done
 	move.l	d0,a0
@@ -118,10 +125,10 @@ LayoutNode:
 	move.l	sp,a3
 	move.l	a5,a0
 	move.l	a3,a2
-	bsr	StyleCompute
+	jsr	StyleCompute
 	move.l	a5,a0
 	move.l	a3,a1
-	bsr	CssApply		; author styles on top
+	jsr	CssApply		; author styles on top
 	move.b	st_Display(a3),d0
 	cmp.b	#DISP_NONE,d0
 	beq.s	.pop
@@ -183,7 +190,7 @@ CheckFragment:
 	move.l	d0,g_FragY(a4)
 .x:	movem.l	(sp)+,a2-a3
 	rts
-.cmp:	bsr	DomGetAttr		; Z set if the attribute matches
+.cmp:	jsr	DomGetAttr		; Z set if the attribute matches
 	tst.l	d0
 	beq.s	.ne
 	move.l	d0,a0
@@ -260,15 +267,24 @@ LayoutBlock:
 	beq.s	.nobg
 	move.l	st_Bg(a3),d0
 	bmi.s	.nobg
+	move.w	n_Tag(a5),d1		; <body>/<html>: the page background
+	cmp.w	#TAG_BODY,d1
+	beq.s	.pagebg
+	cmp.w	#TAG_HTML,d1
+	bne.s	.rect
+.pagebg:
+	move.l	d0,g_PageBg(a4)
+	bra.s	.nobg
+.rect:
 	bsr	ApplyPendingMargin
 	bsr	AddRun
 	beq.s	.nobg
 	move.l	d0,a0
 	move.b	#RT_RECT,ru_Type(a0)
 	move.l	g_LayY(a4),ru_Y(a0)
-	move.w	d2,ru_X(a0)
-	move.l	d3,d0
-	sub.l	d2,d0
+	move.w	g_LayLeft+2(a4),ru_X(a0)	; the (narrowed) box
+	move.l	g_LayRight(a4),d0
+	sub.l	g_LayLeft(a4),d0
 	move.w	d0,ru_W(a0)
 	move.l	st_Bg(a3),ru_Color(a0)
 	bsr	RunCount
@@ -280,7 +296,7 @@ LayoutBlock:
 	move.l	a3,a1
 	cmp.b	#DISP_TABLE,st_Display(a3)
 	bne.s	.content
-	bsr	LayoutTable
+	jsr	LayoutTable
 	bra.s	.after
 .content:
 	bsr	LayoutChildren
@@ -351,9 +367,15 @@ BlockBounds:
 	sub.l	g_LayLeft(a4),d1
 	mulu.l	d1,d0
 	divu.l	#100,d0
-.px:	add.l	g_LayLeft(a4),d0
-	cmp.l	g_LayRight(a4),d0
-	bge.s	.nw
+.px:	move.l	g_LayRight(a4),d1	; free space
+	sub.l	g_LayLeft(a4),d1
+	sub.l	d0,d1
+	ble.s	.nw
+	btst	#1,st_Flags(a1)		; margin: auto: centre the block
+	beq.s	.left
+	lsr.l	#1,d1
+	add.l	d1,g_LayLeft(a4)
+.left:	add.l	g_LayLeft(a4),d0
 	move.l	d0,g_LayRight(a4)
 .nw:	move.l	g_LayRight(a4),d0
 	sub.l	g_LayLeft(a4),d0
@@ -374,11 +396,11 @@ BlockBounds:
 ; Out: d0 = value
 IntAttr:
 	move.l	a5,a0
-	bsr	DomGetAttr
+	jsr	DomGetAttr
 	tst.l	d0
 	beq.s	.def
 	move.l	d0,a0
-	bsr	ParseDec
+	jsr	ParseDec
 	tst.l	d1
 	bne.s	.x
 .def:	move.l	d7,d0
@@ -866,12 +888,12 @@ EmitMarker:
 	bra.s	.x
 .num:	; "12." in the page pool
 	moveq	#16,d0
-	bsr	PageAlloc
+	jsr	PageAlloc
 	beq.s	.x
 	move.l	d0,a2
 	move.l	g_MarkerNum(a4),d0
 	move.l	a2,a0
-	bsr	FmtDec
+	jsr	FmtDec
 	move.b	#'.',(a0)+
 	clr.b	(a0)
 	sub.l	a2,a0
@@ -930,7 +952,7 @@ LayoutReplaced:
 .alt:	; unknown size: show the alt text instead
 	move.l	a5,a0
 	lea	AnAlt(pc),a1
-	bsr	DomGetAttr
+	jsr	DomGetAttr
 	tst.l	d0
 	beq	.x
 	move.l	d0,a0
@@ -945,7 +967,7 @@ LayoutReplaced:
 	bra	.x
 .notimg:
 	move.l	a5,a0
-	bsr	FormIsControl
+	jsr	FormIsControl
 	beq.s	.other
 	moveq	#0,d6			; font code
 	move.b	st_Soft(a3),d6
@@ -953,7 +975,7 @@ LayoutReplaced:
 	move.b	st_Font(a3),d6
 	move.l	a5,a0
 	move.l	d6,d0
-	bsr	FormControlSize
+	jsr	FormControlSize
 	tst.l	d0
 	beq.s	.x			; hidden
 	move.l	d0,d2
@@ -1043,7 +1065,7 @@ PlaceBox:
 AddRun:
 	lea	g_Runs(a4),a0
 	moveq	#RUN_SIZEOF,d0
-	bsr	BufReserve
+	jsr	BufReserve
 	beq.s	.x
 	move.l	buf_Data(a0),a1
 	add.l	buf_Len(a0),a1

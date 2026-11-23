@@ -27,14 +27,14 @@ UrlParse:
 
 	move.l	a2,a0
 	lea	SchHttps(pc),a1
-	bsr	StrIPrefix
+	jsr	StrIPrefix
 	beq.s	.nothttps
 	move.l	#SCHEME_HTTPS,up_Scheme(a3)
 	move.l	#443,up_Port(a3)
 	bra.s	.auth
 .nothttps:
 	lea	SchHttp(pc),a1
-	bsr	StrIPrefix
+	jsr	StrIPrefix
 	beq.s	.other
 	move.l	#SCHEME_HTTP,up_Scheme(a3)
 	moveq	#80,d0
@@ -68,7 +68,7 @@ UrlParse:
 	beq.s	.hend
 	cmp.b	#'#',d0
 	beq.s	.hend
-	bsr	ToLower
+	jsr	ToLower
 	move.b	d0,(a1)+
 	addq.l	#1,a2
 	dbf	d2,.hl
@@ -81,7 +81,7 @@ UrlParse:
 	bne.s	.path
 	addq.l	#1,a2
 	move.l	a2,a0
-	bsr	ParseDec
+	jsr	ParseDec
 	move.l	a0,a2
 	tst.l	d1			; "host:" means default port
 	beq.s	.path
@@ -239,7 +239,7 @@ UrlResolve:
 	; absolute reference: copy it
 	move.l	a5,a1
 	move.l	#URL_MAX-1,d0
-	bsr	StrCopyN
+	jsr	StrCopyN
 	bra	.dots
 
 .noscheme:
@@ -459,15 +459,15 @@ UrlFixup:
 	bhi.s	.copy
 .add:	lea	SchHttp(pc),a0
 	move.l	a3,a1
-	bsr	StrCopy
+	jsr	StrCopy
 	move.l	a2,a0
 	move.l	#URL_MAX-8,d0
-	bsr	StrCopyN
+	jsr	StrCopyN
 	bra.s	.trim
 .copy:	move.l	a2,a0
 	move.l	a3,a1
 	move.l	#URL_MAX-1,d0
-	bsr	StrCopyN
+	jsr	StrCopyN
 .trim:	; cut trailing blanks
 .t:	cmp.l	a3,a1
 	beq.s	.x

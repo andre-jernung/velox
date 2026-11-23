@@ -27,12 +27,12 @@ HttpGet:
 	lea	g_Resp(a4),a3
 	lea	r_Url(a3),a1
 	move.l	#URL_MAX-1,d0
-	bsr	StrCopyN
+	jsr	StrCopyN
 	moveq	#0,d3			; redirects followed
 .again:
 	lea	r_Url(a3),a0
 	lea	g_Parts(a4),a1
-	bsr	UrlParse
+	jsr	UrlParse
 	beq	.fail
 	move.l	g_Parts+up_Scheme(a4),d1
 	bmi	.badscheme
@@ -44,7 +44,7 @@ HttpGet:
 .direct:
 	lea	g_Parts+up_Host(a4),a0
 	move.l	g_Parts+up_Port(a4),d0
-.conn:	bsr	ConnOpen
+.conn:	jsr	ConnOpen
 	beq	.fail
 	move.l	d0,a2
 	bsr	BuildRequest
@@ -52,13 +52,13 @@ HttpGet:
 	move.l	a2,a0
 	move.l	g_ReqBuf+buf_Data(a4),a1
 	move.l	g_ReqBuf+buf_Len(a4),d0
-	bsr	ConnWrite
+	jsr	ConnWrite
 	beq.s	.failclose
 	move.l	a2,a0
 	bsr	HttpReadResponse
 	move.l	d0,d2
 	move.l	a2,a0
-	bsr	ConnClose
+	jsr	ConnClose
 	tst.l	d2
 	beq.s	.fail
 
@@ -82,12 +82,12 @@ HttpGet:
 	lea	r_Url(a3),a0
 	lea	r_Location(a3),a1
 	lea	g_UrlTmp2(a4),a2
-	bsr	UrlResolve
+	jsr	UrlResolve
 	beq.s	.fail
 	lea	g_UrlTmp2(a4),a0
 	lea	r_Url(a3),a1
 	move.l	#URL_MAX-1,d0
-	bsr	StrCopyN
+	jsr	StrCopyN
 	bra	.again
 
 .done:	move.l	d2,d0
@@ -103,7 +103,7 @@ HttpGet:
 	bra.s	.fail
 .failclose:
 	move.l	a2,a0
-	bsr	ConnClose
+	jsr	ConnClose
 .fail:	moveq	#0,d0
 	bra.s	.x
 
@@ -114,14 +114,14 @@ HttpGet:
 REQSTR	MACRO
 	lea	g_ReqBuf(a4),a0
 	lea	\1(pc),a1
-	bsr	BufAppendStr
+	jsr	BufAppendStr
 	beq	ReqNoMem
 	ENDM
 
 BuildRequest:
 	movem.l	d2-d3/a2,-(sp)
 	lea	g_ReqBuf(a4),a0
-	bsr	BufClear
+	jsr	BufClear
 	tst.l	g_PostData(a4)
 	beq.s	.get
 	REQSTR	RqPost
@@ -134,7 +134,7 @@ BuildRequest:
 	beq.s	.sch
 	lea	SchHttpsP(pc),a1
 .sch:	lea	g_ReqBuf(a4),a0
-	bsr	BufAppendStr
+	jsr	BufAppendStr
 	beq	ReqNoMem
 	bsr	AppendHostPort
 	beq	ReqNoMem
@@ -147,7 +147,7 @@ BuildRequest:
 	bne.s	.path
 .slash:	lea	g_ReqBuf(a4),a0
 	moveq	#'/',d0
-	bsr	BufAppendByte
+	jsr	BufAppendByte
 	beq	ReqNoMem
 .path:	subq.l	#1,d2
 	bmi.s	.pathend
@@ -159,7 +159,7 @@ BuildRequest:
 	bhs.s	.esc
 	lea	g_ReqBuf(a4),a0
 	move.l	d3,d0
-	bsr	BufAppendByte
+	jsr	BufAppendByte
 	beq	ReqNoMem
 	bra.s	.path
 .esc:	lea	-4(sp),sp
@@ -173,7 +173,7 @@ BuildRequest:
 	move.b	(a0,d3.w),2(a1)
 	lea	g_ReqBuf(a4),a0
 	moveq	#3,d0
-	bsr	BufAppend
+	jsr	BufAppend
 	lea	4(sp),sp
 	tst.l	d0
 	beq	ReqNoMem
@@ -188,10 +188,10 @@ BuildRequest:
 	lea	-16(sp),sp
 	move.l	g_PostLen(a4),d0
 	move.l	sp,a0
-	bsr	FmtDec
+	jsr	FmtDec
 	lea	g_ReqBuf(a4),a0
 	move.l	sp,a1
-	bsr	BufAppendStr
+	jsr	BufAppendStr
 	lea	16(sp),sp
 	tst.l	d0
 	beq	ReqNoMem
@@ -202,7 +202,7 @@ BuildRequest:
 	lea	g_ReqBuf(a4),a0
 	move.l	d0,a1
 	move.l	g_PostLen(a4),d0
-	bsr	BufAppend
+	jsr	BufAppend
 	beq	ReqNoMem
 .done:	moveq	#1,d0
 	movem.l	(sp)+,d2-d3/a2
@@ -221,7 +221,7 @@ ReqNoMem:
 AppendHostPort:
 	lea	g_ReqBuf(a4),a0
 	lea	g_Parts+up_Host(a4),a1
-	bsr	BufAppendStr
+	jsr	BufAppendStr
 	beq.s	.x
 	move.l	g_Parts+up_Port(a4),d0
 	moveq	#80,d1
@@ -233,10 +233,10 @@ AppendHostPort:
 	lea	-16(sp),sp
 	move.l	sp,a0
 	move.b	#':',(a0)+
-	bsr	FmtDec
+	jsr	FmtDec
 	lea	g_ReqBuf(a4),a0
 	move.l	sp,a1
-	bsr	BufAppendStr
+	jsr	BufAppendStr
 	lea	16(sp),sp
 	tst.l	d0
 	rts
@@ -270,7 +270,7 @@ HttpReadResponse:
 	move.l	a0,a2
 	lea	g_Resp(a4),a3
 	lea	r_Body(a3),a0
-	bsr	BufClear
+	jsr	BufClear
 .status:
 	clr.l	r_Status(a3)
 	moveq	#-1,d0
@@ -283,14 +283,14 @@ HttpReadResponse:
 	beq.s	.sl			; tolerate blank lines before it
 	lea	g_Line(a4),a0
 	lea	HHttp(pc),a1
-	bsr	StrIPrefix
+	jsr	StrIPrefix
 	beq	.proto
 .ver:	move.b	(a0)+,d0
 	beq	.proto
 	cmp.b	#' ',d0
 	bne.s	.ver
-	bsr	SkipSpace
-	bsr	ParseDec
+	jsr	SkipSpace
+	jsr	ParseDec
 	cmp.l	#3,d1
 	bne	.proto
 	move.l	d0,r_Status(a3)
@@ -300,38 +300,38 @@ HttpReadResponse:
 	beq.s	.endhdr
 	lea	g_Line(a4),a0
 	lea	HContentLength(pc),a1
-	bsr	StrIPrefix
+	jsr	StrIPrefix
 	beq.s	.h2
-	bsr	SkipSpace
-	bsr	ParseDec
+	jsr	SkipSpace
+	jsr	ParseDec
 	tst.l	d1
 	beq.s	.hdr
 	move.l	d0,r_Length(a3)
 	bra.s	.hdr
 .h2:	lea	HTransferEncoding(pc),a1
-	bsr	StrIPrefix
+	jsr	StrIPrefix
 	beq.s	.h3
 	lea	HChunked(pc),a1
-	bsr	StrIFind
+	jsr	StrIFind
 	beq.s	.hdr
 	moveq	#1,d0
 	move.l	d0,r_Chunked(a3)
 	bra.s	.hdr
 .h3:	lea	HLocation(pc),a1
-	bsr	StrIPrefix
+	jsr	StrIPrefix
 	beq.s	.h4
-	bsr	SkipSpace
+	jsr	SkipSpace
 	lea	r_Location(a3),a1
 	move.l	#URL_MAX-1,d0
-	bsr	StrCopyN
+	jsr	StrCopyN
 	bra.s	.hdr
 .h4:	lea	HContentType(pc),a1
-	bsr	StrIPrefix
+	jsr	StrIPrefix
 	beq.s	.hdr
-	bsr	SkipSpace
+	jsr	SkipSpace
 	lea	r_CType(a3),a1
 	moveq	#63,d0
-	bsr	StrCopyN
+	jsr	StrCopyN
 	bra.s	.hdr
 
 .endhdr:
@@ -359,7 +359,7 @@ HttpReadResponse:
 	bmi.s	.done			; truncated: keep what we have
 	beq.s	.chunked		; CRLF after previous chunk
 	lea	g_Line(a4),a0
-	bsr	ParseHex
+	jsr	ParseHex
 	tst.l	d1
 	beq.s	.proto
 	tst.l	d0
@@ -385,7 +385,7 @@ ReadHdrLine:
 	move.l	a2,a0
 	lea	g_Line(a4),a1
 	move.l	#LINE_MAX,d0
-	bsr	ConnReadLine
+	jsr	ConnReadLine
 	tst.l	d0
 	ble.s	.x
 	lea	g_Line(a4),a0
@@ -415,13 +415,13 @@ ReadBody:
 	move.l	d2,d3
 .n:	lea	r_Body(a3),a0
 	move.l	d3,d0
-	bsr	BufReserve
+	jsr	BufReserve
 	beq.s	.err
 	move.l	a2,a0
 	move.l	r_Body+buf_Data(a3),a1
 	add.l	r_Body+buf_Len(a3),a1
 	move.l	d3,d0
-	bsr	ConnRead
+	jsr	ConnRead
 	tst.l	d0
 	bmi.s	.err
 	beq.s	.ok			; end of stream

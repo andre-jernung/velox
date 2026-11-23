@@ -68,11 +68,11 @@ LayoutTable:
 	clr.l	tb_Border(a3)		; border, border="", border="1": 1px
 	move.l	a5,a0
 	lea	AnBorder(pc),a1
-	bsr	DomGetAttr
+	jsr	DomGetAttr
 	tst.l	d0
 	beq.s	.nob
 	move.l	d0,a0
-	bsr	ParseDec
+	jsr	ParseDec
 	tst.l	d1
 	beq.s	.b1
 	tst.l	d0
@@ -91,7 +91,7 @@ LayoutTable:
 	bne.s	.capn
 	move.l	a2,a0
 	move.l	tb_Style(a3),a1
-	bsr	LayoutNode
+	jsr	LayoutNode
 .capn:	move.l	n_Next(a2),a2
 	bra.s	.cap
 .capd:
@@ -274,7 +274,7 @@ LayoutTable:
 	ble.s	.x0
 	move.l	a5,a0
 	lea	AnAlign(pc),a1
-	bsr	DomGetAttr
+	jsr	DomGetAttr
 	tst.l	d0
 	beq.s	.inh
 	move.l	d0,a0
@@ -310,7 +310,7 @@ LayoutTable:
 	blo.s	.cx
 
 	; table background and border
-	bsr	ApplyPendingMargin
+	jsr	ApplyPendingMargin
 	move.l	g_LayY(a4),tb_Top(a3)
 	moveq	#-1,d0
 	move.l	d0,tb_TabRect(a3)
@@ -418,10 +418,10 @@ LayoutTable:
 	move.l	d0,g_LayY(a4)
 	clr.l	g_PendMargin(a4)
 	clr.l	g_Marker(a4)
-	bsr	LineReset
+	jsr	LineReset
 	move.l	d6,a0
 	lea	tb_CellStyle(a3),a1
-	bsr	LayoutBlockContent
+	jsr	LayoutBlockContent
 	move.l	g_LayY(a4),d0
 	add.l	tb_Pad(a3),d0
 	moveq	#0,d1			; height="..." on the cell
@@ -447,12 +447,12 @@ LayoutTable:
 	lea	tb_Rect(a3),a0
 	move.l	(a0,d4.l*4),d0
 	bmi.s	.f2
-	bsr	RunPtr
+	jsr	RunPtr
 	move.w	d2,ru_H(a0)
 .f2:	lea	tb_Box(a3),a0
 	move.l	(a0,d4.l*4),d0
 	bmi.s	.fix
-	bsr	RunPtr
+	jsr	RunPtr
 	move.w	d2,ru_H(a0)
 	bra.s	.fix
 .fixd:	move.l	tb_RowBottom(a3),d0
@@ -467,14 +467,14 @@ LayoutTable:
 	sub.l	tb_Top(a3),d2
 	move.l	tb_TabRect(a3),d0
 	bmi.s	.t2
-	bsr	RunPtr
+	jsr	RunPtr
 	move.w	d2,ru_H(a0)
 .t2:	move.l	tb_TabBox(a3),d0
 	bmi.s	.done
-	bsr	RunPtr
+	jsr	RunPtr
 	move.w	d2,ru_H(a0)
 .done:	clr.l	g_PendMargin(a4)
-	bsr	LineReset
+	jsr	LineReset
 	lea	tb_SIZEOF(sp),sp
 	movem.l	(sp)+,d2-d7/a2-a3/a5
 	rts
@@ -485,7 +485,7 @@ BoxRun:
 	movem.l	d2-d3,-(sp)
 	move.l	d0,d2
 	move.l	d1,d3
-	bsr	AddRun
+	jsr	AddRun
 	beq.s	.fail
 	move.l	d0,a0
 	move.b	d2,ru_Type(a0)
@@ -493,8 +493,8 @@ BoxRun:
 	move.l	tb_Top(a3),ru_Y(a0)
 	move.w	tb_X0+2(a3),ru_X(a0)
 	move.w	tb_Width+2(a3),ru_W(a0)
-	bsr	LineReset		; (uses d0)
-	bsr	RunCount
+	jsr	LineReset		; (uses d0)
+	jsr	RunCount
 	subq.l	#1,d0
 	movem.l	(sp)+,d2-d3
 	rts
@@ -508,7 +508,7 @@ CellRun:
 	movem.l	d4-d5,-(sp)
 	move.l	d0,d4
 	move.l	d1,d5
-	bsr	AddRun
+	jsr	AddRun
 	beq.s	.fail
 	move.l	d0,a0
 	move.b	d4,ru_Type(a0)
@@ -518,7 +518,7 @@ CellRun:
 	move.l	d3,d0
 	sub.l	d2,d0
 	move.w	d0,ru_W(a0)
-	bsr	RunCount
+	jsr	RunCount
 	subq.l	#1,d0
 	movem.l	(sp)+,d4-d5
 	rts
@@ -642,11 +642,11 @@ IsCell:
 SpanOf:
 	move.l	a0,-(sp)
 	lea	AnColspan(pc),a1
-	bsr	DomGetAttr
+	jsr	DomGetAttr
 	tst.l	d0
 	beq.s	.one
 	move.l	d0,a0
-	bsr	ParseDec
+	jsr	ParseDec
 	tst.l	d0
 	ble.s	.one
 	cmp.l	#MAXCOLS,d0
@@ -662,11 +662,11 @@ SpanOf:
 NumAttr:
 	move.l	d0,-(sp)
 	move.l	a5,a0
-	bsr	DomGetAttr
+	jsr	DomGetAttr
 	tst.l	d0
 	beq.s	.def
 	move.l	d0,a0
-	bsr	ParseDec
+	jsr	ParseDec
 	tst.l	d1
 	beq.s	.def
 	addq.l	#4,sp
@@ -680,10 +680,10 @@ RowStyle:
 	movem.l	a2/a5,-(sp)
 	move.l	a0,a5
 	lea	tb_RowStyle(a3),a2
-	bsr	StyleCompute
+	jsr	StyleCompute
 	move.l	a5,a0
 	lea	tb_RowStyle(a3),a1
-	bsr	CssApply
+	jsr	CssApply
 	moveq	#1,d0
 	cmp.b	#DISP_NONE,tb_RowStyle+st_Display(a3)
 	bne.s	.x
@@ -695,10 +695,10 @@ RowStyle:
 CellStyle:
 	movem.l	a2/a5,-(sp)
 	move.l	a0,a5
-	bsr	StyleCompute
+	jsr	StyleCompute
 	move.l	a5,a0
 	move.l	a2,a1
-	bsr	CssApply
+	jsr	CssApply
 	movem.l	(sp)+,a2/a5
 	rts
 
@@ -777,10 +777,10 @@ MeasureNode:
 	move.l	sp,a2
 	move.l	a5,a0
 	move.l	a3,a1
-	bsr	StyleCompute
+	jsr	StyleCompute
 	move.l	a5,a0
 	move.l	sp,a1
-	bsr	CssApply
+	jsr	CssApply
 	move.l	sp,a3			; a3 = this element's style
 	move.b	st_Display(a3),d0
 	cmp.b	#DISP_NONE,d0
@@ -799,14 +799,14 @@ MeasureNode:
 	bsr	MeasWord
 	bra	.pop
 .nimg:	move.l	a5,a0			; form controls: their box width
-	bsr	FormIsControl
+	jsr	FormIsControl
 	beq.s	.nctl
 	moveq	#0,d0
 	move.b	st_Soft(a3),d0
 	lsl.w	#8,d0
 	move.b	st_Font(a3),d0
 	move.l	a5,a0
-	bsr	FormControlSize
+	jsr	FormControlSize
 	moveq	#0,d1
 	bsr	MeasWord
 	bra	.pop
@@ -889,7 +889,7 @@ MeasureNode:
 	lea	Blank(pc),a0
 	moveq	#1,d1
 	move.l	d6,d0
-	bsr	Measure
+	jsr	Measure
 	move.l	d0,d5			; blank width
 	move.l	n_Data(a5),a2
 	move.l	n_Data2(a5),d7
@@ -912,7 +912,7 @@ MeasureNode:
 	sub.l	a5,d1
 	move.l	a5,a0
 	move.l	d6,d0
-	bsr	Measure
+	jsr	Measure
 	move.l	d5,d1
 	bsr	MeasWord
 	bra.s	.tl
@@ -929,7 +929,7 @@ MeasureNode:
 	sub.l	a5,d1
 	move.l	a5,a0
 	move.l	d6,d0
-	bsr	Measure
+	jsr	Measure
 	moveq	#0,d1
 	bsr	MeasWord
 	move.l	g_MeasLine(a4),d0

@@ -141,6 +141,7 @@ n_Flags		rs.b	1
 n_Tag		rs.w	1		; TAG_xxx (elements)
 n_Data		rs.l	1		; element: first Attr; text: text
 n_Data2		rs.l	1		; element: aux data; text: length
+n_Css		rs.l	1		; element: cached CSS matches or 0
 NODE_SIZEOF	rs.b	0
 
 	RSRESET
@@ -178,6 +179,7 @@ LIST_SQUARE	equ	2
 LIST_DECIMAL	equ	3
 LIST_NONE	equ	4
 SF_INLIST	equ	1		; st_Flags: inside a list (inherited)
+SF_MAUTO	equ	2		; st_Flags: margin-left/right auto
 
 	RSRESET
 st_Display	rs.b	1		; DISP_xxx
@@ -198,6 +200,49 @@ st_Link		rs.l	1		; enclosing <a href> element
 st_Width	rs.w	1		; px; negative = percent; 0 = auto
 st_Height	rs.w	1
 STYLE_SIZEOF	rs.b	0
+
+;--------------------------------------------------------------------
+; CSS (css.s).  Everything lives in the page pool.
+;--------------------------------------------------------------------
+COMB_DESC	equ	1		; "A B"
+COMB_CHILD	equ	2		; "A > B"
+COMB_ADJ	equ	3		; "A + B"
+COMB_SIB	equ	4		; "A ~ B"
+PS_LINK		equ	1		; :link, :any-link
+PS_FIRST	equ	2		; :first-child
+
+	RSRESET				; compound selector
+cm_Prev		rs.l	1		; the compound to the left
+cm_Comb		rs.b	1		; combinator to cm_Prev
+cm_Pseudo	rs.b	1
+cm_Tag		rs.w	1		; 0 any, -1 never matches
+cm_Id		rs.l	1
+cm_Classes	rs.l	1		; "a",0,"b",0,0
+cm_Attrs	rs.l	1		; AttrSel list
+CM_SIZEOF	rs.b	0
+
+	RSRESET				; attribute selector
+as_Next		rs.l	1
+as_Name		rs.l	1
+as_Value	rs.l	1
+as_Op		rs.b	1		; 0 = present, or = ~ ^ $ * |
+as_pad		rs.b	3
+AS_SIZEOF	rs.b	0
+
+	RSRESET				; style rule (one per selector)
+cs_Next		rs.l	1		; next rule in the same bucket
+cs_Sel		rs.l	1		; rightmost compound
+cs_Decls	rs.l	1		; declarations: prop.b, important.b,
+					; value, NUL ... ; prop 0 ends
+cs_Spec		rs.l	1		; specificity: ids<<16|classes<<8|tags
+cs_Order	rs.l	1
+cs_MqMin	rs.w	1		; media query width range
+cs_MqMax	rs.w	1
+CS_SIZEOF	rs.b	0
+
+CSS_IDBUCKETS	equ	64
+CSS_CLBUCKETS	equ	128
+CSS_MAXMATCH	equ	64		; matched rules kept per element
 
 ;--------------------------------------------------------------------
 ; Run - one item of the display list made by layout
@@ -374,6 +419,25 @@ g_FormBuf	rs.b	BUF_SIZEOF	; encoded form data
 g_PageCharset	rs.l	1		; CS_xxx the page was decoded from
 g_PostData	rs.l	1		; body for the next request (POST) or 0
 g_PostLen	rs.l	1
+; CSS
+g_CssIdTab	rs.l	1		; bucket heads (page pool)
+g_CssClassTab	rs.l	1
+g_CssTagTab	rs.l	1
+g_CssAny	rs.l	1		; universal bucket head
+g_CssRules	rs.l	1		; number of rules
+g_CssHasMq	rs.l	1		; some rules depend on the width
+g_CssCacheW	rs.l	1		; width the match caches are for
+g_CssMqMin	rs.w	1		; media range while parsing
+g_CssMqMax	rs.w	1
+g_CssHidden	rs.l	1		; "visually hidden" detection bits:
+					; 0 positioned, 1 off screen/clipped,
+					; 2 width <= 1, 3 height <= 1
+g_CssBox	rs.l	8		; CSS margins, paddings (t r b l), -1 unset
+g_CssMatch	rs.l	CSS_MAXMATCH	; matching scratch
+g_CssNMatch	rs.l	1
+g_CssName	rs.b	256		; parsing scratch (CSS_NAMEBUF)
+g_CssTag	rs.b	32
+g_CssTmp	rs.b	4096		; declarations being parsed (DECL_TMP)
 ; TLS (AmiSSL)
 g_AmiSSLMasterBase rs.l	1
 g_AmiSSLBase	rs.l	1

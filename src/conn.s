@@ -110,7 +110,7 @@ ConnOpen:
 	move.l	d3,4(a0)		; sin_addr
 
 	move.l	#CONN_SIZEOF,d0
-	bsr	Alloc
+	jsr	Alloc
 	beq	.fail1
 	move.l	d0,a3
 	moveq	#-1,d0
@@ -324,7 +324,7 @@ ConnOpenFile:
 	movem.l	d2/a2-a3,-(sp)
 	move.l	a0,a2
 	move.l	#CONN_SIZEOF,d0
-	bsr	Alloc
+	jsr	Alloc
 	beq.s	.x
 	move.l	d0,a3
 	moveq	#-1,d0
@@ -365,7 +365,7 @@ ConnClose:
 	DOS	Close
 .nofile:
 	move.l	a2,a1
-	bsr	Free
+	jsr	Free
 .x:	move.l	(sp)+,a2
 	rts
 

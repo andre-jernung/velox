@@ -91,7 +91,7 @@ Main:
 	moveq	#RC_FAIL,d2
 	bsr	OpenLibs
 	beq	.cleanup
-	bsr	MemInit
+	jsr	MemInit
 	beq	.cleanup
 	bsr	LoadSettings
 	tst.l	g_WBMsg(a4)
@@ -133,22 +133,22 @@ Main:
 	DOS	Open
 	move.l	d0,g_LogFH(a4)
 .nolog:	moveq	#RC_FAIL,d2
-	bsr	GuiOpen
+	jsr	GuiOpen
 	beq.s	.closegui
 	lea	StartUrl(pc),a0		; URL argument or the start page
 	move.l	g_ArgArray+ARG_URL(a4),d0
 	beq.s	.start
 	move.l	d0,a0
 	lea	g_UrlTmp2(a4),a1
-	bsr	UrlFixup
+	jsr	UrlFixup
 	lea	g_UrlTmp2(a4),a0
 .start:	moveq	#1,d0
-	bsr	NavGo
-	bsr	GuiEventLoop
+	jsr	NavGo
+	jsr	GuiEventLoop
 	moveq	#RC_OK,d2
 .closegui:
-	bsr	GuiClose
-	bsr	NavExit
+	jsr	GuiClose
+	jsr	NavExit
 .cleanup:
 	move.l	g_LogFH(a4),d1
 	beq.s	.nologf
@@ -160,9 +160,9 @@ Main:
 	clr.l	g_RDArgs(a4)
 	DOS	FreeArgs
 .noargs:
-	bsr	FlushOut
-	bsr	NetExit
-	bsr	MemExit
+	jsr	FlushOut
+	jsr	NetExit
+	jsr	MemExit
 	bsr	CloseLibs
 	move.l	d2,d0
 	movem.l	(sp)+,d2-d3
@@ -215,7 +215,7 @@ VarInsecure:	dc.b	"Velox/InsecureTLS",0
 SetProxy:
 	clr.l	g_ProxyPort(a4)
 	lea	SHttp(pc),a1
-	bsr	StrIPrefix		; skip "http://" (a0 moves past it)
+	jsr	StrIPrefix		; skip "http://" (a0 moves past it)
 	lea	g_ProxyHost(a4),a1
 	move.w	#HOST_MAX-2,d1
 .h:	move.b	(a0)+,d0
@@ -228,7 +228,7 @@ SetProxy:
 	clr.b	(a1)
 	dbf	d1,.h
 	bra.s	.x
-.port:	bsr	ParseDec
+.port:	jsr	ParseDec
 	cmp.l	#65535,d0
 	bhi.s	.x
 	move.l	d0,g_ProxyPort(a4)
@@ -313,51 +313,51 @@ CliFetch:
 	move.l	g_ArgArray+ARG_URL(a4),d0
 	bne.s	.url
 	lea	MsgNoUrl(pc),a0
-	bsr	PutStr
+	jsr	PutStr
 	moveq	#RC_FAIL,d0
 	bra	.x
 .url:	move.l	d0,a0
 	lea	g_UrlTmp2(a4),a1
-	bsr	UrlFixup
+	jsr	UrlFixup
 	move.l	#SIGBREAKF_CTRL_C,g_AbortMask(a4)
 	lea	g_UrlTmp2(a4),a0
-	bsr	HttpGet
+	jsr	HttpGet
 	bne.s	.ok
 	lea	ProgNameColon(pc),a0
-	bsr	PutStr
+	jsr	PutStr
 	move.l	g_Error(a4),d0
-	bsr	ErrorText
-	bsr	PutStr
-	bsr	PutNL
+	jsr	ErrorText
+	jsr	PutStr
+	jsr	PutNL
 	moveq	#RC_FAIL,d0
 	bra.s	.x
 .ok:	lea	g_Resp(a4),a3
 	tst.l	g_ArgArray+ARG_INFO(a4)
 	beq.s	.dump
 	lea	MsgStatus(pc),a0
-	bsr	PutStr
+	jsr	PutStr
 	move.l	r_Status(a3),d0
-	bsr	PutNum
+	jsr	PutNum
 	lea	MsgUrl(pc),a0
-	bsr	PutStr
+	jsr	PutStr
 	lea	r_Url(a3),a0
-	bsr	PutStr
+	jsr	PutStr
 	lea	MsgType(pc),a0
-	bsr	PutStr
+	jsr	PutStr
 	lea	r_CType(a3),a0
-	bsr	PutStr
+	jsr	PutStr
 	lea	MsgLength(pc),a0
-	bsr	PutStr
+	jsr	PutStr
 	move.l	r_Body+buf_Len(a3),d0
-	bsr	PutNum
-	bsr	PutNL
+	jsr	PutNum
+	jsr	PutNL
 .dump:	tst.l	g_ArgArray+ARG_DUMP(a4)
 	beq.s	.done
 	move.l	r_Body+buf_Data(a3),d0
 	beq.s	.done
 	move.l	d0,a0
 	move.l	r_Body+buf_Len(a3),d0
-	bsr	PutBuf
+	jsr	PutBuf
 .done:	moveq	#RC_OK,d0
 	move.l	r_Status(a3),d1
 	cmp.l	#400,d1

@@ -447,7 +447,7 @@ CreateGadgets:
 	move.w	d4,gng_GadgetID(a1)
 	move.w	d2,gng_LeftEdge(a1)
 	move.l	a0,gng_GadgetText(a1)
-	bsr	StrLen			; (keeps a0)
+	jsr	StrLen			; (keeps a0)
 	move.l	g_Window(a4),a1
 	move.l	wd_RPort(a1),a1
 	GFX	TextLength
@@ -653,13 +653,13 @@ PaintRange:
 	move.l	d0,g_PaintFont(a4)
 	move.l	d0,g_PaintFont+4(a4)
 	; runs overlapping the range
-	bsr	RunCount
+	jsr	RunCount
 	move.l	d0,d5
 	moveq	#0,d4
 .l:	cmp.l	d5,d4
 	bhs.s	.done
 	move.l	d4,d0
-	bsr	RunPtr
+	jsr	RunPtr
 	move.l	a0,a2
 	move.l	ru_Y(a2),d0
 	cmp.l	d7,d0
@@ -804,7 +804,7 @@ PaintRun:
 PaintWidget:
 	movem.l	d2-d7/a2/a5,-(sp)
 	move.l	ru_Text(a2),a0
-	bsr	FormStateOf
+	jsr	FormStateOf
 	tst.l	d0
 	beq	.x
 	move.l	d0,a5			; a5 = state
@@ -835,7 +835,7 @@ PaintWidget:
 	move.l	fs_Label(a5),d0
 	beq	.focus
 	move.l	d0,a0
-	bsr	StrLen
+	jsr	StrLen
 	move.l	d0,d7			; label length
 	move.l	ru_Text(a2),a0		; label x: centred, or left in selects
 	moveq	#8,d6
@@ -1356,7 +1356,7 @@ DrawStatus:
 	add.w	tf_Baseline(a0),d1
 	GFX	Move
 	lea	g_StatusText(a4),a0
-	bsr	StrLen
+	jsr	StrLen
 	move.l	a2,a1
 	lea	g_StatusText(a4),a0
 	GFX	Text
@@ -1368,7 +1368,7 @@ DrawStatus:
 GuiStatus:
 	lea	g_StatusText(a4),a1
 	move.l	#STATUS_MAX-1,d0
-	bsr	StrCopyN
+	jsr	StrCopyN
 	bra	DrawStatus
 
 ; UpdateScroller - give the scroller the document size and position
@@ -1410,7 +1410,7 @@ GuiScrollTo:
 	move.l	d0,g_ScrollY(a4)
 	lea	LogScroll(pc),a0
 	suba.l	a1,a1
-	bsr	LogEvent
+	jsr	LogEvent
 	move.l	d2,d0
 	bpl.s	.abs
 	neg.l	d0
@@ -1462,7 +1462,7 @@ GuiScrollTo:
 ; GuiRelayout - lay the page out for the current width and repaint
 GuiRelayout:
 	bsr	GuiPageWidth
-	bsr	LayoutDocument
+	jsr	LayoutDocument
 	move.l	g_ScrollY(a4),d0
 	clr.l	g_ScrollY(a4)
 	bsr	ClampScroll
@@ -1612,7 +1612,7 @@ HandleEvent:
 	lea	LogKey(pc),a0		; (key events are logged for tests)
 	suba.l	a1,a1
 	move.l	d3,d0
-	bsr	LogEvent
+	jsr	LogEvent
 	bra	OnKey
 .x:	rts
 
@@ -1627,22 +1627,22 @@ OnGadget:
 	move.l	d3,d0
 	bra	GuiScrollTo
 .ns:	cmp.w	#GID_BACK,d0
-	beq	NavBack
+	beq	ToNavBack
 	cmp.w	#GID_FWD,d0
-	beq	NavForward
+	beq	ToNavForward
 	cmp.w	#GID_RELOAD,d0
-	beq	NavReload
+	beq	ToNavReload
 	cmp.w	#GID_HOME,d0
-	beq	NavHome
+	beq	ToNavHome
 	cmp.w	#GID_URL,d0
 	bne.s	.x
 	move.l	gg_SpecialInfo(a2),a0
 	move.l	si_Buffer(a0),a0
 	lea	g_UrlTmp2(a4),a1
-	bsr	UrlFixup
+	jsr	UrlFixup
 	lea	g_UrlTmp2(a4),a0
 	moveq	#1,d0
-	bra	NavGo
+	jmp	NavGo
 .x:	rts
 
 ; OnKey - raw keys: cursor up/down, space, backspace, mouse wheel
@@ -1651,7 +1651,7 @@ OnKey:
 	beq.s	.noedit
 	move.l	d3,d0
 	move.l	d4,d1
-	bsr	FormEditKey
+	jsr	FormEditKey
 	tst.l	d0
 	bne	.x
 .noedit:
@@ -1663,13 +1663,13 @@ OnKey:
 	cmp.w	#RAW_L,d3
 	beq	ActivateUrl
 	cmp.w	#RAW_B,d3
-	beq	NavBack
+	beq	ToNavBack
 	cmp.w	#RAW_F,d3
-	beq	NavForward
+	beq	ToNavForward
 	cmp.w	#RAW_R,d3
-	beq	NavReload
+	beq	ToNavReload
 	cmp.w	#RAW_H,d3
-	beq	NavHome
+	beq	ToNavHome
 	cmp.w	#RAW_Q,d3
 	bne.s	.nq
 	moveq	#1,d0
@@ -1739,10 +1739,18 @@ OnKey:
 	mulu.w	#3,d0
 	bra.s	.go
 .n5:	cmp.w	#RAW_BACKSPACE,d3
-	beq	NavBack
+	beq	ToNavBack
 	rts
 .go:	add.l	g_ScrollY(a4),d0
 	bra	GuiScrollTo
+
+; trampolines: conditional branches cannot reach other modules
+ToNavBack:	jmp	NavBack
+ToNavForward:	jmp	NavForward
+ToNavReload:	jmp	NavReload
+ToNavHome:	jmp	NavHome
+ToNavLink:	jmp	NavLink
+ToFormActivate:	jmp	FormActivate
 
 ; ActivateUrl - empty the URL gadget and put the cursor into it
 ; ("open location"; clicking the gadget edits the current URL instead)
@@ -1764,7 +1772,7 @@ ActivateUrl:
 FocusNext:
 	movem.l	d2-d4/a2,-(sp)
 	move.l	d0,d2
-	bsr	RunCount
+	jsr	RunCount
 	move.l	d0,d3
 	move.l	g_FocusIdx(a4),d4
 	tst.l	d2
@@ -1777,7 +1785,7 @@ FocusNext:
 	cmp.l	d3,d4
 	bge.s	.none
 	move.l	d4,d0
-	bsr	RunPtr
+	jsr	RunPtr
 	move.l	ru_Link(a0),d0
 	beq.s	.l
 	cmp.l	g_FocusLink(a4),d0
@@ -1804,12 +1812,12 @@ FocusNext:
 .paint:	bsr	GuiPaintAll
 	move.l	g_FocusLink(a4),a0
 	lea	AnHref(pc),a1
-	bsr	DomGetAttr
+	jsr	DomGetAttr
 	tst.l	d0
 	bne.s	.got
 	move.l	g_FocusLink(a4),a0	; controls: their name
 	lea	AnName(pc),a1
-	bsr	DomGetAttr
+	jsr	DomGetAttr
 	tst.l	d0
 	beq.s	.x
 .got:
@@ -1817,7 +1825,7 @@ FocusNext:
 	lea	LogFocus(pc),a0
 	move.l	a1,-(sp)
 	move.l	#$80000000,d0
-	bsr	LogEvent
+	jsr	LogEvent
 	move.l	(sp)+,a0
 	bsr	GuiStatus
 	bra.s	.x
@@ -1848,12 +1856,12 @@ LinkAt:
 	cmp.l	g_PageH(a4),d3
 	bge.s	.none
 	add.l	g_ScrollY(a4),d3	; document y
-	bsr	RunCount
+	jsr	RunCount
 	move.l	d0,d4
 .l:	subq.l	#1,d4
 	bmi.s	.none
 	move.l	d4,d0
-	bsr	RunPtr
+	jsr	RunPtr
 	tst.l	ru_Link(a0)
 	beq.s	.l
 	move.l	ru_Y(a0),d0
@@ -1888,7 +1896,7 @@ OnHover:
 	beq.s	.nolink
 	move.l	d0,a0
 	lea	AnHref(pc),a1
-	bsr	DomGetAttr
+	jsr	DomGetAttr
 	tst.l	d0
 	beq.s	.x
 	move.l	d0,a0
@@ -1910,7 +1918,7 @@ OnClick:
 	move.l	d0,g_PressLink(a4)
 	cmp.l	g_EditField(a4),d0	; clicking elsewhere ends editing
 	beq.s	.x
-	bra	FormLeave
+	jmp	FormLeave
 .up:	cmp.w	#IECODE_LBUTTON|IECODE_UP_PREFIX,d3
 	bne.s	.x
 	bsr	LinkAt
@@ -1927,16 +1935,16 @@ OnClick:
 ; In: a0 = <a> element or control; d4 = qualifier (Shift = backwards)
 Activate:
 	move.l	a0,-(sp)
-	bsr	FormIsControl
+	jsr	FormIsControl
 	movem.l	(sp)+,a0
 	tst.l	d0
-	beq	NavLink
+	beq	ToNavLink
 	moveq	#1,d0
 	move.w	d4,d1
 	and.w	#IEQUALIFIER_LSHIFT|IEQUALIFIER_RSHIFT,d1
-	beq	FormActivate
+	beq	ToFormActivate
 	moveq	#-1,d0
-	bra	FormActivate
+	jmp	FormActivate
 
 ; OnResize - new window size: rebuild gadgets, lay out again
 OnResize:
