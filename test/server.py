@@ -18,7 +18,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def log_message(self, fmt, *args):
-        sys.stderr.write("server: " + fmt % args + "\n")
+        sys.stderr.write("server: [%d] %s\n" % (self.client_address[1], fmt % args))
 
     def send(self, code, body, ctype="text/plain", headers=()):
         self.send_response(code)

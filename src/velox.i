@@ -119,6 +119,8 @@ CONN_SIZEOF	rs.b	0
 r_Status	rs.l	1
 r_Length	rs.l	1		; Content-Length or -1
 r_Chunked	rs.l	1
+r_Reuse		rs.l	1		; the connection can be kept
+r_ConnHdr	rs.l	1		; 1 keep-alive, -1 close, 0 default
 r_Body		rs.b	BUF_SIZEOF
 r_CType		rs.b	64		; Content-Type value
 r_Url		rs.b	URL_MAX		; final URL after redirects
@@ -484,6 +486,11 @@ g_Cookies	rs.l	1		; list, oldest first
 g_CookieCount	rs.l	1
 g_CookiePath	rs.b	HOST_MAX
 g_CookieBuf	rs.b	4096
+; kept-alive connection
+g_KeepConn	rs.l	1
+g_KeepPort	rs.l	1
+g_KeepTls	rs.l	1
+g_KeepHost	rs.b	HOST_MAX
 ; settings
 g_ProxyPort	rs.l	1		; 0 = no proxy
 g_ProxyHost	rs.b	HOST_MAX

@@ -8,7 +8,7 @@
 
 	include	"velox.i"
 
-	xdef	HttpGet,HttpReadResponse
+	xdef	HttpGet,HttpReadResponse,HttpCloseKept
 	xref	UrlParse,UrlResolve
 	xref	ConnOpen,ConnClose,ConnWrite,ConnRead,ConnReadLine
 	xref	BufAppend,BufAppendByte,BufAppendStr,BufClear,BufReserve
@@ -37,31 +37,9 @@ HttpGet:
 	beq	.fail
 	move.l	g_Parts+up_Scheme(a4),d1
 	bmi	.badscheme
-	move.l	g_ProxyPort(a4),d0	; through the proxy (plain HTTP to
-	beq.s	.direct			; it, also for https URLs)
-	lea	g_ProxyHost(a4),a0
-	moveq	#0,d1
-	bra.s	.conn
-.direct:
-	lea	g_Parts+up_Host(a4),a0
-	move.l	g_Parts+up_Port(a4),d0
-.conn:	jsr	ConnOpen
-	beq	.fail
-	move.l	d0,a2
-	bsr	BuildRequest
-	beq.s	.failclose
-	move.l	a2,a0
-	move.l	g_ReqBuf+buf_Data(a4),a1
-	move.l	g_ReqBuf+buf_Len(a4),d0
-	jsr	ConnWrite
-	beq.s	.failclose
-	move.l	a2,a0
-	bsr	HttpReadResponse
+	bsr	Exchange		; d0 = status or 0
 	move.l	d0,d2
-	move.l	a2,a0
-	jsr	ConnClose
-	tst.l	d2
-	beq.s	.fail
+	beq	.fail
 
 	; redirect?
 	tst.b	r_Location(a3)
@@ -102,11 +80,114 @@ HttpGet:
 .toomany:
 	SETERR	ERR_REDIRECTS
 	bra.s	.fail
+.fail:	moveq	#0,d0
+	bra.s	.x
+
+;--------------------------------------------------------------------
+; Exchange - send the request for g_Parts and read the response, on a
+; kept-alive connection to the same server if there is one.  A kept
+; connection the server has closed in the meantime is retried once on
+; a new connection.
+; Out: d0 = HTTP status or 0 (g_Error set)
+;--------------------------------------------------------------------
+Exchange:
+	movem.l	d2-d6/a2,-(sp)
+	moveq	#0,d4			; attempt
+.try:	; the server we talk to: the proxy, or the URL's host
+	move.l	g_ProxyPort(a4),d5
+	beq.s	.direct
+	lea	g_ProxyHost(a4),a0
+	moveq	#0,d6			; (plain HTTP to the proxy)
+	bra.s	.tgt
+.direct:
+	lea	g_Parts+up_Host(a4),a0
+	move.l	g_Parts+up_Port(a4),d5
+	move.l	g_Parts+up_Scheme(a4),d6
+.tgt:	; the kept connection, if it goes there
+	moveq	#0,d3			; reused?
+	move.l	g_KeepConn(a4),d0
+	beq.s	.new
+	clr.l	g_KeepConn(a4)
+	move.l	d0,a2
+	tst.l	d4
+	bne.s	.drop
+	cmp.l	g_KeepPort(a4),d5
+	bne.s	.drop
+	cmp.l	g_KeepTls(a4),d6
+	bne.s	.drop
+	move.l	a0,-(sp)
+	lea	g_KeepHost(a4),a1
+.hc:	move.b	(a0)+,d0
+	cmp.b	(a1)+,d0
+	bne.s	.hne
+	tst.b	d0
+	bne.s	.hc
+	move.l	(sp)+,a0
+	moveq	#1,d3
+	bra.s	.send
+.hne:	move.l	(sp)+,a0
+.drop:	move.l	a0,-(sp)		; another server: close it
+	move.l	a2,a0
+	jsr	ConnClose
+	move.l	(sp)+,a0
+.new:	move.l	a0,-(sp)		; remember the target for keeping
+	lea	g_KeepHost(a4),a1
+	move.l	#HOST_MAX-1,d0
+	jsr	StrCopyN
+	move.l	(sp)+,a0
+	move.l	d5,d0
+	move.l	d6,d1
+	jsr	ConnOpen
+	beq	.fail
+	move.l	d0,a2
+.send:	bsr	BuildRequest
+	beq.s	.failclose
+	move.l	a2,a0
+	move.l	g_ReqBuf+buf_Data(a4),a1
+	move.l	g_ReqBuf+buf_Len(a4),d0
+	jsr	ConnWrite
+	beq.s	.retry
+	move.l	a2,a0
+	bsr	HttpReadResponse
+	move.l	d0,d2
+	beq.s	.retry
+	tst.l	g_Resp+r_Reuse(a4)	; keep it for the next request?
+	beq.s	.close
+	move.l	a2,g_KeepConn(a4)
+	move.l	d5,g_KeepPort(a4)
+	move.l	d6,g_KeepTls(a4)
+	bra.s	.ok
+.close:	move.l	a2,a0
+	jsr	ConnClose
+.ok:	move.l	d2,d0
+.x:	movem.l	(sp)+,d2-d6/a2
+	rts
+.retry:	; a reused connection that failed: once more on a new one
+	move.l	a2,a0
+	jsr	ConnClose
+	tst.l	d3
+	beq.s	.fail
+	cmp.l	#ERR_ABORT,g_Error(a4)
+	beq.s	.fail
+	moveq	#1,d4
+	bra	.try
 .failclose:
 	move.l	a2,a0
 	jsr	ConnClose
 .fail:	moveq	#0,d0
 	bra.s	.x
+
+;--------------------------------------------------------------------
+; HttpCloseKept - close the kept-alive connection (before the socket
+; library goes)
+;--------------------------------------------------------------------
+HttpCloseKept:
+	move.l	g_KeepConn(a4),d0
+	beq.s	.x
+	clr.l	g_KeepConn(a4)
+	move.l	d0,a0
+	jmp	ConnClose
+.x:	rts
 
 ;--------------------------------------------------------------------
 ; BuildRequest - build the GET request for g_Parts in g_ReqBuf
@@ -261,7 +342,7 @@ RqTail:		dc.b	13,10
 		dc.b	" (AmigaOS; 68k)",13,10
 		dc.b	"Accept: text/html,text/plain;q=0.9,*/*;q=0.5",13,10
 		dc.b	"Accept-Encoding: identity",13,10
-		dc.b	"Connection: close",13,10,13,10,0
+		dc.b	"Connection: keep-alive",13,10,13,10,0
 	even
 
 ;--------------------------------------------------------------------
@@ -277,6 +358,8 @@ HttpReadResponse:
 	jsr	BufClear
 .status:
 	clr.l	r_Status(a3)
+	clr.l	r_Reuse(a3)
+	clr.l	r_ConnHdr(a3)
 	moveq	#-1,d0
 	move.l	d0,r_Length(a3)
 	clr.l	r_Chunked(a3)
@@ -289,6 +372,13 @@ HttpReadResponse:
 	lea	HHttp(pc),a1
 	jsr	StrIPrefix
 	beq	.proto
+	moveq	#1,d0			; HTTP/1.1 keeps the connection by
+	cmp.b	#'1',(a0)		; default, HTTP/1.0 does not
+	bne.s	.v10
+	cmp.b	#'0',2(a0)
+	bne.s	.v11
+.v10:	moveq	#-1,d0
+.v11:	move.l	d0,r_ConnHdr(a3)
 .ver:	move.b	(a0)+,d0
 	beq	.proto
 	cmp.b	#' ',d0
@@ -339,8 +429,27 @@ HttpReadResponse:
 	bra	.hdr
 .h5:	lea	HSetCookie(pc),a1
 	jsr	StrIPrefix
-	beq	.hdr
+	beq	.h6
 	jsr	CookieSet
+	bra	.hdr
+.h6:	lea	HConnection(pc),a1	; Connection: close / keep-alive
+	jsr	StrIPrefix
+	beq	.hdr
+	move.l	a0,-(sp)
+	lea	HClose(pc),a1
+	jsr	StrIFind
+	movem.l	(sp)+,a0
+	tst.l	d0
+	beq.s	.nclose
+	moveq	#-1,d0
+	move.l	d0,r_ConnHdr(a3)
+	bra	.hdr
+.nclose:
+	lea	HKeepAlive(pc),a1
+	jsr	StrIFind
+	beq	.hdr
+	moveq	#1,d0
+	move.l	d0,r_ConnHdr(a3)
 	bra	.hdr
 
 .endhdr:
@@ -361,6 +470,7 @@ HttpReadResponse:
 .toeof:	move.l	#$7fffffff,d0
 	bsr	ReadBody
 	bmi.s	.fail
+	move.l	#-1,r_ConnHdr(a3)	; ended by closing: not reusable
 	bra.s	.done
 
 .chunked:
@@ -380,7 +490,12 @@ HttpReadResponse:
 	bsr	ReadHdrLine
 	bgt.s	.trailer
 
-.done:	move.l	r_Status(a3),d0
+.done:	tst.l	r_ConnHdr(a3)		; reusable when not closing
+	bmi.s	.noreuse
+	moveq	#1,d0
+	move.l	d0,r_Reuse(a3)
+.noreuse:
+	move.l	r_Status(a3),d0
 .x:	movem.l	(sp)+,d2/a2-a3
 	rts
 .proto:	SETERR	ERR_PROTOCOL
@@ -453,4 +568,7 @@ HChunked:		dc.b	"chunked",0
 HLocation:		dc.b	"location:",0
 HContentType:		dc.b	"content-type:",0
 HSetCookie:		dc.b	"set-cookie:",0
+HConnection:		dc.b	"connection:",0
+HClose:			dc.b	"close",0
+HKeepAlive:		dc.b	"keep-alive",0
 	even

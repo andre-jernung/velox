@@ -46,7 +46,7 @@ rc("echo", 0)
 echo = out("echo").decode("latin-1")
 if not echo.startswith("GET /echo/a%20b?q=%E4 HTTP/1.1\n"):
     fail.append(f"echo request line: {echo.splitlines()[:1]}")
-for h in ("Host: 127.0.0.1:8080", "Connection: close", "User-Agent: Velox/"):
+for h in ("Host: 127.0.0.1:8080", "Connection: keep-alive", "User-Agent: Velox/"):
     if h not in echo:
         fail.append(f"echo: missing header {h}")
 rc("cookie", 0)
@@ -59,6 +59,19 @@ if out("refused") != b"velox: Connection failed\n":
 rc("nohost", 20)
 if out("nohost") != b"velox: Host not found\n":
     fail.append(f"nohost: {out('nohost')!r}")
+
+# keep-alive: the redirect and its target come over one connection
+import re
+srv = open(os.path.join(d, "..", "server.log"), encoding="latin-1").read().splitlines()
+ports = [re.match(r"server: \[(\d+)\] \"GET (\S+)", l) for l in srv]
+ports = [(m.group(1), m.group(2)) for m in ports if m]
+for i, (port, path) in enumerate(ports[:-1]):
+    if path == "/redirect" and ports[i + 1][1] == "/hello":
+        if ports[i + 1][0] != port:
+            fail.append("redirect did not reuse the connection")
+        break
+else:
+    fail.append("redirect not found in the server log")
 
 mem = {k: v for k, v in (l.split() for l in res.splitlines() if l.startswith("mem_"))}
 print(f"memory: before={mem.get('mem_before')} after={mem.get('mem_after')}")

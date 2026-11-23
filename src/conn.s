@@ -11,7 +11,7 @@
 
 	xdef	NetExit,ConnOpen,ConnOpenFile,ConnClose,TlsExit
 	xdef	ConnWrite,ConnRead,ConnGetByte,ConnReadLine
-	xref	Alloc,Free
+	xref	Alloc,Free,HttpCloseKept
 
 AmiSSL_SocketBase	equ	TAG_USER+$01
 AmiSSL_ErrNoPtr		equ	TAG_USER+$0b
@@ -58,6 +58,7 @@ TlsTagExt:	dc.l	AmiSSL_GetAmiSSLExtBase,0
 ; NetExit - close bsdsocket.library
 ;--------------------------------------------------------------------
 NetExit:
+	jsr	HttpCloseKept		; connections first,
 	bsr	TlsExit			; AmiSSL uses the socket library
 	move.l	g_SocketBase(a4),d0
 	beq.s	.x
