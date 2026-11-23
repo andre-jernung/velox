@@ -548,6 +548,7 @@ TestMetrics:
 	clr.l	g_PageFg(a4)
 	move.l	#$ffffff,g_PageBg(a4)
 	move.l	#$0000ee,g_LinkColor(a4)
+	move.l	#300,g_PageH(a4)	; for vh units
 	rts
 TestHeights:	dc.w	8,10,12,14,16,20
 

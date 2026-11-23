@@ -66,6 +66,7 @@ CP_CLIP		rs.b	1
 CP_POSITION	rs.b	1
 CP_LEFT		rs.b	1
 CP_TOP		rs.b	1
+CP_OPACITY	rs.b	1
 CP_COUNT	rs.b	0
 
 	section	code,code
@@ -951,6 +952,7 @@ PropNames:
 	PN	CP_POSITION,"position"
 	PN	CP_LEFT,"left"
 	PN	CP_TOP,"top"
+	PN	CP_OPACITY,"opacity"
 	dc.b	0
 	even
 
@@ -2080,6 +2082,7 @@ PropJump:
 	dc.w	PMaxWidth-PropJump,PListType-PropJump,PListType-PropJump
 	dc.w	PVisibility-PropJump,PHeight-PropJump,PClip-PropJump
 	dc.w	PPosition-PropJump,PLeftTop-PropJump,PLeftTop-PropJump
+	dc.w	POpacity-PropJump
 
 ; Kw - is the value (a0) the keyword a1 (lower case), as a whole word?
 ; Out: Z clear if yes; a0 kept
@@ -2507,6 +2510,8 @@ CssLength:
 	jsr	ParseLength
 	tst.l	d1
 	bne.s	.x
+	bsr	ViewportUnit		; vw / vh: of the window
+	bne.s	.x
 	; scale CSS px to our font size: px * em / 16
 	move.w	g_FontH+2(a4),d1
 	ext.l	d1
@@ -2643,6 +2648,16 @@ PPosition:
 .p:	bset	#0,g_CssHidden+3(a4)
 .x:	rts
 
+POpacity:				; opacity: 0 counts as "clipped away"
+	move.l	a2,a0
+	jsr	ParseDec
+	tst.l	d0
+	bne.s	.x
+	cmp.b	#'.',(a0)		; "0.5" is not 0
+	beq.s	.x
+	bset	#1,g_CssHidden+3(a4)
+.x:	rts
+
 PLeftTop:
 	move.l	a2,a0
 	moveq	#CSS_EM,d0
@@ -2653,6 +2668,29 @@ PLeftTop:
 	bgt.s	.x
 	bset	#1,g_CssHidden+3(a4)
 .x:	rts
+
+; ViewportUnit - after ParseLength: is the unit at a0 "vw" or "vh"?
+; Then d0 = d0 percent of the page width/height in our pixels.
+; Out: Z clear if it was
+ViewportUnit:
+	move.b	(a0),d1
+	or.b	#$20,d1
+	cmp.b	#'v',d1
+	bne.s	.no
+	move.b	1(a0),d1
+	or.b	#$20,d1
+	cmp.b	#'w',d1
+	bne.s	.h
+	muls.l	g_LayWidth(a4),d0
+	bra.s	.pct
+.h:	cmp.b	#'h',d1
+	bne.s	.no
+	muls.l	g_PageH(a4),d0
+.pct:	divs.l	#100,d0
+	moveq	#1,d1
+	rts
+.no:	moveq	#0,d1
+	rts
 
 ;--------------------------------------------------------------------
 ; SetFontSize - font-size value to a size class

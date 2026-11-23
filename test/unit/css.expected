@@ -37,3 +37,12 @@ wdgt 156 8 8 8 8 f1 s0 c000000 L
 text 164 8 24 20 18 f5 s0 c000000 "big"
 text 184 8 32 10 8 f9 s0 c000000 "mono"
 
+layout test/unit/layout/example.html 600 => 
+height 155
+text 75 200 200 10 8 f1 s0 c000000 "This domain is for use in"
+text 85 180 240 10 8 f1 s0 c000000 "documentation examples without"
+text 95 176 248 10 8 f1 s0 c000000 "needing permission. This is not"
+text 105 180 240 10 8 f1 s0 c000000 "a service; avoid relying on it"
+text 115 196 208 10 8 f1 s0 c000000 "for testing and monitoring"
+text 125 264 72 10 8 f1 s0 c000000 "purposes."
+
