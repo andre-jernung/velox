@@ -89,6 +89,7 @@ PageNew:
 	tst.l	d0
 	bne.s	.x
 	SETERR	ERR_NOMEM
+	moveq	#0,d0			; (Z set again after SETERR)
 .x:	rts
 
 ;--------------------------------------------------------------------
@@ -123,6 +124,7 @@ PageAlloc:
 	tst.l	d0
 	bne.s	.x
 	SETERR	ERR_NOMEM
+	moveq	#0,d0			; (Z set again after SETERR)
 .x:	rts
 
 ;--------------------------------------------------------------------
