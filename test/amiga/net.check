@@ -49,6 +49,10 @@ if not echo.startswith("GET /echo/a%20b?q=%E4 HTTP/1.1\n"):
 for h in ("Host: 127.0.0.1:8080", "Connection: close", "User-Agent: Velox/"):
     if h not in echo:
         fail.append(f"echo: missing header {h}")
+rc("cookie", 0)
+ck = out("cookie").decode("latin-1")
+if "Cookie: test=42\n" not in ck or "other=x" in ck:
+    fail.append("cookie: %r" % ck)
 rc("refused", 20)
 if out("refused") != b"velox: Connection failed\n":
     fail.append(f"refused: {out('refused')!r}")

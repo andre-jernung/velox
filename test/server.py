@@ -41,6 +41,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             for part in (b"chunk one, ", b"chunk two, ", b"chunk three\n"):
                 self.wfile.write(b"%x\r\n%s\r\n" % (len(part), part))
             self.wfile.write(b"0\r\n\r\n")
+        elif p == "/setcookie":
+            self.send(302, b"", headers=[("Location", "/echo/cookie"),
+                                         ("Set-Cookie", "test=42; Path=/"),
+                                         ("Set-Cookie", "other=x; Path=/nowhere")])
         elif p == "/redirect":
             self.send(302, b"", headers=[("Location", "/hello")])
         elif p == "/redirect-rel":

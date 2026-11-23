@@ -13,6 +13,7 @@
 	xref	ConnOpen,ConnClose,ConnWrite,ConnRead,ConnReadLine
 	xref	BufAppend,BufAppendByte,BufAppendStr,BufClear,BufReserve
 	xref	StrCopyN,StrIPrefix,StrIFind,SkipSpace,ParseDec,ParseHex,FmtDec
+	xref	CookieSet,CookieHeader
 
 	section	code,code
 
@@ -182,6 +183,9 @@ BuildRequest:
 	REQSTR	RqHost
 	bsr	AppendHostPort
 	beq	ReqNoMem
+	lea	g_ReqBuf(a4),a0
+	jsr	CookieHeader
+	beq	ReqNoMem
 	tst.l	g_PostData(a4)
 	beq.s	.nopost
 	REQSTR	RqPostHdr
@@ -327,12 +331,17 @@ HttpReadResponse:
 	bra.s	.hdr
 .h4:	lea	HContentType(pc),a1
 	jsr	StrIPrefix
-	beq.s	.hdr
+	beq.s	.h5
 	jsr	SkipSpace
 	lea	r_CType(a3),a1
 	moveq	#63,d0
 	jsr	StrCopyN
-	bra.s	.hdr
+	bra	.hdr
+.h5:	lea	HSetCookie(pc),a1
+	jsr	StrIPrefix
+	beq	.hdr
+	jsr	CookieSet
+	bra	.hdr
 
 .endhdr:
 	move.l	r_Status(a3),d0
@@ -443,4 +452,5 @@ HTransferEncoding:	dc.b	"transfer-encoding:",0
 HChunked:		dc.b	"chunked",0
 HLocation:		dc.b	"location:",0
 HContentType:		dc.b	"content-type:",0
+HSetCookie:		dc.b	"set-cookie:",0
 	even

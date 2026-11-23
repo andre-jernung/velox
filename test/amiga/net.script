@@ -16,6 +16,8 @@ VELOX:velox http://127.0.0.1:8080/missing INFO >VELOX:r/net-missing.out
 Echo >>VELOX:r/net.txt "missing rc=$RC"
 VELOX:velox "127.0.0.1:8080/echo/a b?q=ä" DUMP >VELOX:r/net-echo.out
 Echo >>VELOX:r/net.txt "echo rc=$RC"
+VELOX:velox http://127.0.0.1:8080/setcookie DUMP >VELOX:r/net-cookie.out
+Echo >>VELOX:r/net.txt "cookie rc=$RC"
 VELOX:velox http://127.0.0.1:1/ INFO >VELOX:r/net-refused.out
 Echo >>VELOX:r/net.txt "refused rc=$RC"
 VELOX:velox http://no-such-host.invalid/ INFO >VELOX:r/net-nohost.out

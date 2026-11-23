@@ -447,6 +447,11 @@ g_SslState	rs.l	1		; 0 = not tried, 1 = ready, -1 = unavailable
 g_Errno		rs.l	1
 g_Insecure	rs.l	1		; don't verify certificates (tests)
 g_TlsHost	rs.l	1		; host name for SNI / verification
+; cookies
+g_Cookies	rs.l	1		; list, oldest first
+g_CookieCount	rs.l	1
+g_CookiePath	rs.b	HOST_MAX
+g_CookieBuf	rs.b	4096
 ; settings
 g_ProxyPort	rs.l	1		; 0 = no proxy
 g_ProxyHost	rs.b	HOST_MAX

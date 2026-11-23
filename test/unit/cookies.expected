@@ -1,0 +1,23 @@
+# cookies ('|' = blank)
+setcookie http://www.example.com/a/b/page.html sid=123 => ok
+cookies http://www.example.com/a/b/other => Cookie: sid=123
+cookies http://www.example.com/a/x => 
+cookies http://example.com/a/b/x => 
+setcookie http://www.example.com/ lang=sv;|Path=/;|Domain=.example.com => ok
+cookies http://shop.example.com/ => Cookie: lang=sv
+cookies http://www.example.com/a/b/c => Cookie: sid=123; lang=sv
+cookies http://example.com.evil.org/ => 
+setcookie http://www.example.com/ evil=1;|Domain=other.com => ok
+cookies http://other.com/ => 
+setcookie https://secure.example.com/ token=abc;|Secure;|Path=/ => ok
+cookies http://secure.example.com/ => Cookie: lang=sv
+cookies https://secure.example.com/ => Cookie: lang=sv; token=abc
+setcookie http://www.example.com/ lang=en;|Path=/;|Domain=example.com => ok
+cookies http://www.example.com/ => Cookie: lang=en
+setcookie http://www.example.com/ lang=;|Path=/;|Domain=example.com;|Max-Age=0 => ok
+cookies http://www.example.com/ => 
+setcookie http://www.example.com/a/b/page.html sid=;|expires=Thu,|01|Jan|1970|00:00:00|GMT => ok
+cookies http://www.example.com/a/b/other => 
+setcookie http://h/ =bad => ok
+setcookie http://h/ novalue => ok
+cookies http://h/ => 

@@ -12,6 +12,8 @@
 ;   html FILE            parse an HTML file and dump the DOM
 ;   layout FILE WIDTH    parse and lay out with fixed test metrics (8 px
 ;                        per character), dump the display list
+;   setcookie URL VALUE  Set-Cookie VALUE ('|' = blank) from URL
+;   cookies URL          the Cookie header for a request to URL
 ;
 
 	include	"velox.i"
@@ -22,6 +24,7 @@
 	xref	PutStr,PutBuf,PutNum,PutNL,PutChar,FlushOut,ErrorText
 	xref	PageNew,BufReserve,BufClear,CharsetDetect,DecodeCharset
 	xref	HtmlParse,TagNameOf,LayoutDocument,RunCount,RunPtr,ParseDec,CssLoad
+	xref	CookieSet,CookieHeader,UrlParse,BufFree
 
 T_LINEMAX	equ	2048
 T_MAXWORDS	equ	4
@@ -167,6 +170,8 @@ Commands:
 	dc.w	CnHttpInfo-Commands,CmdHttpInfo-Commands
 	dc.w	CnHtml-Commands,CmdHtml-Commands
 	dc.w	CnLayout-Commands,CmdLayout-Commands
+	dc.w	CnSetCookie-Commands,CmdSetCookie-Commands
+	dc.w	CnCookies-Commands,CmdCookies-Commands
 	dc.w	0
 
 CnParse:	dc.b	"parse",0
@@ -176,6 +181,8 @@ CnHttp:		dc.b	"http",0
 CnHttpInfo:	dc.b	"httpinfo",0
 CnHtml:		dc.b	"html",0
 CnLayout:	dc.b	"layout",0
+CnSetCookie:	dc.b	"setcookie",0
+CnCookies:	dc.b	"cookies",0
 Empty:		dc.b	0
 ResultSep:	dc.b	" => ",0
 MsgUnknown:	dc.b	"unknown command",0
@@ -648,6 +655,42 @@ CmdLayout:
 .x:	movem.l	(sp)+,d2-d3/a2
 	rts
 
+CmdSetCookie:
+	move.l	T_Words+4,a0
+	lea	g_Parts(a4),a1
+	jsr	UrlParse
+	beq	PutError
+	move.l	T_Words+8,a0		; '|' stands for a blank
+	move.l	a0,a1
+.b:	move.b	(a1),d0
+	beq.s	.go
+	cmp.b	#'|',d0
+	bne.s	.n
+	move.b	#' ',(a1)
+.n:	addq.l	#1,a1
+	bra.s	.b
+.go:	jsr	CookieSet
+	lea	MsgOk(pc),a0
+	jmp	PutStr
+
+CmdCookies:
+	move.l	T_Words+4,a0
+	lea	g_Parts(a4),a1
+	jsr	UrlParse
+	beq	PutError
+	lea	T_Buf,a0
+	jsr	CookieHeader
+	move.l	T_Buf+buf_Data,d0
+	beq.s	.none
+	move.l	d0,a0
+	addq.l	#2,a0			; skip the CR LF
+	jsr	PutStr
+.none:	lea	T_Buf,a0
+	jmp	BufFree
+
+MsgOk:	dc.b	"ok",0
+	even
+
 PutNumSp:
 	jsr	PutNum
 	moveq	#' ',d0
@@ -690,6 +733,7 @@ Hex:		dc.b	"0123456789abcdef"
 ;====================================================================
 G:		ds.b	g_SIZEOF
 T_Conn:		ds.l	1
+T_Buf:		ds.b	BUF_SIZEOF
 T_NoBody:	ds.b	2
 T_Words:	ds.l	T_MAXWORDS
 T_Line:		ds.b	T_LINEMAX
