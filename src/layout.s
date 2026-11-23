@@ -596,8 +596,10 @@ LayoutChars:
 	move.l	d0,d3			; word width
 	; wrap before the word?
 	cmp.b	#WS_NOWRAP,st_White(a3)
+	bne.s	.wrap
+	tst.l	g_Squeeze(a4)		; (in a squeezed table it wraps)
 	beq.s	.place
-	tst.l	g_LineUsed(a4)
+.wrap:	tst.l	g_LineUsed(a4)
 	beq.s	.fit
 	move.l	g_LineX(a4),d0
 	add.l	d3,d0

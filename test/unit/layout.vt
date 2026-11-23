@@ -1,3 +1,5 @@
 # layout with fixed test metrics (8 px per character)
 layout test/unit/layout/text.html 200
 layout test/unit/layout/table.html 300
+# colspan widens only as needed; minimums too wide: squeezed, nowrap wraps
+layout test/unit/layout/squeeze.html 200

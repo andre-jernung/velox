@@ -51,3 +51,52 @@ text 73 82 8 10 8 f1 s0 c000000 "x"
 text 73 152 8 10 8 f1 s0 c000000 "y"
 text 96 8 40 10 8 f1 s0 c000000 "after"
 
+# colspan widens only as needed; minimums too wide: squeezed, nowrap wraps
+layout test/unit/layout/squeeze.html 200 => 
+height 252
+box  0 8 184 76 0 f0 s0 c000000
+box  3 11 178 14 0 f0 s0 c000000
+img  5 13 174 10 10 f128 s222 c000000
+box  19 11 86 54 0 f0 s0 c000000
+text 21 13 24 10 8 f1 s0 c000000 "nav"
+box  19 99 90 54 0 f0 s0 c000000
+text 21 101 56 10 8 f1 s0 c000000 "content"
+text 31 101 64 10 8 f1 s0 c000000 "that can"
+text 41 101 72 10 8 f1 s0 c000000 "wrap over"
+text 51 101 56 10 8 f1 s0 c000000 "several"
+text 61 101 40 10 8 f1 s0 c000000 "lines"
+box  76 8 184 176 0 f0 s0 c000000
+box  79 11 44 64 0 f0 s0 c000000
+text 81 13 40 10 8 f1 s0 c000000 "name:"
+box  79 57 36 64 0 f0 s0 c000000
+text 81 59 32 10 8 f1 s0 c000000 "dls:"
+box  79 95 46 64 0 f0 s0 c000000
+text 81 97 40 10 8 f1 s0 c000000 "a_ver"
+text 91 97 40 10 8 f1 s0 c000000 "y_lon"
+text 101 97 40 10 8 f1 s0 c000000 "g_pac"
+text 111 97 40 10 8 f1 s0 c000000 "kage_"
+text 121 97 40 10 8 f1 s0 c000000 "name."
+text 131 97 24 10 8 f1 s0 c000000 "lha"
+box  79 143 46 64 0 f0 s0 c000000
+text 81 145 40 10 8 f1 s0 c000000 "descr"
+text 91 145 40 10 8 f1 s0 c000000 "iptio"
+text 101 145 8 10 8 f1 s0 c000000 "n"
+text 111 145 40 10 8 f1 s0 c000000 "words"
+box  145 11 44 104 0 f0 s0 c000000
+text 147 13 40 10 8 f1 s0 c000000 "x.lha"
+box  145 57 36 104 0 f0 s0 c000000
+text 147 59 16 10 8 f1 s0 c000000 "12"
+box  145 95 46 104 0 f0 s0 c000000
+text 147 97 40 10 8 f1 s0 c000000 "short"
+box  145 143 46 104 0 f0 s0 c000000
+text 147 145 40 10 8 f1 s0 c000000 "an_ex"
+text 157 145 40 10 8 f1 s0 c000000 "treme"
+text 167 145 40 10 8 f1 s0 c000000 "ly_lo"
+text 177 145 40 10 8 f1 s0 c000000 "ng_un"
+text 187 145 40 10 8 f1 s0 c000000 "break"
+text 197 145 40 10 8 f1 s0 c000000 "able_"
+text 207 145 40 10 8 f1 s0 c000000 "descr"
+text 217 145 40 10 8 f1 s0 c000000 "iptio"
+text 227 145 40 10 8 f1 s0 c000000 "n_wor"
+text 237 145 8 10 8 f1 s0 c000000 "d"
+

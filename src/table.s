@@ -17,6 +17,7 @@
 	xref	Measure,DomGetAttr,ParseDec,FormIsControl,FormControlSize
 
 MAXCOLS		equ	48
+MAXSPANS	equ	32		; colspan cells applied after the others
 MAX_MDEPTH	equ	100
 
 	RSRESET
@@ -41,6 +42,9 @@ tb_RowBottom	rs.l	1
 tb_NCells	rs.l	1
 tb_TabRect	rs.l	1
 tb_TabBox	rs.l	1
+tb_Squeezed	rs.l	1		; columns below their minimum
+tb_NSpans	rs.l	1
+tb_Spans	rs.l	MAXSPANS*4	; column, span, min, pref
 tb_SIZEOF	rs.b	0
 
 	section	code,code
@@ -56,6 +60,8 @@ LayoutTable:
 	move.l	sp,a3
 	move.l	a0,a5			; a5 = table throughout
 	move.l	a1,tb_Style(a3)
+	clr.l	tb_Squeezed(a3)
+	clr.l	tb_NSpans(a3)
 
 	lea	AnCellspacing(pc),a1
 	moveq	#2,d0
@@ -179,7 +185,21 @@ LayoutTable:
 	ble.s	.spok
 	move.l	tb_Cols(a3),d7
 	sub.l	d5,d7
-.spok:	divul.l	d7,d2:d0
+.spok:	cmp.l	#1,d7			; colspan: once the single cells are
+	beq.s	.one			; known, it widens its columns only
+	move.l	tb_NSpans(a3),d2	; as far as they are too narrow
+	cmp.l	#MAXSPANS,d2
+	bhs.s	.one
+	addq.l	#1,tb_NSpans(a3)
+	lsl.l	#4,d2
+	lea	tb_Spans(a3,d2.l),a0
+	move.l	d5,(a0)+
+	move.l	d7,(a0)+
+	move.l	d0,(a0)+
+	move.l	d1,(a0)
+	add.l	d7,d5
+	bra.s	.msd
+.one:	divul.l	d7,d2:d0
 	divul.l	d7,d2:d1
 	move.l	d7,d2
 .ms:	lea	tb_Min(a3),a0
@@ -193,7 +213,7 @@ LayoutTable:
 .ms2:	addq.l	#1,d5
 	subq.l	#1,d2
 	bne.s	.ms
-	move.l	d6,a2
+.msd:	move.l	d6,a2
 	move.l	n_Parent(a2),a2		; (a2 is the row again below)
 	bra.s	.mcn2
 .mcn:	move.l	d6,a0
@@ -202,6 +222,30 @@ LayoutTable:
 	move.l	n_Next(a0),d6
 	bra	.mc
 .mrd:
+	; the colspan cells
+	move.l	tb_NSpans(a3),d7
+	beq.s	.nosp
+	lea	tb_Spans(a3),a2
+.csp:	move.l	(a2)+,d5
+	move.l	(a2)+,d6
+	move.l	(a2)+,d0
+	lea	tb_Min(a3),a0
+	bsr	Widen
+	move.l	(a2)+,d0
+	lea	tb_Pref(a3),a0
+	bsr	Widen
+	subq.l	#1,d7
+	bne.s	.csp
+	move.l	tb_Cols(a3),d0		; preferred >= minimum again
+	subq.l	#1,d0
+	lea	tb_Min(a3),a0
+	lea	tb_Pref(a3),a1
+.fx:	move.l	(a0)+,d1
+	cmp.l	(a1)+,d1
+	ble.s	.fxo
+	move.l	d1,-4(a1)
+.fxo:	dbf	d0,.fx
+.nosp:
 	; available width and the table's own width
 	move.l	g_LayRight(a4),d4
 	sub.l	g_LayLeft(a4),d4	; d4 = available
@@ -257,8 +301,20 @@ LayoutTable:
 .squeeze:
 	cmp.l	d7,d2
 	blt.s	.mix
-	bsr	CopyMin			; even the minimum does not fit
+	; even the minimums do not fit: scale them down to the room (no
+	; horizontal scrolling here); the cells then wrap, nowrap ones
+	; too, and words longer than a column are split
+	move.l	tb_Cols(a3),d0
+	lsl.l	#4,d0			; unless that leaves under 16 px a column
+	cmp.l	d0,d7
+	bhs.s	.scale
+	bsr	CopyMin
 	move.l	d2,d7
+	bra.s	.widths
+.scale:	moveq	#1,d0
+	move.l	d0,tb_Squeezed(a3)
+	bsr	Waterfill
+	move.l	d0,d7
 	bra.s	.widths
 .mix:	move.l	d7,d1
 	sub.l	d2,d1			; room above the minimums
@@ -421,7 +477,11 @@ LayoutTable:
 	jsr	LineReset
 	move.l	d6,a0
 	lea	tb_CellStyle(a3),a1
+	move.l	g_Squeeze(a4),-(sp)	; squeezed: nowrap wraps
+	move.l	tb_Squeezed(a3),d0
+	or.l	d0,g_Squeeze(a4)
 	jsr	LayoutBlockContent
+	move.l	(sp)+,g_Squeeze(a4)
 	move.l	g_LayY(a4),d0
 	add.l	tb_Pad(a3),d0
 	moveq	#0,d1			; height="..." on the cell
@@ -524,6 +584,74 @@ CellRun:
 	rts
 .fail:	moveq	#-1,d0
 	movem.l	(sp)+,d4-d5
+	rts
+
+; Widen - a colspan cell needs d0 over columns d5 .. d5+d6-1 of the
+; widths at a0: what they lack is shared out evenly
+Widen:
+	movem.l	d2-d3,-(sp)
+	lea	(a0,d5.l*4),a1
+	move.l	a1,a0
+	moveq	#0,d1
+	move.l	d6,d2
+	subq.l	#1,d2
+.s:	add.l	(a0)+,d1
+	dbf	d2,.s
+	sub.l	d1,d0			; lacking
+	ble.s	.x
+	divul.l	d6,d3:d0		; d0 = share, d3 = remainder
+	move.l	d6,d2
+	subq.l	#1,d2
+.a:	add.l	d0,(a1)+
+	dbf	d2,.a
+	add.l	d3,-4(a1)
+.x:	movem.l	(sp)+,d2-d3
+	rts
+
+; Waterfill - widths when even the minimums do not fit the room d7:
+; columns narrower than a cap T keep their minimum, the wider ones get
+; T, which is as large as the room allows
+; Out: d0 = sum of the widths
+Waterfill:
+	movem.l	d2-d6,-(sp)
+	move.l	tb_Cols(a3),d6
+	move.l	d7,d2
+	divul.l	d6,d2			; T: an equal share to start
+.it:	moveq	#0,d3			; sum of the narrow columns
+	moveq	#0,d4			; number of wide ones
+	lea	tb_Min(a3),a0
+	move.l	d6,d5
+	subq.l	#1,d5
+.c:	move.l	(a0)+,d0
+	cmp.l	d2,d0
+	bhi.s	.wide
+	add.l	d0,d3
+	bra.s	.n
+.wide:	addq.l	#1,d4
+.n:	dbf	d5,.c
+	tst.l	d4
+	beq.s	.set
+	move.l	d7,d0			; the room the wide ones share
+	sub.l	d3,d0
+	divul.l	d4,d0
+	cmp.l	d2,d0
+	bls.s	.set
+	move.l	d0,d2			; T grew: more may be narrow now
+	bra.s	.it
+.set:	lea	tb_Min(a3),a0
+	lea	tb_W(a3),a1
+	moveq	#0,d3
+	move.l	d6,d5
+	subq.l	#1,d5
+.s:	move.l	(a0)+,d0
+	cmp.l	d2,d0
+	bls.s	.s1
+	move.l	d2,d0
+.s1:	move.l	d0,(a1)+
+	add.l	d0,d3
+	dbf	d5,.s
+	move.l	d3,d0
+	movem.l	(sp)+,d2-d6
 	rts
 
 ; CopyPref / CopyMin - column widths = preferred / minimum widths
