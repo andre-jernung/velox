@@ -1,0 +1,8 @@
+; wb: start from Workbench with tool types (test/amiga/wb.host, wb.prep)
+Echo >VELOX:r/wb.txt "wb"
+Copy VELOX:velox VELOX:t/velox
+Echo >VELOX:r/wb.start ""
+VELOX:wbrun VELOX:t/velox
+Echo >>VELOX:r/wb.txt "exit rc=$RC"
+Delete >NIL: VELOX:t/velox
+Echo >>VELOX:r/wb.txt "done"

@@ -65,3 +65,7 @@ fixup localhost:8080/x
 fixup https://a.b/
 fixup about:blank
 fixup www.amiga.org/forum
+resolve file:///RAM:local.html second.html
+resolve file:///Work:www/a/page.html ../b.html
+resolve FILE:///Work:page.html x/y.html
+resolve http://a/b:c/d:e f

@@ -1,0 +1,36 @@
+#!/usr/bin/env python3
+"""Host side of wb.script: the URL and HOME tool types take effect."""
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from xdrive import Amiga, wait_log  # noqa: E402
+
+r = sys.argv[1]
+log = os.path.join(r, "wb.log")
+out = open(os.path.join(r, "wb.driver"), "w")
+U = "http://127.0.0.1:8080/"
+
+
+def step(msg):
+    out.write(msg + "\n")
+    out.flush()
+
+
+try:
+    a = Amiga()
+    wait_log(log, "page " + U + "second.html")
+    step("URL tool type is the start page")
+    time.sleep(1)
+    a.key("ctrl+h")
+    wait_log(log, "page " + U + "third.html")
+    step("HOME tool type is the home page")
+    a.key("ctrl+q")
+    step("ok")
+except Exception as e:
+    step("FAIL " + repr(e))
+    try:
+        Amiga().key("ctrl+q")
+    except Exception:
+        pass

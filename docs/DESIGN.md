@@ -68,6 +68,8 @@ JS is not on the roadmap yet, but it must stay possible to add. That means:
 5. [x] Forms (GET/POST), CSS subset, images via datatypes.library.
 6. [x] HTTPS via AmiSSL 6 and via tools/velox-proxy.py.
 7. [x] Session cookies, downloads (ASL requester).
+8. [x] Keep-alive connections, bookmarks, `file:` pages, home page,
+   Workbench icon with tool types.
 
 Everything is tested on AmigaOS 3.1 and 3.2 (see CLAUDE.md).
 

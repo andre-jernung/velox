@@ -492,6 +492,10 @@ g_KeepPort	rs.l	1
 g_KeepTls	rs.l	1
 g_KeepHost	rs.b	HOST_MAX
 ; settings
+g_HomeUrl	rs.b	256		; Velox/Home / HOME tooltype, or empty
+g_StartUrl	rs.b	256		; URL tooltype
+g_LogName	rs.b	128		; LOG tooltype
+g_IconBase	rs.l	1
 g_ProxyPort	rs.l	1		; 0 = no proxy
 g_ProxyHost	rs.b	HOST_MAX
 g_VarBuf	rs.b	256

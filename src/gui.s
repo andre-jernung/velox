@@ -19,7 +19,7 @@
 	xref	LayoutDocument,RunCount,RunPtr,StrLen,StrCopyN
 	xref	NavGo,NavBack,NavForward,NavReload,NavHome,NavLink,UrlFixup
 	xref	DomGetAttr,LogEvent,FormStateOf,FormIsControl,FormActivate
-	xref	FormEditKey,FormLeave,SaveDownload
+	xref	FormEditKey,FormLeave,SaveDownload,BookmarkAdd,BookmarksShow
 	xref	ImagesPending,ImagesStep,ImagesFree,ImagePaint
 
 PROP_FONT	equ	0
@@ -47,6 +47,8 @@ RAW_F		equ	$23
 RAW_H		equ	$25
 RAW_L		equ	$28
 RAW_B		equ	$35
+RAW_D		equ	$22
+RAW_K		equ	$27
 WIDGET_FACE	equ	$aaaaaa		; button face colour
 QUAL_COMMAND	equ	IEQUALIFIER_CONTROL|IEQUALIFIER_LCOMMAND|IEQUALIFIER_RCOMMAND
 
@@ -1749,6 +1751,10 @@ OnKey:
 	beq	ToNavReload
 	cmp.w	#RAW_H,d3
 	beq	ToNavHome
+	cmp.w	#RAW_D,d3
+	beq	MenuAddBm
+	cmp.w	#RAW_K,d3
+	beq	MenuBookmarks
 	cmp.w	#RAW_Q,d3
 	bne.s	.nq
 	moveq	#1,d0
@@ -2022,13 +2028,18 @@ MA_BACK		equ	4
 MA_FWD		equ	5
 MA_RELOAD	equ	6
 MA_HOME		equ	7
+MA_ADDBM	equ	8
+MA_BOOKMARKS	equ	9
 MenuActions:
 	dc.w	ActivateUrl-MenuActions,MenuSave-MenuActions
 	dc.w	GuiAbout-MenuActions,MenuQuit-MenuActions
 	dc.w	ToNavBack-MenuActions,ToNavForward-MenuActions
 	dc.w	ToNavReload-MenuActions,ToNavHome-MenuActions
+	dc.w	MenuAddBm-MenuActions,MenuBookmarks-MenuActions
 
 MenuSave:	jmp	SaveDownload
+MenuAddBm:	jmp	BookmarkAdd
+MenuBookmarks:	jmp	BookmarksShow
 MenuQuit:	moveq	#1,d0
 		move.l	d0,g_Quit(a4)
 		rts
@@ -2219,6 +2230,9 @@ NewMenus:
 	NM	NM_ITEM,MFwd,KeyF,MA_FWD
 	NM	NM_ITEM,MReload,KeyR,MA_RELOAD
 	NM	NM_ITEM,MHome,KeyH,MA_HOME
+	NM	NM_ITEM,NM_BARLABEL,0,0
+	NM	NM_ITEM,MAddBm,KeyD,MA_ADDBM
+	NM	NM_ITEM,MBookmarks,KeyK,MA_BOOKMARKS
 	NM	NM_END,0,0,0
 
 MProject:	dc.b	"Project",0
@@ -2231,6 +2245,8 @@ MBack:		dc.b	"Back",0
 MFwd:		dc.b	"Forward",0
 MReload:	dc.b	"Reload",0
 MHome:		dc.b	"Home",0
+MAddBm:		dc.b	"Add bookmark",0
+MBookmarks:	dc.b	"Bookmarks",0
 KeyL:		dc.b	"L",0
 KeyS:		dc.b	"S",0
 KeyA:		dc.b	"?",0
@@ -2239,6 +2255,8 @@ KeyB:		dc.b	"B",0
 KeyF:		dc.b	"F",0
 KeyR:		dc.b	"R",0
 KeyH:		dc.b	"H",0
+KeyD:		dc.b	"D",0
+KeyK:		dc.b	"K",0
 AboutTitle:	dc.b	"About Velox",0
 AboutText:	dc.b	"Velox "
 		VERSION_STR

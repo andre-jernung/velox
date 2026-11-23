@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+"""Host side of bookmarks.script: file: pages, relative links in them,
+adding two bookmarks with the menu keys and following one from the list."""
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from xdrive import Amiga, wait_log  # noqa: E402
+
+r = sys.argv[1]
+log = os.path.join(r, "bookmarks.log")
+out = open(os.path.join(r, "bookmarks.driver"), "w")
+LOCAL = "file:///RAM:local.html"
+BM = "file:///ENVARC:Velox/Bookmarks.html"
+
+
+def step(msg):
+    out.write(msg + "\n")
+    out.flush()
+
+
+try:
+    a = Amiga()
+    wait_log(log, "page " + LOCAL)
+    time.sleep(1)
+    a.shot(os.path.join(r, "bookmarks-local.png"))
+    step("file: page shown")
+    a.key("amiga+d")
+    time.sleep(2)
+    a.key("Tab")
+    wait_log(log, "focus second.html")
+    a.key("Return")
+    wait_log(log, "page file:///RAM:second.html")
+    step("relative link in a file: page")
+    a.key("ctrl+d")
+    time.sleep(2)
+    a.key("amiga+k")
+    wait_log(log, "page " + BM)
+    time.sleep(1)
+    a.shot(os.path.join(r, "bookmarks-list.png"))
+    step("bookmark list shown")
+    a.key("Tab")
+    wait_log(log, "focus " + LOCAL)
+    a.key("Return")
+    wait_log(log, "page " + LOCAL, 2)
+    step("bookmark followed")
+    a.key("ctrl+q")
+    step("ok")
+except Exception as e:
+    step("FAIL " + repr(e))
+    try:
+        Amiga().key("ctrl+q")
+    except Exception:
+        pass

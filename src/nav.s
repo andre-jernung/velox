@@ -6,7 +6,7 @@
 	include	"lvo/asl_lib.i"
 
 	xdef	NavGo,NavBack,NavForward,NavReload,NavHome,NavLink,NavExit,NavPost
-	xdef	SaveDownload
+	xdef	SaveDownload,BookmarkAdd,BookmarksShow
 	xref	HttpGet,UrlResolve,PageNew,BufReserve,BufAppend,BufAppendStr
 	xref	BufAppendByte,BufClear,CharsetDetect,DecodeCharset,HtmlParse
 	xref	DomNewNode,DomAppend,DomGetAttr,StrCopyN,StrCopy,StrIPrefix,StrLen
@@ -70,7 +70,14 @@ NavGo:
 	bsr	AboutPage
 	lea	g_NavUrl(a4),a0
 	bra.s	.built
-.net:	lea	g_NavUrl(a4),a0
+.net:	lea	g_NavUrl(a4),a0		; file: URLs read a local file
+	lea	FilePrefix(pc),a1
+	jsr	StrIPrefix
+	beq.s	.http
+	bsr	FilePage
+	lea	g_NavUrl(a4),a0
+	bra.s	.built
+.http:	lea	g_NavUrl(a4),a0
 	jsr	HttpGet
 	tst.l	d0
 	bne.s	.ok
@@ -101,6 +108,7 @@ NavGo:
 
 AboutPrefix:	dc.b	"about:",0
 AboutSave:	dc.b	"about:save",0
+FilePrefix:	dc.b	"file:",0
 LogGo:		dc.b	"go",0
 LogPage:	dc.b	"page",0
 LogTitle:	dc.b	"title",0
@@ -391,6 +399,194 @@ PgStart:
 	dc.b	"</ul><h3>Keys</h3><p>Cursor up/down, Shift+cursor and Space "
 	dc.b	"scroll. Backspace goes back. Click Reload while a page is "
 	dc.b	"loading to stop it.</p></body></html>",0
+	even
+
+;--------------------------------------------------------------------
+; FilePage - a local file as the page
+; In: a0 = after "file:" ("///Work:dir/page.html" or "Work:page.html")
+;--------------------------------------------------------------------
+FilePage:
+	movem.l	d2-d4/a2,-(sp)
+	cmp.b	#'/',(a0)		; "//" authority (empty or localhost)
+	bne.s	.p
+	cmp.b	#'/',1(a0)
+	bne.s	.p
+	addq.l	#2,a0
+	cmp.b	#'/',(a0)		; "/Work:..." -> "Work:..."
+	bne.s	.lh
+	move.l	a0,a1
+.col:	move.b	(a1)+,d0
+	beq.s	.p
+	cmp.b	#':',d0
+	bne.s	.col
+	addq.l	#1,a0
+	bra.s	.p
+.lh:	lea	SLocalhost(pc),a1
+	jsr	StrIPrefix
+.p:	lea	g_UrlTmp2(a4),a1	; the path, without #fragment / ?query
+	move.l	#URL_MAX-2,d0
+.c:	move.b	(a0)+,d1
+	beq.s	.ce
+	cmp.b	#'#',d1
+	beq.s	.ce
+	cmp.b	#'?',d1
+	beq.s	.ce
+	move.b	d1,(a1)+
+	subq.l	#1,d0
+	bpl.s	.c
+.ce:	clr.b	(a1)
+	jsr	PageNew
+	lea	g_PageSrc(a4),a0
+	jsr	BufClear
+	lea	g_UrlTmp2(a4),a0
+	move.l	a0,d1
+	move.l	#MODE_OLDFILE,d2
+	DOS	Open
+	move.l	d0,d4
+	beq.s	.err
+.rd:	lea	g_PageSrc(a4),a0
+	move.l	#8192,d0
+	jsr	BufReserve
+	beq.s	.cl
+	move.l	d4,d1
+	move.l	g_PageSrc+buf_Data(a4),d2
+	add.l	g_PageSrc+buf_Len(a4),d2
+	move.l	#8192,d3
+	DOS	Read
+	tst.l	d0
+	ble.s	.cl
+	add.l	d0,g_PageSrc+buf_Len(a4)
+	bra.s	.rd
+.cl:	move.l	d4,d1
+	DOS	Close
+	lea	g_PageSrc(a4),a0	; terminated (also when empty)
+	moveq	#1,d0
+	jsr	BufReserve
+	move.l	g_PageSrc+buf_Data(a4),a0
+	add.l	g_PageSrc+buf_Len(a4),a0
+	clr.b	(a0)
+	clr.b	g_Resp+r_CType(a4)
+	lea	g_UrlTmp2(a4),a0	; ".txt": plain text
+.e:	tst.b	(a0)+
+	bne.s	.e
+	lea	-5(a0),a0
+	lea	STxt(pc),a1
+	jsr	StrIPrefix
+	beq.s	.html
+	bsr	PlainPage
+	bra.s	.x
+.html:	suba.l	a0,a0
+	bsr	HtmlPage
+	bra.s	.x
+.err:	SETERR	ERR_FILE
+	bsr	ErrorPage
+.x:	movem.l	(sp)+,d2-d4/a2
+	rts
+
+SLocalhost:	dc.b	"localhost",0
+STxt:		dc.b	".txt",0
+	even
+
+;--------------------------------------------------------------------
+; Bookmarks: an HTML file, ENVARC:Velox/Bookmarks.html
+;--------------------------------------------------------------------
+BookmarkAdd:
+	movem.l	d2-d4,-(sp)
+	tst.l	g_Doc(a4)
+	beq	.x
+	lea	BmDir(pc),a0		; ENVARC:Velox may not exist yet
+	move.l	a0,d1
+	DOS	CreateDir
+	move.l	d0,d1
+	beq.s	.nodir
+	DOS	UnLock
+.nodir:	lea	BmFile(pc),a0
+	move.l	a0,d1
+	move.l	#MODE_READWRITE,d2
+	DOS	Open
+	move.l	d0,d4
+	beq	.err
+	move.l	d4,d1			; to the end; is it new?
+	moveq	#0,d2
+	moveq	#OFFSET_END,d3
+	DOS	Seek
+	move.l	d4,d1
+	moveq	#0,d2
+	moveq	#OFFSET_CURRENT,d3
+	DOS	Seek
+	tst.l	d0
+	bne.s	.old
+	move.l	d4,d1
+	lea	BmHead(pc),a0
+	move.l	a0,d2
+	DOS	FPuts
+.old:	move.l	d4,d1
+	lea	BmLi(pc),a0
+	move.l	a0,d2
+	DOS	FPuts
+	lea	g_PageUrl(a4),a0
+	bsr	PutEsc
+	move.l	d4,d1
+	lea	BmMid(pc),a0
+	move.l	a0,d2
+	DOS	FPuts
+	lea	g_TitleText(a4),a0
+	bsr	PutEsc
+	move.l	d4,d1
+	lea	BmEnd(pc),a0
+	move.l	a0,d2
+	DOS	FPuts
+	move.l	d4,d1
+	DOS	Close
+	lea	MsgBm(pc),a0
+	jsr	GuiStatus
+	bra.s	.x
+.err:	lea	MsgBmErr(pc),a0
+	jsr	GuiStatus
+.x:	movem.l	(sp)+,d2-d4
+	rts
+
+; PutEsc - write a0 HTML-escaped to the file d4
+PutEsc:
+	movem.l	d2/a2,-(sp)
+	move.l	a0,a2
+.l:	moveq	#0,d2
+	move.b	(a2)+,d2
+	beq.s	.x
+	lea	EscLt(pc),a0
+	cmp.b	#'<',d2
+	beq.s	.s
+	lea	EscAmp(pc),a0
+	cmp.b	#'&',d2
+	beq.s	.s
+	lea	EscQuot(pc),a0
+	cmp.b	#'"',d2
+	beq.s	.s
+	move.l	d4,d1
+	DOS	FPutC
+	bra.s	.l
+.s:	move.l	d4,d1
+	move.l	a0,d2
+	DOS	FPuts
+	bra.s	.l
+.x:	movem.l	(sp)+,d2/a2
+	rts
+
+BookmarksShow:
+	lea	BmUrl(pc),a0
+	moveq	#NAV_HISTORY,d0
+	bra	NavGo
+
+BmDir:		dc.b	"ENVARC:Velox",0
+BmFile:		dc.b	"ENVARC:Velox/Bookmarks.html",0
+BmUrl:		dc.b	"file:///ENVARC:Velox/Bookmarks.html",0
+BmHead:		dc.b	"<html><head><title>Bookmarks</title></head><body>",10
+		dc.b	"<h1>Bookmarks</h1><ul>",10,0
+BmLi:		dc.b	'<li><a href="',0
+BmMid:		dc.b	'">',0
+BmEnd:		dc.b	"</a>",10,0
+MsgBm:		dc.b	"Bookmark added",0
+MsgBmErr:	dc.b	"Could not write the bookmarks",0
 	even
 
 ;--------------------------------------------------------------------
@@ -804,8 +1000,11 @@ NavReload:
 	bra	NavGo
 
 NavHome:
-	lea	HomeUrl(pc),a0
-	moveq	#NAV_HISTORY,d0
+	lea	g_HomeUrl(a4),a0	; Velox/Home or HOME tooltype ...
+	tst.b	(a0)
+	bne.s	.go
+	lea	HomeUrl(pc),a0		; ... or the start page
+.go:	moveq	#NAV_HISTORY,d0
 	bra	NavGo
 
 HomeUrl:	dc.b	"about:velox",0

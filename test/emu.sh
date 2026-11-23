@@ -104,6 +104,8 @@ if [ $AUTO = 1 ]; then
 		echo "Wait 2"
 		for t in $TESTS; do
 			cp "$ROOT/test/amiga/$t.script" "$B/t/$t"
+			# NAME.prep makes host-side files the test needs, in VELOX:t
+			[ -x "$ROOT/test/amiga/$t.prep" ] && "$ROOT/test/amiga/$t.prep" "$B/t"
 			echo "Execute VELOX:t/$t"
 		done
 		echo 'Echo >VELOX:alldone ""'

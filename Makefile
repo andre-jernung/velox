@@ -24,9 +24,9 @@ INCS    := $(wildcard src/*.i)
 TARGET  := build/velox
 VTEST   := build/vtest
 
-.PHONY: all clean size test
+.PHONY: all clean size test dist
 
-all: $(TARGET)
+all: $(TARGET) build/wbrun
 
 $(TARGET): build/main.o $(CORE)
 	$(VLINK) $(LDFLAGS) -o $@ $^
@@ -37,6 +37,11 @@ $(VTEST): build/vtest.o $(CORE)
 build/%.o: src/%.s $(INCS) | build
 	$(VASM) $(ASFLAGS) -o $@ $<
 
+# wbrun: starts a program as Workbench does (for the 'wb' emulator test)
+build/wbrun: test/wbrun.s | build
+	$(VASM) $(ASFLAGS) -o build/wbrun.o $<
+	$(VLINK) $(LDFLAGS) -o $@ build/wbrun.o
+
 build/vtest.o: test/vtest.s $(INCS) | build
 	$(VASM) $(ASFLAGS) -o $@ $<
 
@@ -45,6 +50,13 @@ build:
 
 test: $(VTEST)
 	test/unit.sh
+
+# build/dist/Velox: the program, its icon, the proxy and the read-me
+dist: $(TARGET)
+	rm -rf build/dist && mkdir -p build/dist/Velox
+	cp $(TARGET) build/dist/Velox/Velox
+	python3 tools/mkicon.py build/dist/Velox/Velox.info
+	cp tools/velox-proxy.py README.md build/dist/Velox/
 
 size: $(TARGET)
 	@s=$$(stat -c %s $(TARGET)); echo "$(TARGET): $$s bytes ($$((s * 100 / $(BUDGET)))% of $(BUDGET) budget)"

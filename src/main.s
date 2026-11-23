@@ -3,11 +3,14 @@
 ;
 
 	include	"velox.i"
+	include	"workbench/workbench.i"
+	include	"lvo/icon_lib.i"
 
 	xdef	G
 	xref	MemInit,MemExit,NetExit,HttpGet,UrlFixup
 	xref	PutStr,PutBuf,PutNum,PutNL,FlushOut,ErrorText
 	xref	GuiOpen,GuiClose,GuiEventLoop,NavGo,NavExit,StrIPrefix,ParseDec
+	xref	StrCopyN
 
 STACK_SIZE	equ	65536
 
@@ -95,7 +98,10 @@ Main:
 	beq	.cleanup
 	bsr	LoadSettings
 	tst.l	g_WBMsg(a4)
-	bne.s	.gui
+	beq.s	.notwb
+	bsr	ToolTypes
+	bra	.gui
+.notwb:
 	DOS	Output
 	move.l	d0,g_StdOut(a4)
 	lea	ArgTemplate(pc),a0
@@ -135,11 +141,19 @@ Main:
 .nolog:	moveq	#RC_FAIL,d2
 	jsr	GuiOpen
 	beq.s	.closegui
-	lea	StartUrl(pc),a0		; URL argument or the start page
-	move.l	g_ArgArray+ARG_URL(a4),d0
-	beq.s	.start
+	move.l	g_ArgArray+ARG_URL(a4),d0	; URL argument, URL tooltype,
+	bne.s	.arg				; home page, the start page
+	lea	g_StartUrl(a4),a0
+	tst.b	(a0)
+	bne.s	.fix
+	lea	g_HomeUrl(a4),a0
+	tst.b	(a0)
+	bne.s	.fix
+	lea	StartUrl(pc),a0
+	bra.s	.start
+.arg:
 	move.l	d0,a0
-	lea	g_UrlTmp2(a4),a1
+.fix:	lea	g_UrlTmp2(a4),a1
 	jsr	UrlFixup
 	lea	g_UrlTmp2(a4),a0
 .start:	moveq	#1,d0
@@ -202,7 +216,17 @@ LoadSettings:
 	lea	SRam(pc),a0
 .dc:	move.b	(a0)+,(a1)+
 	bne.s	.dc
-.dl:	lea	VarNoImg(pc),a0		; Velox/NoImages: no images
+.dl:	lea	VarHome(pc),a0		; Velox/Home: the home page
+	move.l	a0,d1
+	lea	g_HomeUrl(a4),a0
+	move.l	a0,d2
+	move.l	#255,d3
+	moveq	#0,d4
+	DOS	GetVar
+	tst.l	d0
+	bgt.s	.home
+	clr.b	g_HomeUrl(a4)
+.home:	lea	VarNoImg(pc),a0		; Velox/NoImages: no images
 	move.l	a0,d1
 	lea	g_VarBuf(a4),a0
 	move.l	a0,d2
@@ -231,7 +255,93 @@ VarProxy:	dc.b	"Velox/Proxy",0
 VarInsecure:	dc.b	"Velox/InsecureTLS",0
 VarDlDir:	dc.b	"Velox/DownloadDir",0
 VarNoImg:	dc.b	"Velox/NoImages",0
+VarHome:	dc.b	"Velox/Home",0
 SRam:		dc.b	"RAM:",0
+	even
+
+;--------------------------------------------------------------------
+; ToolTypes - settings from the icon when started from Workbench:
+; PROXY=host:port HOME=url URL=url DOWNLOADDIR=drawer NOIMAGES
+;--------------------------------------------------------------------
+ToolTypes:
+	movem.l	d2-d4/a2-a3,-(sp)
+	lea	IconName(pc),a1
+	moveq	#36,d0
+	EXEC	OpenLibrary
+	move.l	d0,g_IconBase(a4)
+	beq	.x
+	move.l	g_WBMsg(a4),a0
+	move.l	sm_ArgList(a0),a0
+	move.l	wa_Lock(a0),d1		; our icon, next to the program
+	move.l	wa_Name(a0),a2
+	DOS	CurrentDir
+	move.l	d0,d4			; old directory
+	move.l	a2,a0
+	move.l	g_IconBase(a4),a6
+	jsr	_LVOGetDiskObject(a6)
+	move.l	d0,a3
+	move.l	d4,d1
+	DOS	CurrentDir
+	move.l	a3,d0
+	beq	.close
+	move.l	do_ToolTypes(a3),a2
+	lea	TtProxy(pc),a1
+	bsr	.find
+	beq.s	.t1
+	bsr	SetProxy
+.t1:	lea	TtHome(pc),a1
+	bsr	.find
+	beq.s	.t2
+	lea	g_HomeUrl(a4),a1
+	move.l	#255,d0
+	jsr	StrCopyN
+.t2:	lea	TtUrl(pc),a1
+	bsr	.find
+	beq.s	.t3
+	lea	g_StartUrl(a4),a1
+	move.l	#255,d0
+	jsr	StrCopyN
+.t3:	lea	TtDlDir(pc),a1
+	bsr	.find
+	beq.s	.t4
+	lea	g_DownloadDir(a4),a1
+	move.l	#255,d0
+	jsr	StrCopyN
+.t4:	lea	TtNoImg(pc),a1
+	bsr	.find
+	beq.s	.t5
+	moveq	#1,d0
+	move.l	d0,g_NoImages(a4)
+.t5:	lea	TtLog(pc),a1		; LOG=file: event log (tests)
+	bsr	.find
+	beq.s	.t6
+	lea	g_LogName(a4),a1
+	move.l	a1,g_ArgArray+ARG_LOG(a4)
+	move.l	#127,d0
+	jsr	StrCopyN
+.t6:	move.l	a3,a0
+	move.l	g_IconBase(a4),a6
+	jsr	_LVOFreeDiskObject(a6)
+.close:	move.l	g_IconBase(a4),a1
+	clr.l	g_IconBase(a4)
+	EXEC	CloseLibrary
+.x:	movem.l	(sp)+,d2-d4/a2-a3
+	rts
+; .find - In: a1 = tool type name; Out: a0 = value, Z clear if found
+.find:	move.l	a2,a0
+	move.l	g_IconBase(a4),a6
+	jsr	_LVOFindToolType(a6)
+	move.l	d0,a0
+	tst.l	d0
+	rts
+
+IconName:	dc.b	"icon.library",0
+TtProxy:	dc.b	"PROXY",0
+TtHome:		dc.b	"HOME",0
+TtUrl:		dc.b	"URL",0
+TtDlDir:	dc.b	"DOWNLOADDIR",0
+TtNoImg:	dc.b	"NOIMAGES",0
+TtLog:		dc.b	"LOG",0
 	even
 
 ;--------------------------------------------------------------------

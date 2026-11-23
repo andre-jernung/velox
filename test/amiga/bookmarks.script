@@ -1,0 +1,11 @@
+; bookmarks: file: URLs, add bookmarks, open the list (test/amiga/bookmarks.host)
+Echo >VELOX:r/bookmarks.txt "bookmarks"
+Delete >NIL: ENVARC:Velox/Bookmarks.html
+Echo >RAM:local.html "<title>Local & file</title><h1>A local page</h1><a href=*"second.html*">rel</a>"
+Echo >RAM:second.html "<title>Second local</title><p>second</p>"
+Echo >VELOX:r/bookmarks.start ""
+VELOX:velox file:///RAM:local.html LOG=VELOX:r/bookmarks.log
+Echo >>VELOX:r/bookmarks.txt "exit rc=$RC"
+Copy ENVARC:Velox/Bookmarks.html VELOX:r/Bookmarks.html
+Delete >NIL: ENVARC:Velox/Bookmarks.html RAM:local.html RAM:second.html
+Echo >>VELOX:r/bookmarks.txt "done"

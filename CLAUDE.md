@@ -23,8 +23,11 @@ and a single event dispatch point.
   windows on the user's screen or take keyboard focus. A test can have a
   host driver, `test/amiga/NAME.host`. It starts when the Amiga script
   creates `VELOX:r/NAME.start`, drives the GUI with keys via
-  `test/xdrive.py` (XTEST, US-layout physical keys), and reads Velox's
-  `LOG=` event log.
+  `test/xdrive.py` (XTEST, US-layout physical keys; `amiga+k` is right
+  Amiga), and reads Velox's `LOG=` event log. `test/amiga/NAME.prep`, if
+  present, runs on the host before boot to create files in `VELOX:t`.
+  `build/wbrun PROG` starts a program as Workbench does (with its icon's
+  tool types).
 - FS-UAE turns cursor keys into a joystick unless `joystick_port_1 = none`
   is set, which the test config does.
 - `OS=3.2 test/emu.sh --auto` runs the same tests on AmigaOS 3.2 (Kickstart

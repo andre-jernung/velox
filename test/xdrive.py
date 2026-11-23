@@ -21,13 +21,14 @@ _K = {
     "l": 38, ";": 39, "'": 40, "`": 41, "Shift_L": 42, "\\": 43, "z": 44,
     "x": 45, "c": 46, "v": 47, "b": 48, "n": 49, "m": 50, ",": 51, ".": 52,
     "/": 53, "space": 57, "Up": 103, "Left": 105, "Right": 106, "Down": 108,
+    "Super_R": 126,
 }
 _SHIFTED = {
     "!": "1", "@": "2", "#": "3", "$": "4", "%": "5", "^": "6", "&": "7",
     "*": "8", "(": "9", ")": "0", "_": "-", "+": "=", "{": "[", "}": "]",
     ":": ";", '"': "'", "~": "`", "|": "\\", "<": ",", ">": ".", "?": "/",
 }
-_MODS = {"ctrl": "Control_L", "shift": "Shift_L"}
+_MODS = {"ctrl": "Control_L", "shift": "Shift_L", "amiga": "Super_R"}
 
 
 class Amiga:
@@ -64,7 +65,7 @@ class Amiga:
         self.d.sync()
 
     def key(self, spec, times=1):
-        """spec: 'Down', 'ctrl+l', 'shift+Tab', 'Return' ..."""
+        """spec: 'Down', 'ctrl+l', 'shift+Tab', 'amiga+d' (right Amiga) ..."""
         parts = spec.split("+")
         mods = [_MODS[m] for m in parts[:-1]]
         k = parts[-1]

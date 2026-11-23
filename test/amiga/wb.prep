@@ -1,0 +1,7 @@
+#!/bin/sh
+# icon for wb.script: Velox started from Workbench, settings as tool types
+exec python3 "$(dirname "$0")/../../tools/mkicon.py" "$1/velox.info" \
+	"LOG=VELOX:r/wb.log" \
+	"URL=http://127.0.0.1:8080/second.html" \
+	"HOME=http://127.0.0.1:8080/third.html" \
+	"(PROXY=1.2.3.4:5)"

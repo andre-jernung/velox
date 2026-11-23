@@ -1,0 +1,7 @@
+#!/bin/sh
+# checks for wb.script
+d=$(dirname "$1"); fail=0
+sed 's/^/driver: /' "$d/wb.driver"
+grep -qx ok "$d/wb.driver" || fail=1
+grep -q '^exit rc=0' "$1" || { echo "wbrun did not get the message back"; cat "$1"; fail=1; }
+exit $fail

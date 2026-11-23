@@ -281,6 +281,13 @@ UrlResolve:
 	beq.s	.abspath
 
 	; relative path: base path up to its last '/', then the reference
+	; (in file: URLs also up to a ':', "file:///Work:page.html")
+	move.l	(a3),d1
+	or.l	#$20202020,d1
+	cmp.l	#'file',d1
+	bne.s	.nfile
+	cmp.b	#':',4(a3)
+.nfile:	seq	d1			; d1.b = file: URL
 	move.l	d2,a0
 	move.l	a0,d3			; d3 = after last '/' (none yet)
 .rp:	move.b	(a0)+,d0
@@ -289,9 +296,13 @@ UrlResolve:
 	beq.s	.rpe
 	cmp.b	#'#',d0
 	beq.s	.rpe
-	cmp.b	#'/',d0
+	cmp.b	#':',d0
+	bne.s	.rps
+	tst.b	d1
+	bne.s	.rpm
+.rps:	cmp.b	#'/',d0
 	bne.s	.rp
-	move.l	a0,d3
+.rpm:	move.l	a0,d3
 	bra.s	.rp
 .rpe:	move.l	d2,a0
 	cmp.l	d3,a0
