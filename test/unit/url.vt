@@ -1,0 +1,67 @@
+# UrlParse
+parse http://Example.COM/Path?q=1#frag
+parse https://user:pw@host:8443
+parse http://host:/x
+parse http://host?x
+parse HTTP://h/
+parse http://:80/
+parse http://host:99999/
+parse http://host:0/
+parse http://host:8a/
+parse ftp://x/
+# UrlResolve - RFC 3986 section 5.4 examples
+resolve http://a/b/c/d;p?q g:h
+resolve http://a/b/c/d;p?q g
+resolve http://a/b/c/d;p?q ./g
+resolve http://a/b/c/d;p?q g/
+resolve http://a/b/c/d;p?q /g
+resolve http://a/b/c/d;p?q //g
+resolve http://a/b/c/d;p?q ?y
+resolve http://a/b/c/d;p?q g?y
+resolve http://a/b/c/d;p?q #s
+resolve http://a/b/c/d;p?q g#s
+resolve http://a/b/c/d;p?q g?y#s
+resolve http://a/b/c/d;p?q ;x
+resolve http://a/b/c/d;p?q g;x
+resolve http://a/b/c/d;p?q g;x?y#s
+resolve http://a/b/c/d;p?q ""
+resolve http://a/b/c/d;p?q .
+resolve http://a/b/c/d;p?q ./
+resolve http://a/b/c/d;p?q ..
+resolve http://a/b/c/d;p?q ../
+resolve http://a/b/c/d;p?q ../g
+resolve http://a/b/c/d;p?q ../..
+resolve http://a/b/c/d;p?q ../../
+resolve http://a/b/c/d;p?q ../../g
+resolve http://a/b/c/d;p?q ../../../g
+resolve http://a/b/c/d;p?q ../../../../g
+resolve http://a/b/c/d;p?q /./g
+resolve http://a/b/c/d;p?q /../g
+resolve http://a/b/c/d;p?q g.
+resolve http://a/b/c/d;p?q .g
+resolve http://a/b/c/d;p?q g..
+resolve http://a/b/c/d;p?q ..g
+resolve http://a/b/c/d;p?q ./../g
+resolve http://a/b/c/d;p?q ./g/.
+resolve http://a/b/c/d;p?q g/./h
+resolve http://a/b/c/d;p?q g/../h
+resolve http://a/b/c/d;p?q g;x=1/./y
+resolve http://a/b/c/d;p?q g;x=1/../y
+resolve http://a/b/c/d;p?q g?y/./x
+resolve http://a/b/c/d;p?q g?y/../x
+resolve http://a/b/c/d;p?q g#s/./x
+resolve http://a/b/c/d;p?q g#s/../x
+# more
+resolve http://host x.html
+resolve http://host?q x.html
+resolve http://host/dir/page.html#top other.html
+resolve http://host/dir/ https://secure.example/a/../b
+resolve https://host/a/b //cdn.example/lib.js
+resolve http://host/a mailto:joe@example.com
+resolve http://host/a/b/c ../../../../x
+# UrlFixup
+fixup example.com
+fixup localhost:8080/x
+fixup https://a.b/
+fixup about:blank
+fixup www.amiga.org/forum

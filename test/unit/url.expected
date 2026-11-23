@@ -1,0 +1,67 @@
+# UrlParse
+parse http://Example.COM/Path?q=1#frag => scheme=0 port=80 host=example.com path=[/Path?q=1]
+parse https://user:pw@host:8443 => scheme=1 port=8443 host=host path=[]
+parse http://host:/x => scheme=0 port=80 host=host path=[/x]
+parse http://host?x => scheme=0 port=80 host=host path=[?x]
+parse HTTP://h/ => scheme=0 port=80 host=h path=[/]
+parse http://:80/ => ERROR Invalid or unsupported URL
+parse http://host:99999/ => ERROR Invalid or unsupported URL
+parse http://host:0/ => ERROR Invalid or unsupported URL
+parse http://host:8a/ => ERROR Invalid or unsupported URL
+parse ftp://x/ => scheme=-1 port=0 host= path=[]
+# UrlResolve - RFC 3986 section 5.4 examples
+resolve http://a/b/c/d;p?q g:h => g:h
+resolve http://a/b/c/d;p?q g => http://a/b/c/g
+resolve http://a/b/c/d;p?q ./g => http://a/b/c/g
+resolve http://a/b/c/d;p?q g/ => http://a/b/c/g/
+resolve http://a/b/c/d;p?q /g => http://a/g
+resolve http://a/b/c/d;p?q //g => http://g
+resolve http://a/b/c/d;p?q ?y => http://a/b/c/d;p?y
+resolve http://a/b/c/d;p?q g?y => http://a/b/c/g?y
+resolve http://a/b/c/d;p?q #s => http://a/b/c/d;p?q#s
+resolve http://a/b/c/d;p?q g#s => http://a/b/c/g#s
+resolve http://a/b/c/d;p?q g?y#s => http://a/b/c/g?y#s
+resolve http://a/b/c/d;p?q ;x => http://a/b/c/;x
+resolve http://a/b/c/d;p?q g;x => http://a/b/c/g;x
+resolve http://a/b/c/d;p?q g;x?y#s => http://a/b/c/g;x?y#s
+resolve http://a/b/c/d;p?q "" => http://a/b/c/d;p?q
+resolve http://a/b/c/d;p?q . => http://a/b/c/
+resolve http://a/b/c/d;p?q ./ => http://a/b/c/
+resolve http://a/b/c/d;p?q .. => http://a/b/
+resolve http://a/b/c/d;p?q ../ => http://a/b/
+resolve http://a/b/c/d;p?q ../g => http://a/b/g
+resolve http://a/b/c/d;p?q ../.. => http://a/
+resolve http://a/b/c/d;p?q ../../ => http://a/
+resolve http://a/b/c/d;p?q ../../g => http://a/g
+resolve http://a/b/c/d;p?q ../../../g => http://a/g
+resolve http://a/b/c/d;p?q ../../../../g => http://a/g
+resolve http://a/b/c/d;p?q /./g => http://a/g
+resolve http://a/b/c/d;p?q /../g => http://a/g
+resolve http://a/b/c/d;p?q g. => http://a/b/c/g.
+resolve http://a/b/c/d;p?q .g => http://a/b/c/.g
+resolve http://a/b/c/d;p?q g.. => http://a/b/c/g..
+resolve http://a/b/c/d;p?q ..g => http://a/b/c/..g
+resolve http://a/b/c/d;p?q ./../g => http://a/b/g
+resolve http://a/b/c/d;p?q ./g/. => http://a/b/c/g/
+resolve http://a/b/c/d;p?q g/./h => http://a/b/c/g/h
+resolve http://a/b/c/d;p?q g/../h => http://a/b/c/h
+resolve http://a/b/c/d;p?q g;x=1/./y => http://a/b/c/g;x=1/y
+resolve http://a/b/c/d;p?q g;x=1/../y => http://a/b/c/y
+resolve http://a/b/c/d;p?q g?y/./x => http://a/b/c/g?y/./x
+resolve http://a/b/c/d;p?q g?y/../x => http://a/b/c/g?y/../x
+resolve http://a/b/c/d;p?q g#s/./x => http://a/b/c/g#s/./x
+resolve http://a/b/c/d;p?q g#s/../x => http://a/b/c/g#s/../x
+# more
+resolve http://host x.html => http://host/x.html
+resolve http://host?q x.html => http://host/x.html
+resolve http://host/dir/page.html#top other.html => http://host/dir/other.html
+resolve http://host/dir/ https://secure.example/a/../b => https://secure.example/b
+resolve https://host/a/b //cdn.example/lib.js => https://cdn.example/lib.js
+resolve http://host/a mailto:joe@example.com => mailto:joe@example.com
+resolve http://host/a/b/c ../../../../x => http://host/x
+# UrlFixup
+fixup example.com => http://example.com
+fixup localhost:8080/x => http://localhost:8080/x
+fixup https://a.b/ => https://a.b/
+fixup about:blank => about:blank
+fixup www.amiga.org/forum => http://www.amiga.org/forum

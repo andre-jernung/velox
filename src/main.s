@@ -5,6 +5,8 @@
 	include	"velox.i"
 
 	xdef	G
+	xref	MemInit,MemExit,NetExit,HttpGet,UrlFixup
+	xref	PutStr,PutBuf,PutNum,PutNL,FlushOut,ErrorText
 
 ;====================================================================
 	section	code,code
@@ -42,18 +44,55 @@ Start:
 	movem.l	(sp)+,d2-d7/a2-a6
 	rts
 
-	dc.b	"$VER: Velox 0.1 (23.11.2026)",0
+	dc.b	"$VER: Velox "
+	VERSION_STR
+	dc.b	" (23.11.2026)",0
 	even
 
 ;--------------------------------------------------------------------
-; Main - set up, run the event loop, tear down.
+; Main - set up, run the event loop or a CLI command, tear down.
 ; Out: d0 = DOS return code
 ;--------------------------------------------------------------------
+ARG_URL		equ	0
+ARG_DUMP	equ	4
+ARG_INFO	equ	8
+
 Main:
-	move.l	d2,-(sp)
+	movem.l	d2-d3,-(sp)
 	moveq	#RC_FAIL,d2
-	bsr.s	OpenLibs
+	bsr	OpenLibs
 	beq.s	.cleanup
+	bsr	MemInit
+	beq.s	.cleanup
+	tst.l	g_WBMsg(a4)
+	bne.s	.gui
+	DOS	Output
+	move.l	d0,g_StdOut(a4)
+	lea	ArgTemplate(pc),a0
+	move.l	a0,d1
+	lea	g_ArgArray(a4),a0
+	move.l	a0,d2
+	moveq	#0,d3
+	DOS	ReadArgs
+	move.l	d0,g_RDArgs(a4)
+	bne.s	.args
+	DOS	IoErr
+	move.l	d0,d1
+	lea	ProgName(pc),a0
+	move.l	a0,d2
+	DOS	PrintFault
+	moveq	#RC_FAIL,d2
+	bra.s	.cleanup
+.args:
+	tst.l	g_ArgArray+ARG_DUMP(a4)
+	bne.s	.cli
+	tst.l	g_ArgArray+ARG_INFO(a4)
+	beq.s	.gui
+.cli:	bsr	CliFetch
+	move.l	d0,d2
+	bra.s	.cleanup
+.gui:
+	moveq	#RC_FAIL,d2
 	bsr	OpenMainWindow
 	beq.s	.cleanup
 	bsr	RedrawWindow
@@ -61,10 +100,93 @@ Main:
 	moveq	#RC_OK,d2
 .cleanup:
 	bsr	CloseMainWindow
-	bsr.s	CloseLibs
+	move.l	g_RDArgs(a4),d1
+	beq.s	.noargs
+	clr.l	g_RDArgs(a4)
+	DOS	FreeArgs
+.noargs:
+	bsr	FlushOut
+	bsr	NetExit
+	bsr	MemExit
+	bsr	CloseLibs
 	move.l	d2,d0
-	move.l	(sp)+,d2
+	movem.l	(sp)+,d2-d3
 	rts
+
+ArgTemplate:	dc.b	"URL,DUMP/S,INFO/S",0
+ProgName:	dc.b	"velox",0
+	even
+
+;--------------------------------------------------------------------
+; CliFetch - fetch the URL argument; INFO prints status and headers we
+; parsed, DUMP prints the body.
+; Out: d0 = DOS return code
+;--------------------------------------------------------------------
+CliFetch:
+	movem.l	a2-a3,-(sp)
+	move.l	g_ArgArray+ARG_URL(a4),d0
+	bne.s	.url
+	lea	MsgNoUrl(pc),a0
+	bsr	PutStr
+	moveq	#RC_FAIL,d0
+	bra	.x
+.url:	move.l	d0,a0
+	lea	g_UrlTmp2(a4),a1
+	bsr	UrlFixup
+	move.l	#SIGBREAKF_CTRL_C,g_AbortMask(a4)
+	lea	g_UrlTmp2(a4),a0
+	bsr	HttpGet
+	bne.s	.ok
+	lea	ProgNameColon(pc),a0
+	bsr	PutStr
+	move.l	g_Error(a4),d0
+	bsr	ErrorText
+	bsr	PutStr
+	bsr	PutNL
+	moveq	#RC_FAIL,d0
+	bra.s	.x
+.ok:	lea	g_Resp(a4),a3
+	tst.l	g_ArgArray+ARG_INFO(a4)
+	beq.s	.dump
+	lea	MsgStatus(pc),a0
+	bsr	PutStr
+	move.l	r_Status(a3),d0
+	bsr	PutNum
+	lea	MsgUrl(pc),a0
+	bsr	PutStr
+	lea	r_Url(a3),a0
+	bsr	PutStr
+	lea	MsgType(pc),a0
+	bsr	PutStr
+	lea	r_CType(a3),a0
+	bsr	PutStr
+	lea	MsgLength(pc),a0
+	bsr	PutStr
+	move.l	r_Body+buf_Len(a3),d0
+	bsr	PutNum
+	bsr	PutNL
+.dump:	tst.l	g_ArgArray+ARG_DUMP(a4)
+	beq.s	.done
+	move.l	r_Body+buf_Data(a3),d0
+	beq.s	.done
+	move.l	d0,a0
+	move.l	r_Body+buf_Len(a3),d0
+	bsr	PutBuf
+.done:	moveq	#RC_OK,d0
+	move.l	r_Status(a3),d1
+	cmp.l	#400,d1
+	blo.s	.x
+	moveq	#RC_WARN,d0
+.x:	movem.l	(sp)+,a2-a3
+	rts
+
+MsgNoUrl:	dc.b	"velox: URL required",10,0
+ProgNameColon:	dc.b	"velox: ",0
+MsgStatus:	dc.b	"status: ",0
+MsgUrl:		dc.b	10,"url: ",0
+MsgType:	dc.b	10,"type: ",0
+MsgLength:	dc.b	10,"length: ",0
+	even
 
 ;--------------------------------------------------------------------
 ; OpenLibs - open every library listed in LibTable.
