@@ -23,7 +23,7 @@ MemInit:
 	move.l	#4096,d2		; larger blocks get their own puddle
 	EXEC	CreatePool
 	move.l	d0,g_AppPool(a4)
-	move.l	(sp)+,d2
+	movem.l	(sp)+,d2
 	tst.l	d0
 	rts
 
@@ -48,7 +48,7 @@ Alloc:
 	move.l	d0,-(sp)
 	move.l	g_AppPool(a4),a0
 	EXEC	AllocPooled
-	move.l	(sp)+,d1
+	movem.l	(sp)+,d1
 	tst.l	d0
 	beq.s	.fail
 	move.l	d0,a0
@@ -105,7 +105,7 @@ BufReserve:
 	EXEC	CopyMem
 	move.l	buf_Data(a2),a1
 	bsr.s	Free
-	move.l	(sp)+,d0
+	movem.l	(sp)+,d0
 .new:	move.l	d0,buf_Data(a2)
 	move.l	d3,buf_Cap(a2)
 .ok:	moveq	#1,d0
@@ -157,7 +157,7 @@ BufAppendByte:
 	clr.b	(a1)
 	addq.l	#1,buf_Len(a0)
 	moveq	#1,d0
-.x:	move.l	(sp)+,d2
+.x:	movem.l	(sp)+,d2
 	rts
 
 ;--------------------------------------------------------------------

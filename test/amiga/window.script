@@ -1,0 +1,45 @@
+; window: start the GUI, take a screenshot, Ctrl-C must end it, and no
+; memory may be lost.
+Echo >VELOX:r/window.txt "window"
+
+; warm-up run, so one-time OS allocations (CLI slot, fonts, ...) are
+; not counted as leaks
+Run >NIL: VELOX:velox
+Wait 3
+Status >ENV:vpid COMMAND=VELOX:velox
+IF NOT WARN
+  Break $vpid C
+EndIF
+Wait 2
+Delete >NIL: ENV:vpid
+
+Avail >NIL: FLUSH
+Echo >>VELOX:r/window.txt "mem_before " NOLINE
+Avail >>VELOX:r/window.txt TOTAL
+
+Run >NIL: VELOX:velox
+Wait 3
+; ask the host for a screenshot (it polls every second)
+Echo >VELOX:shot.req ""
+Wait 4
+
+Status >ENV:vpid COMMAND=VELOX:velox
+IF WARN
+  Echo >>VELOX:r/window.txt "running: no"
+Else
+  Echo >>VELOX:r/window.txt "running: yes"
+  Break $vpid C
+EndIF
+Wait 2
+Status >NIL: COMMAND=VELOX:velox
+IF WARN
+  Echo >>VELOX:r/window.txt "after_break: exited"
+Else
+  Echo >>VELOX:r/window.txt "after_break: STILL RUNNING"
+EndIF
+Delete >NIL: ENV:vpid
+
+Avail >NIL: FLUSH
+Echo >>VELOX:r/window.txt "mem_after " NOLINE
+Avail >>VELOX:r/window.txt TOTAL
+Echo >>VELOX:r/window.txt "done"

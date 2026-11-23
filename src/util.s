@@ -152,7 +152,7 @@ ParseDec:
 	addq.l	#1,a0
 	addq.l	#1,d1
 	bra.s	.l
-.x:	move.l	(sp)+,d2
+.x:	movem.l	(sp)+,d2
 	rts
 
 ;--------------------------------------------------------------------
@@ -180,7 +180,7 @@ ParseHex:
 	addq.l	#1,a0
 	addq.l	#1,d1
 	bra.s	.l
-.x:	move.l	(sp)+,d2
+.x:	movem.l	(sp)+,d2
 	rts
 
 ;--------------------------------------------------------------------
@@ -206,7 +206,7 @@ FmtDec:
 	bne.s	.c
 	clr.b	(a0)
 	lea	12(sp),sp
-	move.l	(sp)+,d2
+	movem.l	(sp)+,d2
 	rts
 
 ;--------------------------------------------------------------------
@@ -220,7 +220,7 @@ PutStr:
 	move.l	g_StdOut(a4),d1
 	beq.s	.x
 	DOS	FPuts
-.x:	move.l	(sp)+,d2
+.x:	movem.l	(sp)+,d2
 	rts
 
 ; PutBuf - In: a0 = data, d0 = length
@@ -244,7 +244,7 @@ PutChar:
 	move.l	g_StdOut(a4),d1
 	beq.s	.x
 	DOS	FPutC
-.x:	move.l	(sp)+,d2
+.x:	movem.l	(sp)+,d2
 	rts
 
 ; PutNL - write a line feed

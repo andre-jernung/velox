@@ -1,11 +1,14 @@
 #!/bin/sh
 # Run Velox in FS-UAE (A1200, Kickstart 3.1, Workbench 3.1 from a host
-# folder), with build/ mounted as VELOX:.
+# folder), with build/ mounted as VELOX: and FS-UAE's bsdsocket.library
+# emulation using the host network.
 #
-#   test/emu.sh          boot Workbench interactively; run VELOX:velox yourself
-#   test/emu.sh --auto   run test/amiga/autotest, save build/screenshot.png,
-#                        print the results and exit non-zero on failure
+#   test/emu.sh                    boot Workbench interactively
+#   test/emu.sh --auto [TEST...]   run test/amiga/TEST.script for each TEST
+#                                  (default: all) in one boot, then check
+#                                  the results with test/amiga/TEST.check
 #
+# test/server.py runs on 127.0.0.1:8080 for the duration.
 # Needs: fs-uae, xwininfo + import (ImageMagick), tools/venv (amitools).
 # AMIGA_DIR (default ~/amiga) must hold a1200.rom and wb31-02-workbench.adf.
 set -eu
@@ -16,8 +19,12 @@ ROM=$AMIGA_DIR/a1200.rom
 SYS=$ROOT/tools/amiga/Workbench3.1
 B=$ROOT/build
 AUTO=0
-[ "${1:-}" = "--auto" ] && AUTO=1
-TIMEOUT=${TIMEOUT:-120}
+if [ "${1:-}" = "--auto" ]; then
+	AUTO=1
+	shift
+fi
+TESTS=${*:-$(cd "$ROOT/test/amiga" && ls *.script | sed 's/\.script$//')}
+TIMEOUT=${TIMEOUT:-300}
 
 make -s -C "$ROOT"
 
@@ -29,8 +36,19 @@ if [ ! -d "$SYS" ]; then
 		"$SYS/S/Startup-Sequence"
 fi
 
-rm -f "$B/result.txt" "$B/shot.req" "$B/autotest" "$B/screenshot.png"
-[ $AUTO = 1 ] && cp "$ROOT/test/amiga/autotest" "$B/autotest"
+rm -rf "$B/r" "$B/t" "$B/shot.req" "$B/autotest" "$B/alldone" "$B/screenshot.png"
+if [ $AUTO = 1 ]; then
+	mkdir -p "$B/r" "$B/t"
+	{
+		echo "FailAt 21"
+		echo "Wait 2"
+		for t in $TESTS; do
+			cp "$ROOT/test/amiga/$t.script" "$B/t/$t"
+			echo "Execute VELOX:t/$t"
+		done
+		echo 'Echo >VELOX:alldone ""'
+	} >"$B/autotest"
+fi
 
 mkdir -p "$B/fs-uae"
 cat >"$B/velox.fs-uae" <<EOF
@@ -43,6 +61,7 @@ hard_drive_0 = $SYS
 hard_drive_0_label = Workbench3.1
 hard_drive_1 = $B
 hard_drive_1_label = VELOX
+bsdsocket_library = 1
 automatic_input_grab = 0
 floppy_drive_volume = 0
 volume = 0
@@ -50,9 +69,11 @@ window_width = 960
 window_height = 600
 EOF
 
+python3 "$ROOT/test/server.py" 8080 "$ROOT/test/www" 2>"$B/server.log" &
+SRV=$!
 fs-uae "$B/velox.fs-uae" >"$B/fs-uae.log" 2>&1 &
 EMU=$!
-trap 'kill $EMU 2>/dev/null || true' EXIT INT TERM
+trap 'kill $EMU $SRV 2>/dev/null || true' EXIT INT TERM
 
 if [ $AUTO = 0 ]; then
 	wait $EMU
@@ -60,36 +81,33 @@ if [ $AUTO = 0 ]; then
 fi
 
 t=0
-while [ $t -lt "$TIMEOUT" ]; do
+while [ $t -lt "$TIMEOUT" ] && [ ! -e "$B/alldone" ]; do
 	if [ -e "$B/shot.req" ] && [ ! -e "$B/screenshot.png" ]; then
-		xwininfo -root -tree | grep -i 'fs-uae' >"$B/windows.txt" || true
-		win=$(grep -v 'has no name' "$B/windows.txt" | head -1 | awk '{print $1}')
+		win=$(xwininfo -root -tree | grep -i 'fs-uae' | grep -v 'has no name' | head -1 | awk '{print $1}')
 		if [ -n "$win" ]; then
 			import -window "$win" "$B/screenshot.png" || echo "screenshot failed"
-		else
-			echo "screenshot: emulator window not found"
 		fi
-
 	fi
-	grep -q '^done' "$B/result.txt" 2>/dev/null && break
 	sleep 1
 	t=$((t + 1))
 done
-
-echo "--- result.txt"
-cat "$B/result.txt" 2>/dev/null || echo "(no result file)"
-echo "---"
+[ -e "$B/alldone" ] || echo "TIMEOUT after ${TIMEOUT}s"
 
 fail=0
-grep -q '^done' "$B/result.txt" 2>/dev/null || { echo "FAIL: autotest did not finish in ${TIMEOUT}s"; fail=1; }
-grep -q '^running: yes' "$B/result.txt" 2>/dev/null || { echo "FAIL: velox was not running"; fail=1; }
-grep -q '^after_break: exited' "$B/result.txt" 2>/dev/null || { echo "FAIL: velox did not exit on Ctrl-C"; fail=1; }
-before=$(sed -n 's/^mem_before *//p' "$B/result.txt" 2>/dev/null | tr -dc 0-9)
-after=$(sed -n 's/^mem_after *//p' "$B/result.txt" 2>/dev/null | tr -dc 0-9)
-if [ -n "$before" ] && [ -n "$after" ]; then
-	echo "memory: before=$before after=$after diff=$((before - after))"
-	[ "$before" = "$after" ] || { echo "FAIL: memory not fully returned"; fail=1; }
-fi
+for t in $TESTS; do
+	r="$B/r/$t.txt"
+	if ! grep -q '^done' "$r" 2>/dev/null; then
+		echo "FAIL $t: did not finish"
+		[ -e "$r" ] && sed 's/^/  | /' "$r"
+		fail=1
+	elif "$ROOT/test/amiga/$t.check" "$r" >"$B/r/$t.check.log" 2>&1; then
+		echo "PASS $t"
+		sed 's/^/  /' "$B/r/$t.check.log"
+	else
+		echo "FAIL $t"
+		sed 's/^/  /' "$B/r/$t.check.log"
+		fail=1
+	fi
+done
 [ -e "$B/screenshot.png" ] && echo "screenshot: $B/screenshot.png"
-[ $fail = 0 ] && echo "PASS"
 exit $fail

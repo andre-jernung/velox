@@ -63,7 +63,8 @@ JS is not on the roadmap yet, but it must stay possible to add. That means:
 1. [x] Toolchain, a window that opens and closes cleanly. Verified in FS-UAE
    (A1200, KS 3.1, WB 3.1) by `test/emu.sh --auto`: runs, exits on Ctrl-C,
    leaks 0 bytes. Launch from a Workbench icon not yet tested.
-2. [ ] CLI fetch: `velox URL` prints the HTTP response (bsdsocket)
+2. [x] CLI fetch: `velox URL DUMP` / `INFO` (bsdsocket). Verified in FS-UAE
+   against `test/server.py`: chunked, redirects, 100 KB body, errors, no leaks.
 3. [ ] HTML tokenizer + DOM + text-only render
 4. [ ] Layout: fonts, styles, links, scrolling, history, URL bar
 5. [ ] Forms, images via datatypes.library, CSS subset

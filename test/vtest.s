@@ -264,7 +264,8 @@ CmdHttp:
 	move.l	d0,-(sp)
 	move.l	a2,a0
 	bsr	ConnClose
-	move.l	(sp)+,d0
+	movem.l	(sp)+,d0
+	tst.l	d0
 	beq.s	.err
 	lea	g_Resp(a4),a2
 	lea	MsgStatus(pc),a0

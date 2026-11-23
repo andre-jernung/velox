@@ -1,0 +1,2 @@
+# Amiga-side scripts are Latin-1
+test/amiga/*.script -text

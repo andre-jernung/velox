@@ -9,10 +9,15 @@ and a single event dispatch point.
 
 - `make`: assembles `src/*.s` into `build/velox` (Amiga hunk executable)
 - `make size`: size against the 64 KB budget
-- `test/emu.sh --auto`: boots FS-UAE (A1200/020, Kickstart 3.1, Workbench
-  3.1 from `~/amiga`), runs `test/amiga/autotest` with `build/` mounted as
-  `VELOX:`, and checks start, Ctrl-C exit and memory leaks. It also saves
-  `build/screenshot.png`. Run it after every change that touches the OS.
+- `make test`: headless golden tests. `build/vtest` runs each
+  `test/unit/*.vt` script under vamos, and the output is diffed against
+  `.expected`. It's fast, so use it for parser and logic code.
+- `test/emu.sh --auto [TEST...]`: boots FS-UAE (A1200/020, Kickstart 3.1,
+  Workbench 3.1 from `~/amiga`) with `build/` as `VELOX:` and the
+  bsdsocket emulation on. It runs `test/amiga/TEST.script` on the Amiga,
+  then `TEST.check` on the host. `test/server.py` serves on
+  127.0.0.1:8080, from `test/www`. It saves `build/screenshot.png` when a
+  script requests one. Run it after every change that touches the OS.
   `test/emu.sh` without arguments boots Workbench for manual testing.
 - Toolchain lives in `tools/` and is not committed. `tools/bootstrap.sh`
   rebuilds it (vasm, vlink, and the AmigaOS 3.2 NDK from Aminet).
@@ -30,6 +35,9 @@ and a single event dispatch point.
   d2-d7/a2-a3/a5.
 - Results come back in d0, with the CCR set from d0 unless the routine's
   header comment says otherwise. Failure is 0.
+- Restore saved data registers with `movem.l (sp)+,dN`, never
+  `move.l (sp)+,dN`. A `move` sets the CCR from the restored value and
+  destroys the result flags the caller tests (this bug happened).
 - Library calls use the `EXEC`/`DOS`/`INTUI`/`GFX` macros, which load a6
   themselves.
 - OS calls take LONG arguments. Clear upper words (`moveq #0,dN`) before

@@ -318,7 +318,7 @@ EventLoop:
 	bsr.s	RedrawWindow
 	bra.s	.next
 .quit:
-	move.l	(sp)+,d2
+	movem.l	(sp)+,d2
 	rts
 
 ;--------------------------------------------------------------------
