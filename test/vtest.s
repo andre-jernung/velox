@@ -667,6 +667,7 @@ PutHex6:
 	rts
 
 RunTypes:	dc.b	"text ",0,"rect ",0,"rule ",0,"bull ",0,"img  ",0,"box  ",0
+		dc.b	"wdgt ",0
 MsgHeight:	dc.b	10,"height ",0
 MsgF:		dc.b	"f",0
 MsgS:		dc.b	" s",0

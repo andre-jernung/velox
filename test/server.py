@@ -66,6 +66,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.send(404, b"not found\n")
 
 
+    def do_POST(self):
+        n = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(n)
+        sys.stderr.write("server: POST %s body=%s\n" % (self.path, body.decode("latin-1")))
+        if self.path.startswith("/echo"):
+            text = "%s\n%s\n" % (self.requestline, body.decode("latin-1"))
+            self.send(200, text.encode("latin-1"))
+        else:
+            self.send(404, b"not found\n")
+
+
 if __name__ == "__main__":
     port = int(sys.argv[1])
     http.server.ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()

@@ -1,0 +1,19 @@
+<html><head><title>Form test</title></head><body>
+<h2>Search</h2>
+<form action="/echo" method="get">
+<p>Query: <input type=text name=q size=20 value="hello">
+<input type=checkbox name=c1 checked> one
+<input type=checkbox name=c2 value=yes> two
+<select name=s><option>red<option value=g selected>green<option>blue</select>
+<input type=hidden name=h value="x y">
+<input type=submit name=go value="Search">
+</form>
+<h2>Post</h2>
+<form action="/echo-post" method=post>
+<input type=text name=msg value="abc">
+<input type=radio name=r value=1 checked>1 <input type=radio name=r value=2>2
+<textarea name=t rows=2 cols=20>line1
+line2</textarea>
+<input type=submit value="Send">
+</form>
+</body></html>

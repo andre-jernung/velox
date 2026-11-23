@@ -4,7 +4,7 @@
 
 	include	"velox.i"
 
-	xdef	NavGo,NavBack,NavForward,NavReload,NavHome,NavLink,NavExit
+	xdef	NavGo,NavBack,NavForward,NavReload,NavHome,NavLink,NavExit,NavPost
 	xref	HttpGet,UrlResolve,PageNew,BufReserve,BufAppend,BufAppendStr
 	xref	BufAppendByte,BufClear,CharsetDetect,DecodeCharset,HtmlParse
 	xref	DomNewNode,DomAppend,DomGetAttr,StrCopyN,StrCopy,StrIPrefix,StrLen
@@ -384,6 +384,7 @@ ShowPage:
 	beq.s	.nof
 	move.l	a0,g_FragName(a4)
 .nof:	clr.l	g_ScrollY(a4)
+	clr.l	g_EditField(a4)
 	clr.l	g_FocusLink(a4)
 	moveq	#-1,d0
 	move.l	d0,g_FocusIdx(a4)
@@ -448,6 +449,17 @@ ShowPage:
 	bsr	LogEvent
 	movem.l	(sp)+,a2
 	rts
+
+;--------------------------------------------------------------------
+; NavPost - submit data with POST and show the result
+; In: a0 = URL, a1 = body, d0 = body length
+;--------------------------------------------------------------------
+NavPost:
+	move.l	a1,g_PostData(a4)
+	move.l	d0,g_PostLen(a4)
+	clr.l	g_Doc(a4)		; never a "same page" fragment jump
+	moveq	#NAV_HISTORY,d0
+	bra	NavGo
 
 ;--------------------------------------------------------------------
 ; Links

@@ -67,7 +67,10 @@ HttpGet:
 	blo.s	.done
 	cmp.l	#308,d2
 	bhi.s	.done
-.redir:	addq.l	#1,d3
+.redir:	cmp.l	#307,d2			; 301-303: the next request is a GET
+	bhs.s	.keep
+	clr.l	g_PostData(a4)
+.keep:	addq.l	#1,d3
 	cmp.l	#MAX_REDIRECTS,d3
 	bhi.s	.toomany
 	lea	r_Url(a3),a0
@@ -82,7 +85,9 @@ HttpGet:
 	bra	.again
 
 .done:	move.l	d2,d0
-.x:	movem.l	(sp)+,d2-d3/a2-a3
+.x:	clr.l	g_PostData(a4)		; a POST body is used once
+	tst.l	d0			; (the clr changed the flags)
+	movem.l	(sp)+,d2-d3/a2-a3
 	rts
 .badscheme:
 	SETERR	ERR_URL
@@ -111,7 +116,12 @@ BuildRequest:
 	movem.l	d2-d3/a2,-(sp)
 	lea	g_ReqBuf(a4),a0
 	bsr	BufClear
-	REQSTR	RqGet
+	tst.l	g_PostData(a4)
+	beq.s	.get
+	REQSTR	RqPost
+	bra.s	.meth
+.get:	REQSTR	RqGet
+.meth:
 
 	; path: escape blanks, controls and 8-bit characters
 	move.l	g_Parts+up_Path(a4),a2
@@ -177,8 +187,29 @@ BuildRequest:
 	tst.l	d0
 	beq.s	ReqNoMem
 .noport:
+	tst.l	g_PostData(a4)
+	beq.s	.nopost
+	REQSTR	RqPostHdr
+	lea	-16(sp),sp
+	move.l	g_PostLen(a4),d0
+	move.l	sp,a0
+	bsr	FmtDec
+	lea	g_ReqBuf(a4),a0
+	move.l	sp,a1
+	bsr	BufAppendStr
+	lea	16(sp),sp
+	tst.l	d0
+	beq	ReqNoMem
+.nopost:
 	REQSTR	RqTail
-	moveq	#1,d0
+	move.l	g_PostData(a4),d0	; the body follows the headers
+	beq.s	.done
+	lea	g_ReqBuf(a4),a0
+	move.l	d0,a1
+	move.l	g_PostLen(a4),d0
+	bsr	BufAppend
+	beq	ReqNoMem
+.done:	moveq	#1,d0
 	movem.l	(sp)+,d2-d3/a2
 	rts
 ReqNoMem:
@@ -189,6 +220,9 @@ ReqNoMem:
 
 HexDigits:	dc.b	"0123456789ABCDEF"
 RqGet:		dc.b	"GET ",0
+RqPost:		dc.b	"POST ",0
+RqPostHdr:	dc.b	13,10,"Content-Type: application/x-www-form-urlencoded"
+		dc.b	13,10,"Content-Length: ",0
 RqHost:		dc.b	" HTTP/1.1",13,10,"Host: ",0
 RqTail:		dc.b	13,10
 		dc.b	"User-Agent: Velox/"

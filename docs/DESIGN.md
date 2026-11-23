@@ -60,12 +60,13 @@ JS is not on the roadmap yet, but it must stay possible to add. That means:
 
 ## Milestones
 
-1. [x] Toolchain, a window that opens and closes cleanly. Verified in FS-UAE
-   (A1200, KS 3.1, WB 3.1) by `test/emu.sh --auto`: runs, exits on Ctrl-C,
-   leaks 0 bytes. Launch from a Workbench icon not yet tested.
+1. [x] Toolchain, a window that opens and closes cleanly (CLI and Workbench).
 2. [x] CLI fetch: `velox URL DUMP` / `INFO` (bsdsocket). Verified in FS-UAE
    against `test/server.py`: chunked, redirects, 100 KB body, errors, no leaks.
-3. [ ] HTML tokenizer + DOM + text-only render
-4. [ ] Layout: fonts, styles, links, scrolling, history, URL bar
-5. [ ] Forms, images via datatypes.library, CSS subset
+3. [x] HTML tokenizer + DOM, charsets and entities (golden tests).
+4. [x] Layout and GUI: fonts, styles, lists, tables, links, scrolling,
+   history, URL field, keyboard navigation (emulator test `browse`).
+5. [~] Forms [x] (GET/POST, all common controls, emulator test `forms`),
+   images via datatypes.library [ ], CSS subset [ ]
 6. [ ] HTTPS via AmiSSL and via proxy
+7. [ ] Cookies, downloads, menus, settings

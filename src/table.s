@@ -14,7 +14,7 @@
 	xdef	LayoutTable
 	xref	StyleCompute,CssApply,LayoutBlockContent,LayoutNode
 	xref	LineReset,AddRun,RunPtr,RunCount,ApplyPendingMargin
-	xref	Measure,DomGetAttr,ParseDec
+	xref	Measure,DomGetAttr,ParseDec,FormIsControl,FormControlSize
 
 MAXCOLS		equ	48
 MAX_MDEPTH	equ	100
@@ -798,7 +798,20 @@ MeasureNode:
 	moveq	#0,d1
 	bsr	MeasWord
 	bra	.pop
-.nimg:	cmp.b	#DISP_INLINE,d0
+.nimg:	move.l	a5,a0			; form controls: their box width
+	bsr	FormIsControl
+	beq.s	.nctl
+	moveq	#0,d0
+	move.b	st_Soft(a3),d0
+	lsl.w	#8,d0
+	move.b	st_Font(a3),d0
+	move.l	a5,a0
+	bsr	FormControlSize
+	moveq	#0,d1
+	bsr	MeasWord
+	bra	.pop
+.nctl:	move.b	st_Display(a3),d0
+	cmp.b	#DISP_INLINE,d0
 	beq.s	.inl
 	cmp.b	#DISP_IBLOCK,d0
 	beq.s	.inl

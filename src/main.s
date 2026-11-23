@@ -221,6 +221,7 @@ LibTable:
 	dc.w	GfxName-LibTable,39,g_GfxBase
 	dc.w	GadToolsName-LibTable,39,g_GadToolsBase
 	dc.w	LayersName-LibTable,39,g_LayersBase
+	dc.w	KeymapName-LibTable,37,g_KeymapBase
 	dc.w	0
 
 DosName:	dc.b	"dos.library",0
@@ -228,6 +229,7 @@ IntuitionName:	dc.b	"intuition.library",0
 GfxName:	dc.b	"graphics.library",0
 GadToolsName:	dc.b	"gadtools.library",0
 LayersName:	dc.b	"layers.library",0
+KeymapName:	dc.b	"keymap.library",0
 	even
 
 ;--------------------------------------------------------------------

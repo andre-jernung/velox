@@ -1,0 +1,58 @@
+#!/usr/bin/env python3
+"""Host side of forms.script: GET and POST forms driven by keyboard."""
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from xdrive import Amiga, wait_log  # noqa: E402
+
+r = sys.argv[1]
+log = os.path.join(r, "forms.log")
+out = open(os.path.join(r, "forms.driver"), "w")
+U = "http://127.0.0.1:8080/"
+
+
+def step(msg):
+    out.write(msg + "\n")
+    out.flush()
+
+
+try:
+    a = Amiga()
+    wait_log(log, "page " + U + "form.html")
+    time.sleep(1)
+    a.key("Tab")
+    wait_log(log, "focus q")
+    a.key("Return")            # start editing the field
+    a.type(" amiga")
+    time.sleep(0.5)
+    a.shot(os.path.join(r, "forms-edit.png"))
+    a.key("Return")            # submit from the field
+    want = U + "echo?q=hello+amiga&c1=on&s=g&h=x+y"
+    wait_log(log, "page " + want)
+    step("GET form: " + want)
+    a.key("BackSpace")
+    wait_log(log, "page " + U + "form.html", 2)
+    # select: 4th control; cycle green -> blue
+    a.key("Tab", 4)
+    wait_log(log, "focus s")
+    a.key("Return")
+    # radio "2": q c1 c2 s go msg r r -> two more after go, msg
+    a.key("Tab", 4)
+    wait_log(log, "focus r", 2)
+    a.key("Return")
+    time.sleep(0.5)
+    a.shot(os.path.join(r, "forms-filled.png"))
+    a.key("Tab", 2)            # textarea t, then Send
+    a.key("Return")
+    wait_log(log, "page " + U + "echo-post")
+    step("POST form submitted")
+    a.key("ctrl+q")
+    step("ok")
+except Exception as e:
+    step("FAIL " + repr(e))
+    try:
+        Amiga().key("ctrl+q")
+    except Exception:
+        pass

@@ -33,7 +33,8 @@ DecodeCharset:
 	tst.l	d0
 	bne.s	.go
 	moveq	#CS_LATIN1,d3
-.go:	move.l	a3,a1			; write position
+.go:	move.l	d3,g_PageCharset(a4)	; (forms encode their data in it)
+	move.l	a3,a1			; write position
 .loop:	subq.l	#1,d2
 	bmi	.end
 	moveq	#0,d0

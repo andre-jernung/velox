@@ -83,7 +83,9 @@ class Amiga:
 
     def type(self, text):
         for ch in text:
-            if ch in _SHIFTED:
+            if ch == " ":
+                self.key("space")
+            elif ch in _SHIFTED:
                 self.key("shift+" + _SHIFTED[ch])
             elif ch.isupper():
                 self.key("shift+" + ch.lower())

@@ -17,6 +17,7 @@
 	xdef	ApplyPendingMargin,IntAttr
 	xref	StyleRoot,StyleCompute,BufClear,BufReserve,PageAlloc,FmtDec
 	xref	DomGetAttr,ParseDec,LayoutTable,CssApply
+	xref	FormIsControl,FormControlSize
 
 	IFNE	RUN_SIZEOF-32
 	FAIL	"RunCount/RunPtr assume RUN_SIZEOF = 32"
@@ -907,22 +908,85 @@ EmitMarker:
 	rts
 
 ;--------------------------------------------------------------------
-; LayoutReplaced - images and (later) form controls
+; LayoutReplaced - images and form controls
 ; In: a0 = element, a1 = style
 ;--------------------------------------------------------------------
 LayoutReplaced:
-	movem.l	d2-d4/a2-a3/a5,-(sp)
+	movem.l	d2-d6/a2-a3/a5,-(sp)
 	move.l	a0,a5
 	move.l	a1,a3
 	cmp.w	#TAG_IMG,n_Tag(a5)
-	bne.s	.other
+	bne.s	.notimg
 	moveq	#0,d2
 	move.w	st_Width(a3),d2
 	ble.s	.alt
 	moveq	#0,d3
 	move.w	st_Height(a3),d3
 	ble.s	.alt
-	; a box of the given size, on the baseline
+	move.l	d3,d4			; sits on the baseline
+	moveq	#RT_IMAGE,d5
+	bsr	PlaceBox
+	bra	.x
+.alt:	; unknown size: show the alt text instead
+	move.l	a5,a0
+	lea	AnAlt(pc),a1
+	bsr	DomGetAttr
+	tst.l	d0
+	beq	.x
+	move.l	d0,a0
+	move.l	d0,a2
+.len:	tst.b	(a2)+
+	bne.s	.len
+	move.l	a2,d0
+	sub.l	a0,d0
+	subq.l	#1,d0
+	move.l	a3,a1
+	bsr	LayoutChars
+	bra	.x
+.notimg:
+	move.l	a5,a0
+	bsr	FormIsControl
+	beq.s	.other
+	moveq	#0,d6			; font code
+	move.b	st_Soft(a3),d6
+	lsl.w	#8,d6
+	move.b	st_Font(a3),d6
+	move.l	a5,a0
+	move.l	d6,d0
+	bsr	FormControlSize
+	tst.l	d0
+	beq.s	.x			; hidden
+	move.l	d0,d2
+	move.l	d1,d3
+	move.l	n_Data2(a5),a0		; checkboxes sit on the baseline,
+	move.b	fs_Kind(a0),d0		; text boxes share it with the text
+	move.l	d3,d4
+	cmp.b	#FK_CHECKBOX,d0
+	beq.s	.place
+	cmp.b	#FK_RADIO,d0
+	beq.s	.place
+	moveq	#0,d0
+	move.b	d6,d0
+	add.w	d0,d0
+	lea	g_FontBase(a4),a0
+	moveq	#0,d4
+	move.w	(a0,d0.w),d4
+	addq.l	#3,d4
+.place:	moveq	#RT_WIDGET,d5
+	bsr	PlaceBox
+	bra.s	.x
+.other:	; iframe and others: show their content
+	move.l	a5,a0
+	move.l	a3,a1
+	bsr	LayoutChildren
+.x:	movem.l	(sp)+,d2-d6/a2-a3/a5
+	rts
+
+; PlaceBox - put an inline box on the line (wrapping first if needed)
+; In: d2 = width, d3 = height, d4 = baseline offset, d5 = run type,
+;     d6 = font code, a5 = element, a3 = style
+PlaceBox:
+	movem.l	d2-d7,-(sp)
 	move.l	g_LayRight(a4),d0
 	sub.l	g_LayLeft(a4),d0
 	cmp.l	d0,d2
@@ -938,51 +1002,35 @@ LayoutReplaced:
 .ns:	cmp.l	g_LayRight(a4),d0
 	ble.s	.room
 	bsr	FlushLine
-.room:	move.l	g_LineX(a4),d4
+.room:	move.l	g_LineX(a4),d7
 	tst.l	g_PendSpace(a4)
 	beq.s	.nsp
-	add.l	g_SpaceW(a4),d4
+	add.l	g_SpaceW(a4),d7
 .nsp:	bsr	AddRun
 	beq.s	.x
 	move.l	d0,a0
-	move.b	#RT_IMAGE,ru_Type(a0)
-	move.w	d4,ru_X(a0)
+	move.b	d5,ru_Type(a0)
+	move.w	d7,ru_X(a0)
 	move.w	d2,ru_W(a0)
 	move.w	d3,ru_H(a0)
-	move.w	d3,ru_Base(a0)
+	move.w	d4,ru_Base(a0)
+	move.b	d6,ru_Font(a0)
+	move.w	d6,d0
+	lsr.w	#8,d0
+	move.b	d0,ru_Soft(a0)
 	move.l	a5,ru_Text(a0)
-	move.l	st_Link(a3),ru_Link(a0)
 	move.l	st_Color(a3),ru_Color(a0)
-	move.l	a0,-(sp)
-	bsr	LineMetrics
-	movem.l	(sp)+,a0
-	add.l	d2,d4
-	move.l	d4,g_LineX(a4)
+	move.l	st_Link(a3),ru_Link(a0)
+	cmp.b	#RT_WIDGET,d5		; controls are their own "link"
+	bne.s	.nl
+	move.l	a5,ru_Link(a0)
+.nl:	bsr	LineMetrics
+	add.l	d2,d7
+	move.l	d7,g_LineX(a4)
 	moveq	#1,d0
 	move.l	d0,g_LineUsed(a4)
 	clr.l	g_PendSpace(a4)
-	bra.s	.x
-.alt:	; unknown size: show the alt text instead
-	move.l	a5,a0
-	lea	AnAlt(pc),a1
-	bsr	DomGetAttr
-	tst.l	d0
-	beq.s	.x
-	move.l	d0,a0
-	move.l	d0,a2
-.len:	tst.b	(a2)+
-	bne.s	.len
-	move.l	a2,d0
-	sub.l	a0,d0
-	subq.l	#1,d0
-	move.l	a3,a1
-	bsr	LayoutChars
-	bra.s	.x
-.other:	; form controls come later: show their content
-	move.l	a5,a0
-	move.l	a3,a1
-	bsr	LayoutChildren
-.x:	movem.l	(sp)+,d2-d4/a2-a3/a5
+.x:	movem.l	(sp)+,d2-d7
 	rts
 
 ;--------------------------------------------------------------------

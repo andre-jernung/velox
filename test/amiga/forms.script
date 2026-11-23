@@ -1,0 +1,6 @@
+; forms: fill in and submit forms by keyboard (test/amiga/forms.host)
+Echo >VELOX:r/forms.txt "forms"
+Echo >VELOX:r/forms.start ""
+VELOX:velox http://127.0.0.1:8080/form.html LOG=VELOX:r/forms.log
+Echo >>VELOX:r/forms.txt "exit rc=$RC"
+Echo >>VELOX:r/forms.txt "done"

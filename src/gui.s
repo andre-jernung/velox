@@ -17,7 +17,8 @@
 	xdef	GuiRelayout,GuiPageWidth
 	xref	LayoutDocument,RunCount,RunPtr,StrLen,StrCopyN
 	xref	NavGo,NavBack,NavForward,NavReload,NavHome,NavLink,UrlFixup
-	xref	DomGetAttr,LogEvent
+	xref	DomGetAttr,LogEvent,FormStateOf,FormIsControl,FormActivate
+	xref	FormEditKey,FormLeave
 
 PROP_FONT	equ	0
 SCROLL_W	equ	18
@@ -44,6 +45,7 @@ RAW_F		equ	$23
 RAW_H		equ	$25
 RAW_L		equ	$28
 RAW_B		equ	$35
+WIDGET_FACE	equ	$aaaaaa		; button face colour
 QUAL_COMMAND	equ	IEQUALIFIER_CONTROL|IEQUALIFIER_LCOMMAND|IEQUALIFIER_RCOMMAND
 
 	section	code,code
@@ -695,7 +697,12 @@ PaintRun:
 	add.l	g_PageY(a4),d3
 	move.b	ru_Type(a2),d0
 	cmp.b	#RT_TEXT,d0
-	beq.s	.text
+	beq	.text
+	cmp.b	#RT_WIDGET,d0
+	bne.s	.notw
+	bsr	PaintWidget
+	bra	.x
+.notw:
 	; boxes: clamp to the view so coordinates fit in words
 	moveq	#0,d4
 	move.w	ru_W(a2),d4
@@ -777,14 +784,538 @@ PaintRun:
 	bne.s	.x
 	sub.w	ru_Base(a2),d3		; back to the top
 	move.l	d2,d4
-	add.w	ru_W(a2),d4
+	moveq	#0,d0
+	move.w	ru_W(a2),d0
+	add.l	d0,d4
 	move.l	d3,d5
-	add.w	ru_H(a2),d5
+	moveq	#0,d0
+	move.w	ru_H(a2),d0
+	add.l	d0,d5
 	subq.l	#1,d5
 	subq.l	#1,d2
 	bra	.box
 .x:	movem.l	(sp)+,d2-d5
 	rts
+
+;--------------------------------------------------------------------
+; PaintWidget - draw a form control
+; In: a2 = run, a3 = RastPort, d2/d3 = window x/y of the run
+;--------------------------------------------------------------------
+PaintWidget:
+	movem.l	d2-d7/a2/a5,-(sp)
+	move.l	ru_Text(a2),a0
+	bsr	FormStateOf
+	tst.l	d0
+	beq	.x
+	move.l	d0,a5			; a5 = state
+	move.l	d2,d4
+	moveq	#0,d0
+	move.w	ru_W(a2),d0
+	add.l	d0,d4
+	subq.l	#1,d4			; x max
+	move.l	d3,d5
+	moveq	#0,d0
+	move.w	ru_H(a2),d0
+	add.l	d0,d5
+	subq.l	#1,d5			; y max
+	move.b	fs_Kind(a5),d0
+	cmp.b	#FK_PASSWORD,d0
+	bls	.field
+	cmp.b	#FK_TEXTAREA,d0
+	beq	.field
+	cmp.b	#FK_CHECKBOX,d0
+	beq	.check
+	cmp.b	#FK_RADIO,d0
+	beq	.radio
+	; buttons and selects: raised box with the label
+	move.l	#WIDGET_FACE,d0
+	bsr	FillBox
+	moveq	#1,d6			; raised
+	bsr	Bevel
+	move.l	fs_Label(a5),d0
+	beq	.focus
+	move.l	d0,a0
+	bsr	StrLen
+	move.l	d0,d7			; label length
+	move.l	ru_Text(a2),a0		; label x: centred, or left in selects
+	moveq	#8,d6
+	cmp.b	#FK_SELECT,fs_Kind(a5)
+	beq.s	.lx
+	moveq	#0,d0
+	move.b	ru_Soft(a2),d0
+	lsl.w	#8,d0
+	move.b	ru_Font(a2),d0
+	move.l	fs_Label(a5),a0
+	move.l	d7,d1
+	bsr	GuiMeasure
+	move.l	d4,d6
+	sub.l	d2,d6
+	sub.l	d0,d6
+	asr.l	#1,d6
+.lx:	add.l	d2,d6
+	move.l	fs_Label(a5),a0
+	move.l	d7,d0
+	bsr	WidgetText
+	cmp.b	#FK_SELECT,fs_Kind(a5)	; a "v" mark at the right of selects
+	bne	.focus
+	moveq	#0,d0
+	move.w	ru_H(a2),d0
+	lsr.l	#2,d0			; mark size
+	move.l	d4,d6
+	sub.l	d0,d6
+	sub.l	d0,d6
+	subq.l	#4,d6			; left end of the mark
+	move.l	d3,d7
+	add.l	d0,d7
+	add.l	d0,d7
+	subq.l	#1,d7			; upper y of the mark
+	move.l	d0,-(sp)
+	move.l	g_PageFg(a4),d0
+	bsr	SetPenRGB
+	move.l	a3,a1
+	move.l	d6,d0
+	move.l	d7,d1
+	GFX	Move
+	movem.l	(sp)+,d0
+	move.l	d0,-(sp)
+	add.l	d0,d6
+	add.l	d0,d7
+	move.l	a3,a1
+	move.l	d6,d0
+	move.l	d7,d1
+	GFX	Draw
+	movem.l	(sp)+,d0
+	add.l	d0,d6
+	sub.l	d0,d7
+	move.l	a3,a1
+	move.l	d6,d0
+	move.l	d7,d1
+	GFX	Draw
+	bra	.focus
+
+.field:	move.l	#$ffffff,d0		; recessed white box with the text
+	bsr	FillBox
+	moveq	#0,d6
+	bsr	Bevel
+	cmp.b	#FK_TEXTAREA,fs_Kind(a5)
+	beq.s	.area
+	bsr	FieldText
+	bra	.focus
+.area:	bsr	AreaText
+	bra	.focus
+
+.check:	move.l	#$ffffff,d0
+	bsr	FillBox
+	moveq	#0,d6
+	bsr	Bevel
+	tst.b	fs_Checked(a5)
+	beq.s	.focus
+	move.l	g_PageFg(a4),d0		; a cross
+	bsr	SetPenRGB
+	move.l	a3,a1
+	move.l	d2,d0
+	addq.l	#2,d0
+	move.l	d3,d1
+	addq.l	#2,d1
+	GFX	Move
+	move.l	a3,a1
+	move.l	d4,d0
+	subq.l	#2,d0
+	move.l	d5,d1
+	subq.l	#2,d1
+	GFX	Draw
+	move.l	a3,a1
+	move.l	d4,d0
+	subq.l	#2,d0
+	move.l	d3,d1
+	addq.l	#2,d1
+	GFX	Move
+	move.l	a3,a1
+	move.l	d2,d0
+	addq.l	#2,d0
+	move.l	d5,d1
+	subq.l	#2,d1
+	GFX	Draw
+	bra.s	.focus
+
+.radio:	move.l	#$ffffff,d0
+	bsr	FillBox
+	moveq	#0,d6
+	bsr	Bevel
+	tst.b	fs_Checked(a5)
+	beq.s	.focus
+	move.l	g_PageFg(a4),d0		; a filled centre
+	bsr	SetPenRGB
+	move.l	a3,a1
+	move.l	d2,d0
+	addq.l	#3,d0
+	move.l	d3,d1
+	addq.l	#3,d1
+	movem.l	d2-d3,-(sp)
+	move.l	d4,d2
+	subq.l	#3,d2
+	move.l	d5,d3
+	subq.l	#3,d3
+	GFX	RectFill
+	movem.l	(sp)+,d2-d3
+
+.focus:	move.l	ru_Text(a2),d0		; keyboard focus: dotted outline
+	cmp.l	g_FocusLink(a4),d0
+	bne.s	.x
+	move.l	g_PageFg(a4),d0
+	bsr	SetPenRGB
+	move.l	a3,a1
+	move.w	#$aaaa,rp_LinePtrn(a1)
+	bset	#0,rp_Flags+1(a1)	; FRST_DOT: restart the pattern
+	move.l	d2,d0
+	subq.l	#1,d0
+	subq.l	#1,d2
+	addq.l	#1,d4
+	subq.l	#1,d3
+	addq.l	#1,d5
+	bsr	Outline
+	move.l	a3,a1
+	move.w	#$ffff,rp_LinePtrn(a1)
+.x:	movem.l	(sp)+,d2-d7/a2/a5
+	rts
+
+; FillBox - fill d2..d4 x d3..d5 with colour d0
+FillBox:
+	bsr	SetPenRGB
+	move.l	a3,a1
+	move.l	d2,d0
+	move.l	d3,d1
+	movem.l	d2-d3,-(sp)
+	move.l	d4,d2
+	move.l	d5,d3
+	GFX	RectFill
+	movem.l	(sp)+,d2-d3
+	rts
+
+; Bevel - 3D edge around d2..d4 x d3..d5; d6 = 1 raised, 0 recessed
+Bevel:
+	move.l	#$ffffff,d0		; light edge: top and left when raised
+	tst.l	d6
+	bne.s	.l1
+	move.l	#$000000,d0
+.l1:	bsr	SetPenRGB
+	move.l	a3,a1
+	move.l	d2,d0
+	move.l	d5,d1
+	GFX	Move
+	move.l	a3,a1
+	move.l	d2,d0
+	move.l	d3,d1
+	GFX	Draw
+	move.l	a3,a1
+	move.l	d4,d0
+	move.l	d3,d1
+	GFX	Draw
+	move.l	#$000000,d0		; dark edge: bottom and right
+	tst.l	d6
+	bne.s	.l2
+	move.l	#$ffffff,d0
+.l2:	bsr	SetPenRGB
+	move.l	a3,a1
+	move.l	d4,d0
+	move.l	d3,d1
+	addq.l	#1,d1
+	GFX	Move
+	move.l	a3,a1
+	move.l	d4,d0
+	move.l	d5,d1
+	GFX	Draw
+	move.l	a3,a1
+	move.l	d2,d0
+	addq.l	#1,d0
+	move.l	d5,d1
+	GFX	Draw
+	rts
+
+; Outline - rectangle d0/d3 .. d4/d5 (d0 = left)
+Outline:
+	move.l	d0,-(sp)
+	move.l	a3,a1
+	move.l	d3,d1
+	GFX	Move
+	move.l	a3,a1
+	move.l	d4,d0
+	move.l	d3,d1
+	GFX	Draw
+	move.l	a3,a1
+	move.l	d4,d0
+	move.l	d5,d1
+	GFX	Draw
+	move.l	a3,a1
+	move.l	(sp),d0
+	move.l	d5,d1
+	GFX	Draw
+	move.l	a3,a1
+	move.l	(sp)+,d0
+	move.l	d3,d1
+	GFX	Draw
+	rts
+
+; SetPenRGB - In: d0 = $RRGGBB; sets the A pen of a3
+SetPenRGB:
+	bsr	GetPen
+	move.l	a3,a1
+	GFX	SetAPen
+	rts
+
+; WidgetText - draw a0/d0 (text/length) at x d6 on the text line of the
+; widget run a2 (font of the run, page text colour)
+WidgetText:
+	movem.l	d2/a2,-(sp)
+	move.l	a0,-(sp)
+	move.l	d0,-(sp)
+	moveq	#0,d0
+	move.b	ru_Soft(a2),d0
+	lsl.w	#8,d0
+	move.b	ru_Font(a2),d0
+	move.l	a3,a1
+	lea	g_PaintFont(a4),a0
+	bsr	SetRPFont
+	move.l	g_PageFg(a4),d0
+	bsr	SetPenRGB
+	move.l	a3,a1
+	move.l	d6,d0
+	move.l	d3,d1
+	add.w	ru_Base(a2),d1
+	GFX	Move
+	move.l	(sp)+,d0
+	move.l	(sp)+,a0
+	move.l	a3,a1
+	GFX	Text
+	movem.l	(sp)+,d2/a2
+	rts
+
+; FieldText - the text of a field (a5 = state, a2 = run), with the
+; cursor when it is being edited.  Only what fits is drawn.
+FieldText:
+	movem.l	d2-d7/a2,-(sp)
+	move.l	d4,d7
+	sub.l	d2,d7
+	subq.l	#6,d7			; room for text
+	addq.l	#4,d2			; text x
+	; keep the cursor in view: scroll so that the cursor fits
+	move.l	fs_Cursor(a5),d0
+	cmp.l	fs_Scroll(a5),d0
+	bhs.s	.sc1
+	move.l	d0,fs_Scroll(a5)
+.sc1:	bsr	.width			; width from scroll to cursor
+	cmp.l	d7,d0
+	ble.s	.sok
+	addq.l	#1,fs_Scroll(a5)
+	bra.s	.sc1
+.sok:	; characters that fit from the scroll position
+	move.l	fs_Value(a5),a0
+	add.l	fs_Scroll(a5),a0
+	move.l	fs_Len(a5),d6
+	sub.l	fs_Scroll(a5),d6	; d6 = characters after scroll
+.fit:	tst.l	d6
+	beq.s	.draw
+	move.l	d6,d1
+	bsr	.measure
+	cmp.l	d7,d0
+	ble.s	.draw
+	subq.l	#1,d6
+	bra.s	.fit
+.draw:	tst.l	d6
+	beq.s	.cursor
+	move.l	fs_Value(a5),a0
+	add.l	fs_Scroll(a5),a0
+	cmp.b	#FK_PASSWORD,fs_Kind(a5)
+	bne.s	.plain
+	lea	Stars(pc),a0
+	cmp.l	#STARS_MAX,d6
+	bls.s	.plain
+	moveq	#STARS_MAX,d6
+.plain:	move.l	d6,d0
+	movem.l	d6,-(sp)
+	move.l	d2,d6
+	bsr	WidgetText
+	movem.l	(sp)+,d6
+.cursor:
+	move.l	ru_Text(a2),d0
+	cmp.l	g_EditField(a4),d0
+	bne.s	.x
+	bsr	.width			; x of the cursor
+	add.l	d2,d0
+	move.l	d0,-(sp)
+	move.l	g_PageFg(a4),d0
+	bsr	SetPenRGB
+	move.l	(sp)+,d0
+	move.l	d3,d1
+	addq.l	#2,d1
+	movem.l	d2-d3,-(sp)
+	move.l	d0,d2
+	addq.l	#1,d2
+	move.l	d5,d3
+	subq.l	#2,d3
+	move.l	a3,a1
+	GFX	RectFill
+	movem.l	(sp)+,d2-d3
+.x:	movem.l	(sp)+,d2-d7/a2
+	rts
+; .width - Out: d0 = width of the text from fs_Scroll to the cursor
+.width:	move.l	fs_Cursor(a5),d1
+	sub.l	fs_Scroll(a5),d1
+	move.l	fs_Value(a5),a0
+	add.l	fs_Scroll(a5),a0
+; .measure - In: a0 = text, d1 = length; Out: d0 = width (stars for
+; passwords)
+.measure:
+	cmp.b	#FK_PASSWORD,fs_Kind(a5)
+	bne.s	.m
+	lea	Stars(pc),a0
+	cmp.l	#STARS_MAX,d1
+	bls.s	.m
+	moveq	#STARS_MAX,d1
+.m:	moveq	#0,d0
+	move.b	ru_Soft(a2),d0
+	lsl.w	#8,d0
+	move.b	ru_Font(a2),d0
+	bra	GuiMeasure
+
+STARS_MAX	equ	64
+Stars:	dcb.b	STARS_MAX,'*'
+	even
+
+; AreaText - the lines of a textarea (a5 = state, a2 = run, a3 =
+; RastPort); the view scrolls (fs_Scroll = first line shown) to keep the
+; cursor visible.  d4 holds the current line.
+AreaText:
+	movem.l	d2-d7/a2/a5,-(sp)
+	sub.l	#12,sp			; locals: 0 font h, 4 width, 8 line no.
+	moveq	#0,d0
+	move.b	ru_Font(a2),d0
+	add.w	d0,d0
+	lea	g_FontH(a4),a0
+	moveq	#0,d1
+	move.w	(a0,d0.w),d1
+	move.l	d1,(sp)
+	move.l	d4,d0
+	sub.l	d2,d0
+	subq.l	#6,d0
+	move.l	d0,4(sp)
+	addq.l	#4,d2			; text x
+	; line of the cursor
+	moveq	#0,d6
+	move.l	fs_Value(a5),a0
+	move.l	fs_Cursor(a5),d0
+	bra.s	.cle
+.cl:	cmp.b	#10,(a0)+
+	bne.s	.cle
+	addq.l	#1,d6
+.cle:	dbf	d0,.cl
+	cmp.l	fs_Scroll(a5),d6
+	bhs.s	.s1
+	move.l	d6,fs_Scroll(a5)
+.s1:	moveq	#0,d0
+	move.w	fs_Rows(a5),d0
+	move.l	d6,d1
+	sub.l	fs_Scroll(a5),d1
+	cmp.l	d0,d1
+	blo.s	.s2
+	move.l	d6,d1
+	sub.l	d0,d1
+	addq.l	#1,d1
+	move.l	d1,fs_Scroll(a5)
+.s2:	; start of the first line shown
+	move.l	fs_Value(a5),a0
+	move.l	fs_Scroll(a5),d0
+	bra.s	.sk
+.skl:	tst.b	(a0)
+	beq.s	.go
+	cmp.b	#10,(a0)+
+	bne.s	.skl
+.sk:	subq.l	#1,d0
+	bpl.s	.skl
+.go:	move.l	a0,d4			; d4 = current line
+	clr.l	8(sp)
+.line:	moveq	#0,d0
+	move.w	fs_Rows(a5),d0
+	cmp.l	8(sp),d0
+	bls	.x
+	move.l	d4,a0			; length of this line
+.ll:	move.b	(a0),d0
+	beq.s	.le
+	cmp.b	#10,d0
+	beq.s	.le
+	addq.l	#1,a0
+	bra.s	.ll
+.le:	move.l	a0,d7
+	sub.l	d4,d7			; d7 = line length
+	move.l	d7,d5
+.fit:	tst.l	d5			; characters that fit
+	beq.s	.draw
+	move.l	d4,a0
+	move.l	d5,d1
+	bsr	.measure
+	cmp.l	4(sp),d0
+	ble.s	.draw
+	subq.l	#1,d5
+	bra.s	.fit
+.draw:	move.l	d3,d6			; d6 = y of the box; d3 = of the line
+	move.l	8(sp),d0
+	mulu.l	(sp),d0
+	add.l	d0,d3
+	tst.l	d5
+	beq.s	.cur
+	move.l	d4,a0
+	move.l	d5,d0
+	move.l	d6,-(sp)
+	move.l	d2,d6
+	bsr	WidgetText
+	move.l	(sp)+,d6
+.cur:	move.l	ru_Text(a2),d0		; the cursor, if it is on this line
+	cmp.l	g_EditField(a4),d0
+	bne.s	.nocur
+	move.l	fs_Value(a5),d1
+	add.l	fs_Cursor(a5),d1
+	cmp.l	d4,d1
+	blo.s	.nocur
+	move.l	d4,d0
+	add.l	d7,d0
+	cmp.l	d0,d1
+	bhi.s	.nocur
+	sub.l	d4,d1
+	move.l	d4,a0
+	bsr	.measure
+	add.l	d2,d0
+	move.l	d0,-(sp)
+	move.l	g_PageFg(a4),d0
+	bsr	SetPenRGB
+	move.l	(sp)+,d0
+	move.l	d3,d1
+	addq.l	#3,d1
+	movem.l	d2-d3,-(sp)
+	move.l	d0,d2
+	addq.l	#1,d2
+	move.l	d1,d3
+	add.l	8(sp),d3		; + font height (locals at 8 now)
+	subq.l	#1,d3
+	move.l	a3,a1
+	GFX	RectFill
+	movem.l	(sp)+,d2-d3
+.nocur:	move.l	d6,d3
+	add.l	d7,d4			; next line
+	move.l	d4,a0
+	tst.b	(a0)
+	beq.s	.x
+	addq.l	#1,d4
+	addq.l	#1,8(sp)
+	bra	.line
+.x:	add.l	#12,sp
+	movem.l	(sp)+,d2-d7/a2/a5
+	rts
+.measure:
+	moveq	#0,d0
+	move.b	ru_Soft(a2),d0
+	lsl.w	#8,d0
+	move.b	ru_Font(a2),d0
+	bra	GuiMeasure
 
 ; DrawStatus - draw g_StatusText in the status line
 DrawStatus:
@@ -1028,7 +1559,10 @@ HandleMessages:
 	moveq	#0,d4
 	move.w	im_Qualifier(a1),d4
 	move.l	im_IAddress(a1),a2
-	move.w	im_MouseX(a1),d5
+	cmp.l	#IDCMP_RAWKEY,d2	; dead key info for MapRawKey
+	bne.s	.nk
+	move.l	(a2),g_PrevKeys(a4)
+.nk:	move.w	im_MouseX(a1),d5
 	ext.l	d5
 	move.w	im_MouseY(a1),d6
 	ext.l	d6
@@ -1113,6 +1647,16 @@ OnGadget:
 
 ; OnKey - raw keys: cursor up/down, space, backspace, mouse wheel
 OnKey:
+	tst.l	g_EditField(a4)		; a field being edited gets keys first
+	beq.s	.noedit
+	move.l	d3,d0
+	move.l	d4,d1
+	bsr	FormEditKey
+	tst.l	d0
+	bne	.x
+.noedit:
+	cmp.w	#$80,d3			; ignore key releases
+	bhs	.x
 	move.w	d4,d0			; Ctrl / Amiga + key: commands
 	and.w	#QUAL_COMMAND,d0
 	beq.s	.plain
@@ -1155,7 +1699,7 @@ OnKey:
 	move.l	g_FocusLink(a4),d0
 	beq.s	.x
 	move.l	d0,a0
-	bra	NavLink
+	bra	Activate
 .x:	rts
 .scroll:
 	moveq	#0,d0
@@ -1262,7 +1806,13 @@ FocusNext:
 	lea	AnHref(pc),a1
 	bsr	DomGetAttr
 	tst.l	d0
+	bne.s	.got
+	move.l	g_FocusLink(a4),a0	; controls: their name
+	lea	AnName(pc),a1
+	bsr	DomGetAttr
+	tst.l	d0
 	beq.s	.x
+.got:
 	move.l	d0,a1
 	lea	LogFocus(pc),a0
 	move.l	a1,-(sp)
@@ -1349,15 +1899,18 @@ OnHover:
 .x:	rts
 
 AnHref:	dc.b	"href",0
+AnName:	dc.b	"name",0
 	even
 
-; OnClick - follow a link on button release over the same link
+; OnClick - follow a link / use a control on button release over it
 OnClick:
 	cmp.w	#IECODE_LBUTTON,d3
 	bne.s	.up
 	bsr	LinkAt
 	move.l	d0,g_PressLink(a4)
-	rts
+	cmp.l	g_EditField(a4),d0	; clicking elsewhere ends editing
+	beq.s	.x
+	bra	FormLeave
 .up:	cmp.w	#IECODE_LBUTTON|IECODE_UP_PREFIX,d3
 	bne.s	.x
 	bsr	LinkAt
@@ -1367,8 +1920,23 @@ OnClick:
 	bne.s	.x
 	clr.l	g_PressLink(a4)
 	move.l	d0,a0
-	bra	NavLink
+	bra	Activate
 .x:	rts
+
+; Activate - follow a link or use a form control
+; In: a0 = <a> element or control; d4 = qualifier (Shift = backwards)
+Activate:
+	move.l	a0,-(sp)
+	bsr	FormIsControl
+	movem.l	(sp)+,a0
+	tst.l	d0
+	beq	NavLink
+	moveq	#1,d0
+	move.w	d4,d1
+	and.w	#IEQUALIFIER_LSHIFT|IEQUALIFIER_RSHIFT,d1
+	beq	FormActivate
+	moveq	#-1,d0
+	bra	FormActivate
 
 ; OnResize - new window size: rebuild gadgets, lay out again
 OnResize:

@@ -30,6 +30,7 @@ VELOX_I	SET	1
 	include	"lvo/intuition_lib.i"
 	include	"lvo/graphics_lib.i"
 	include	"lvo_bsdsocket.i"
+	include	"lvo/keymap_lib.i"
 	include	"tags.i"
 
 VERSION_STR	MACRO
@@ -203,6 +204,7 @@ RT_RULE		equ	3		; <hr>
 RT_BULLET	equ	4		; list marker, ru_Len = LIST_xxx
 RT_IMAGE	equ	5		; ru_Text = <img> node
 RT_BOX		equ	6		; 1 pixel outline
+RT_WIDGET	equ	7		; form control, ru_Text = element
 
 	RSRESET
 ru_Y		rs.l	1		; top, document coordinates
@@ -219,6 +221,36 @@ ru_Text		rs.l	1
 ru_Len		rs.l	1
 ru_Link		rs.l	1		; <a> element (or form control)
 RUN_SIZEOF	rs.b	0
+
+;--------------------------------------------------------------------
+; FormState - state of a form control (in the element's n_Data2)
+;--------------------------------------------------------------------
+FK_TEXT		equ	1		; also search, email, url, number ...
+FK_PASSWORD	equ	2
+FK_CHECKBOX	equ	3
+FK_RADIO	equ	4
+FK_SUBMIT	equ	5
+FK_RESET	equ	6
+FK_BUTTON	equ	7
+FK_HIDDEN	equ	8
+FK_SELECT	equ	9
+FK_TEXTAREA	equ	10
+FK_IMAGE	equ	11
+FK_FILE		equ	12
+
+	RSRESET
+fs_Kind		rs.b	1
+fs_Checked	rs.b	1		; checkbox / radio: $ff when checked
+fs_Size		rs.w	1		; visible characters (size= / cols=)
+fs_Rows		rs.w	1
+fs_Sel		rs.w	1		; select: selected option
+fs_Len		rs.l	1
+fs_Max		rs.l	1
+fs_Cursor	rs.l	1
+fs_Scroll	rs.l	1		; first visible character
+fs_Value	rs.l	1		; text, NUL terminated
+fs_Label	rs.l	1		; button / select label
+FS_SIZEOF	rs.b	0
 
 ;--------------------------------------------------------------------
 ; Global data block, addressed as xxx(a4)
@@ -326,6 +358,18 @@ g_HoverLink	rs.l	1
 g_FocusLink	rs.l	1		; link with the keyboard focus or 0
 g_FocusIdx	rs.l	1		; its first run, or -1
 g_LogFH		rs.l	1		; LOG=file handle or 0
+; forms
+g_KeymapBase	rs.l	1
+g_EditField	rs.l	1		; text control being edited or 0
+g_Submitter	rs.l	1
+g_FormName	rs.l	1
+g_PrevKeys	rs.l	1		; dead key info of the last RAWKEY
+g_InputEvent	rs.b	24
+g_KeyChars	rs.b	8
+g_FormBuf	rs.b	BUF_SIZEOF	; encoded form data
+g_PageCharset	rs.l	1		; CS_xxx the page was decoded from
+g_PostData	rs.l	1		; body for the next request (POST) or 0
+g_PostLen	rs.l	1
 g_PressLink	rs.l	1
 g_StatusText	rs.b	STATUS_MAX
 g_StatusBuf	rs.b	STATUS_MAX
