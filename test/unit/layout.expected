@@ -110,3 +110,19 @@ text 40 8 48 10 8 f1 s0 c000000 "Before"
 text 40 64 96 10 8 f1 s1 c0000ee L "Frame: Video"
 text 40 168 48 10 8 f1 s0 c000000 "after."
 
+# images in tables are measured by their size or, unknown, their alt text
+layout test/unit/layout/imgalt.html 300 => 
+height 56
+box  0 8 284 56 0 f0 s0 c000000
+box  3 11 73 24 0 f0 s0 c000000
+text 5 13 32 10 8 f1 s0 c000000 "Logo"
+text 15 13 32 10 8 f1 s0 c000000 "text"
+box  3 86 202 24 0 f0 s0 c000000
+text 5 88 192 10 8 f1 s0 c000000 "a cell with text next to"
+text 15 88 16 10 8 f1 s0 c000000 "it"
+box  29 11 73 24 0 f0 s0 c000000
+img  31 13 60 20 20 f1 s0 c000000
+box  29 86 202 24 0 f0 s0 c000000
+text 31 88 176 10 8 f1 s0 c000000 "sized image: its width"
+text 41 88 48 10 8 f1 s0 c000000 "counts"
+

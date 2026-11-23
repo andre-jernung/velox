@@ -835,6 +835,7 @@ AnCellpadding:	dc.b	"cellpadding",0
 AnBorder:	dc.b	"border",0
 AnColspan:	dc.b	"colspan",0
 AnAlign:	dc.b	"align",0
+AnAlt:		dc.b	"alt",0
 	even
 
 ;--------------------------------------------------------------------
@@ -918,13 +919,36 @@ MeasureNode:
 	bne.s	.nbr
 	bsr	MeasBreak
 	bra	.pop
-.nbr:	cmp.w	#TAG_IMG,d1
+.nbr:	cmp.w	#TAG_IMG,d1		; images as they will be laid out:
 	bne.s	.nimg
+	move.l	n_Data2(a5),d0		; loaded: their size
+	beq.s	.iw
+	move.l	d0,a0
 	moveq	#0,d0
+	move.w	im_W(a0),d0
+	bra.s	.iword
+.iw:	moveq	#0,d0			; a given size
 	move.w	st_Width(a3),d0
-	ble	.pop
-	moveq	#0,d1
+	ble.s	.ialt
+	tst.w	st_Height(a3)
+	ble.s	.ialt
+.iword:	moveq	#0,d1
 	bsr	MeasWord
+	bra	.pop
+.ialt:	move.l	a5,a0			; or their alt text
+	lea	AnAlt(pc),a1
+	jsr	DomGetAttr
+	tst.l	d0
+	beq	.pop
+	move.l	d0,a0
+	move.l	d0,a1
+.al:	tst.b	(a1)+
+	bne.s	.al
+	move.l	a1,d0
+	sub.l	a0,d0
+	subq.l	#1,d0
+	move.l	a3,a1
+	bsr	MeasChars
 	bra	.pop
 .nimg:	move.l	a5,a0			; form controls: their box width
 	jsr	FormIsControl
@@ -1010,7 +1034,20 @@ MeasureNode:
 	subq.l	#1,g_LayDepth(a4)
 	bra	.x
 
-.text:	moveq	#0,d6			; font code
+.text:	move.l	n_Data(a5),a0
+	move.l	n_Data2(a5),d0
+	move.l	a3,a1
+	bsr	MeasChars
+.x:	movem.l	(sp)+,d2-d7/a2-a3/a5
+	rts
+
+; MeasChars - measure text: In: a0 = text, d0 = length, a1 = style
+MeasChars:
+	movem.l	d2-d7/a2-a3/a5,-(sp)
+	move.l	a0,a2
+	move.l	d0,d7
+	move.l	a1,a3
+	moveq	#0,d6			; font code
 	move.b	st_Soft(a3),d6
 	lsl.w	#8,d6
 	move.b	st_Font(a3),d6
@@ -1019,8 +1056,6 @@ MeasureNode:
 	move.l	d6,d0
 	jsr	Measure
 	move.l	d0,d5			; blank width
-	move.l	n_Data(a5),a2
-	move.l	n_Data2(a5),d7
 	cmp.b	#WS_NORMAL,st_White(a3)
 	bne.s	.whole
 .tl:	tst.l	d7
