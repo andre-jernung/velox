@@ -1,0 +1,70 @@
+# Velox design
+
+A modern, extremely lightweight web browser for classic AmigaOS, written
+entirely in 68k assembly.
+
+## Targets and fixed decisions
+
+| Decision      | Choice                                                         |
+|---------------|----------------------------------------------------------------|
+| OS            | AmigaOS 3.x (all libraries opened at v39+)                     |
+| CPU           | 68020 or better (`-m68020`; no FPU required)                   |
+| Display       | Any: window on the default public screen (OCS/AGA/RTG)         |
+| Assembler     | vasm (Motorola syntax) + vlink, Amiga hunk format              |
+| Networking    | bsdsocket.library (Roadshow, AmiTCP, Miami)                    |
+| HTTPS         | Both: AmiSSL (in-process) **and** an optional rewriting proxy  |
+| Size budget   | 64 KB executable (`make size`)                                 |
+| JavaScript    | Not now, but the architecture must not rule it out (see below) |
+
+## Pipeline
+
+```
+URL --> fetch (http / https via AmiSSL / proxy)
+    --> decode (chunked, charset -> Latin-1)
+    --> tokenize (HTML5-style state machine, tolerant)
+    --> tree builder  --> DOM (kept in memory for the life of the page)
+    --> style (UA defaults + CSS subset) --> computed style per node
+    --> layout  --> box/line list
+    --> paint   --> window RastPort (clipped)
+```
+
+Each stage is a separate module (`src/<stage>.s`) with a narrow
+interface, so stages can be unit-tested in isolation.
+
+## Keeping the door open for JavaScript
+
+JS is not on the roadmap yet, but it must stay possible to add. That means:
+
+1. **The DOM is a real, persistent tree.** Nodes are kept and are never
+   discarded after painting. Every element node has parent, first-child,
+   next-sibling and previous-sibling links, a tag id, and an attribute
+   list. Text nodes own their text. Nothing in layout or paint may cache
+   pointers into the source buffer that would go stale if the tree changes.
+2. **Layout and paint are re-runnable.** Layout builds a separate box list
+   from the DOM and can be thrown away and rebuilt at any time. A "dirty"
+   flag on nodes allows partial relayout later.
+3. **Scripts are kept, not dropped.** The `<script>` body, the `src`
+   attribute, and event-handler attributes (`onclick`, ...) are stored in
+   the DOM like any other content. Today they are simply not executed.
+   `<noscript>` is rendered because scripting is off.
+4. **Events go through one dispatch point.** Clicks, key presses and form
+   submissions become DOM events delivered to a target node via
+   `DispatchEvent`. The default action (follow link, submit form) runs only
+   if nothing cancelled it. A script engine plugs in there later.
+5. **Memory comes from per-page pools** (exec memory pools, v39), so a page
+   and everything hanging off it, including a future JS heap, are freed
+   together.
+6. **Networking is asynchronous-capable.** The fetch layer is a state
+   machine driven by `WaitSelect`, not a blocking call, so later "fetch
+   from script", images and stylesheets can share it.
+
+## Milestones
+
+1. [x] Toolchain, a window that opens and closes cleanly. Verified in FS-UAE
+   (A1200, KS 3.1, WB 3.1) by `test/emu.sh --auto`: runs, exits on Ctrl-C,
+   leaks 0 bytes. Launch from a Workbench icon not yet tested.
+2. [ ] CLI fetch: `velox URL` prints the HTTP response (bsdsocket)
+3. [ ] HTML tokenizer + DOM + text-only render
+4. [ ] Layout: fonts, styles, links, scrolling, history, URL bar
+5. [ ] Forms, images via datatypes.library, CSS subset
+6. [ ] HTTPS via AmiSSL and via proxy

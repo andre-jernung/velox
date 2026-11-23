@@ -1,0 +1,54 @@
+; Velox autotest - executed by the test Startup-Sequence when
+; VELOX:autotest exists.  Results go to VELOX:result.txt; the host
+; script waits for the final "done" line.
+FailAt 21
+Wait 2
+Echo >VELOX:result.txt "velox autotest"
+
+; warm-up run, so one-time OS allocations (CLI slot, fonts, ...) are
+; not counted as leaks
+Run >NIL: VELOX:velox
+Wait 3
+Status >ENV:vpid COMMAND=VELOX:velox
+IF NOT WARN
+  Break $vpid C
+EndIF
+Wait 2
+Delete >NIL: ENV:vpid
+
+; free memory before
+Avail >NIL: FLUSH
+Echo >>VELOX:result.txt "mem_before " NOLINE
+Avail >>VELOX:result.txt TOTAL
+
+Run >NIL: VELOX:velox
+Wait 3
+
+; ask the host for a screenshot (it polls every second)
+Echo >VELOX:shot.req ""
+Wait 4
+Echo >>VELOX:result.txt "shot: requested"
+
+; is it running, and does Ctrl-C make it exit?
+Status >ENV:vpid COMMAND=VELOX:velox
+IF WARN
+  Echo >>VELOX:result.txt "running: no"
+Else
+  Echo >>VELOX:result.txt "running: yes"
+  Break $vpid C
+EndIF
+Wait 2
+Status >NIL: COMMAND=VELOX:velox
+IF WARN
+  Echo >>VELOX:result.txt "after_break: exited"
+Else
+  Echo >>VELOX:result.txt "after_break: STILL RUNNING"
+EndIF
+Delete >NIL: ENV:vpid
+
+; free memory after (should match mem_before)
+Avail >NIL: FLUSH
+Echo >>VELOX:result.txt "mem_after " NOLINE
+Avail >>VELOX:result.txt TOTAL
+
+Echo >>VELOX:result.txt "done"

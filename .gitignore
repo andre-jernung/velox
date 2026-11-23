@@ -1,0 +1,9 @@
+build/
+tools/bin/
+tools/src/
+tools/ndk/
+tools/venv/
+tools/amiga/
+# Kickstart ROMs are copyrighted - never commit
+amiga/
+*.rom

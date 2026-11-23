@@ -1,0 +1,39 @@
+# Velox
+
+A web browser for classic AmigaOS 3.x / 68020+, in pure 68k assembly.
+Read `docs/DESIGN.md` for the decisions and architecture. In particular,
+keep the JavaScript-readiness rules: a persistent DOM, re-runnable layout,
+and a single event dispatch point.
+
+## Build
+
+- `make`: assembles `src/*.s` into `build/velox` (Amiga hunk executable)
+- `make size`: size against the 64 KB budget
+- `test/emu.sh --auto`: boots FS-UAE (A1200/020, Kickstart 3.1, Workbench
+  3.1 from `~/amiga`), runs `test/amiga/autotest` with `build/` mounted as
+  `VELOX:`, and checks start, Ctrl-C exit and memory leaks. It also saves
+  `build/screenshot.png`. Run it after every change that touches the OS.
+  `test/emu.sh` without arguments boots Workbench for manual testing.
+- Toolchain lives in `tools/` and is not committed. `tools/bootstrap.sh`
+  rebuilds it (vasm, vlink, and the AmigaOS 3.2 NDK from Aminet).
+  `tools/venv` holds amitools (xdftool, vamos).
+- System packages needed: `fs-uae` and `python3.13-venv` (apt). This is a
+  Qubes AppVM, so they belong in the TemplateVM.
+
+## Assembly conventions
+
+- vasm Motorola syntax, `-m68020`, `-x` (undefined symbols are errors).
+- Every module starts with `include "velox.i"`.
+- **a4 always points to the global block `G`.** Globals are `g_Xxx(a4)`,
+  defined with `rs` in `src/velox.i`. Never modify a4.
+- **Scratch registers:** d0-d1/a0-a1/a6. Every routine preserves
+  d2-d7/a2-a3/a5.
+- Results come back in d0, with the CCR set from d0 unless the routine's
+  header comment says otherwise. Failure is 0.
+- Library calls use the `EXEC`/`DOS`/`INTUI`/`GFX` macros, which load a6
+  themselves.
+- OS calls take LONG arguments. Clear upper words (`moveq #0,dN`) before
+  loading a `.w` or `.b` value into an argument register.
+- Each routine gets a header comment stating In/Out.
+- Cleanup routines must be safe to call when the resource was never
+  acquired (test, clear, then free).
