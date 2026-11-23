@@ -262,16 +262,17 @@ StyleCompute:
 	cmp.w	#TAG_TABLE,n_Tag(a5)
 	beq.s	.noalign
 	move.l	d0,a0
-	moveq	#ALIGN_LEFT,d1
-	lea	SCenter(pc),a1
+	lea	SCenter(pc),a1		; (StrIPrefix uses d1)
 	jsr	StrIPrefix
 	beq.s	.al2
 	moveq	#ALIGN_CENTER,d1
 	bra.s	.setal
 .al2:	lea	SRight(pc),a1
 	jsr	StrIPrefix
-	beq.s	.setal
 	moveq	#ALIGN_RIGHT,d1
+	tst.l	d0
+	bne.s	.setal
+	moveq	#ALIGN_LEFT,d1		; left, justify, ...
 .setal:	move.b	d1,st_Align(a3)
 .noalign:
 	move.l	a5,a0

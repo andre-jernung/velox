@@ -606,7 +606,7 @@ MediaQuery:
 	lea	MqMaxW(pc),a1
 	jsr	StrIPrefix
 	bne.s	.max
-	bra.s	.paren
+	bra.s	.range
 .min:	bsr	MqLength
 	cmp.w	d0,d2
 	bge.s	.paren
@@ -616,7 +616,46 @@ MediaQuery:
 	cmp.w	d0,d6
 	ble.s	.paren
 	move.w	d0,d6
-.paren:	move.l	a2,a0			; skip to after ')'
+	bra.s	.paren
+.range:	; level 4 ranges: (width >= 600px), (400px <= width < 800px)
+	move.l	a0,-(sp)		; (a0 = the feature)
+	lea	MqWidth(pc),a1
+	jsr	StrIPrefix
+	movem.l	(sp)+,a1
+	tst.l	d0
+	beq.s	.rnum
+	bsr	MqOp			; width OP length
+	tst.l	d1
+	beq.s	.paren
+	bsr	MqNum
+	bsr	MqApply
+	bra.s	.paren
+.rnum:	move.l	a1,a0			; length OP width [OP length]
+	move.b	(a0),d0
+	sub.b	#'0',d0
+	cmp.b	#9,d0
+	bhi.s	.paren
+	bsr	MqNum			; d0 = the length
+	bsr	MqOp			; d1 = the operator
+	tst.l	d1
+	beq.s	.paren
+	movem.l	d0-d1,-(sp)
+	bsr	SkipWs
+	lea	MqWidth(pc),a1
+	jsr	StrIPrefix
+	tst.l	d0
+	movem.l	(sp)+,d0-d1		; (movem keeps the CCR)
+	beq.s	.paren
+	btst	#3,d1			; turned round: N < width is width > N
+	bne.s	.req
+	eor.b	#6,d1
+.req:	bsr	MqApply
+	bsr	MqOp			; a second bound
+	tst.l	d1
+	beq.s	.paren
+	bsr	MqNum
+	bsr	MqApply
+.paren:	move.l	a2,a0			; skip to after ')''
 .pl:	move.b	(a0),d0
 	beq.s	.pe
 	addq.l	#1,a0
@@ -674,6 +713,76 @@ MediaQuery:
 .x:	movem.l	(sp)+,d2-d7/a2
 	rts
 
+; MqOp - a comparison at a0 (after blanks): d1 = 2 >, 3 >=, 4 <, 5 <=,
+; 8 =, or 0; a0 after it.  d0 is kept.
+MqOp:
+	move.l	d0,-(sp)
+	bsr	SkipWs
+	movem.l	(sp)+,d0
+	moveq	#0,d1
+	cmp.b	#'>',(a0)
+	bne.s	.lt
+	moveq	#2,d1
+	bra.s	.eq
+.lt:	cmp.b	#'<',(a0)
+	bne.s	.e
+	moveq	#4,d1
+.eq:	addq.l	#1,a0
+	cmp.b	#'=',(a0)
+	bne.s	.x
+	addq.l	#1,d1
+	addq.l	#1,a0
+.x:	rts
+.e:	cmp.b	#'=',(a0)
+	bne.s	.x
+	moveq	#8,d1
+	addq.l	#1,a0
+	rts
+
+; MqNum - a length at a0 (after blanks), unit skipped: d0 = pixels;
+; d1 is kept
+MqNum:
+	move.l	d1,-(sp)
+	bsr	SkipWs
+	moveq	#CSS_EM,d0
+	jsr	ParseLength
+.u:	move.b	(a0),d1			; skip the unit
+	or.b	#$20,d1
+	cmp.b	#'a',d1
+	blo.s	.c
+	cmp.b	#'z',d1
+	bhi.s	.c
+	addq.l	#1,a0
+	bra.s	.u
+.c:	cmp.l	#$7fff,d0
+	ble.s	.x
+	move.l	#$7fff,d0
+.x:	movem.l	(sp)+,d1
+	rts
+
+; MqApply - width OP d0 (op d1): narrows this query's d2 (min) / d6 (max)
+MqApply:
+	btst	#3,d1			; =
+	bne.s	.both
+	btst	#1,d1
+	beq.s	.max
+	btst	#0,d1			; > N: min N+1, >= N: min N
+	bne.s	.min
+	addq.w	#1,d0
+.min:	cmp.w	d0,d2
+	bge.s	.x
+	move.w	d0,d2
+.x:	rts
+.max:	btst	#0,d1			; < N: max N-1, <= N: max N
+	bne.s	.mx
+	subq.w	#1,d0
+.mx:	cmp.w	d0,d6
+	ble.s	.x
+	move.w	d0,d6
+	rts
+.both:	bsr.s	.min
+	bra.s	.mx
+
 ; MqLength - a0 after "min-width"/"max-width": ": 600px" -> d0 pixels
 MqLength:
 .l:	move.b	(a0),d0
@@ -718,6 +827,7 @@ MqSpeech:	dc.b	"speech",0
 MqDark:		dc.b	"dark",0
 MqMinW:		dc.b	"min-width",0
 MqMaxW:		dc.b	"max-width",0
+MqWidth:	dc.b	"width",0
 	even
 
 ;--------------------------------------------------------------------

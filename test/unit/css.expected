@@ -68,3 +68,12 @@ text 186 8 160 10 8 f1 s2 c000000 "ok14 (never hovered)"
 text 196 8 40 10 8 f1 s0 c000000 "ok15a"
 text 196 48 40 10 8 f1 s0 c000000 "ok15b"
 
+# media queries level 4 ranges, @media without a blank
+layout test/unit/layout/mq4.html 600 => 
+height 110
+text 10 8 32 10 8 f1 s0 c000000 "ok-a"
+text 30 8 32 10 8 f1 s0 c000000 "ok-b"
+text 50 8 32 10 8 f1 s0 c000000 "ok-c"
+text 70 8 32 10 8 f1 s0 c000000 "ok-d"
+text 90 8 32 10 8 f1 s0 c000000 "ok-e"
+

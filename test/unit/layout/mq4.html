@@ -1,0 +1,12 @@
+<style>
+@media(min-width: 5000px){.a{display:none}}
+@media (width >= 5000px){.b{display:none}}
+@media (width <= 10px){.c{display:none}}
+@media (5000px < width){.d{display:none}}
+@media (10px < width < 20px){.e{display:none}}
+@media (width >= 100px){.f{display:none}}
+@media (100px <= width <= 5000px){.g{display:none}}
+@media (width > 100px) and (width < 5000px){.h{display:none}}
+</style>
+<p class=a>ok-a</p><p class=b>ok-b</p><p class=c>ok-c</p><p class=d>ok-d</p><p class=e>ok-e</p>
+<p class=f>bad-f</p><p class=g>bad-g</p><p class=h>bad-h</p>

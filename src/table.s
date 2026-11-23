@@ -328,9 +328,11 @@ LayoutTable:
 	move.l	d4,d1
 	sub.l	tb_Width(a3),d1		; free space
 	ble.s	.x0
+	move.l	d1,-(sp)		; (d1 is scratch for calls)
 	move.l	a5,a0
 	lea	AnAlign(pc),a1
 	jsr	DomGetAttr
+	movem.l	(sp)+,d1
 	tst.l	d0
 	beq.s	.inh
 	move.l	d0,a0

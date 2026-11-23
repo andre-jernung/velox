@@ -126,3 +126,14 @@ box  29 86 202 24 0 f0 s0 c000000
 text 31 88 176 10 8 f1 s0 c000000 "sized image: its width"
 text 41 88 48 10 8 f1 s0 c000000 "counts"
 
+# align="left" and friends (a clobbered register once made it "right")
+layout test/unit/layout/align.html 300 => 
+height 122
+text 3 27 24 10 8 f1 s0 c000000 "nav"
+text 6 74 96 10 8 f1 s0 c000000 "left-in-left"
+text 19 71 72 10 8 f1 s0 c000000 "left-text"
+text 42 252 40 10 8 f1 s0 c000000 "right"
+text 62 8 32 10 8 f1 s0 c000000 "left"
+text 82 8 120 10 8 f1 s0 c000000 "justify-is-left"
+text 102 126 48 10 8 f1 s0 c000000 "center"
+
