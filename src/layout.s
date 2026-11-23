@@ -37,6 +37,7 @@ MAX_LAYDEPTH	equ	200
 LayoutDocument:
 	movem.l	d2/a2,-(sp)
 	move.l	d0,g_LayWidth(a4)
+	clr.l	g_FindRun(a4)		; the runs change
 	tst.l	g_CssHasMq(a4)		; media queries: matches depend on
 	beq.s	.nomq			; the width
 	cmp.l	g_CssCacheW(a4),d0

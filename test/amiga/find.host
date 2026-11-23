@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+"""Host side of find.script: '/' finds text, Return the next match,
+Esc ends."""
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from xdrive import Amiga, wait_log  # noqa: E402
+
+r = sys.argv[1]
+log = os.path.join(r, "find.log")
+out = open(os.path.join(r, "find.driver"), "w")
+
+
+def step(msg):
+    out.write(msg + "\n")
+    out.flush()
+
+
+def finds(lines):
+    return [int(l.split()[1]) for l in lines if l.startswith("find ")]
+
+
+try:
+    a = Amiga()
+    wait_log(log, "page http://127.0.0.1:8080/third.html")
+    time.sleep(1)
+    a.key("/")
+    a.type("PARAGRAPH 5")
+    lines = wait_log(log, "find ", 11)
+    first = finds(lines)[-1]
+    if first < 0:
+        raise AssertionError("not found: %r" % finds(lines))
+    step("found as typed")
+    a.key("Return")
+    lines = wait_log(log, "find ", 12)
+    second = finds(lines)[-1]
+    if second <= first:
+        raise AssertionError("next match %d after %d" % (second, first))
+    sc = [l for l in lines if l.startswith("scroll ")]
+    if not sc or int(sc[-1].split()[1]) <= 0:
+        raise AssertionError("did not scroll to the match: %r" % sc)
+    time.sleep(1)
+    a.shot(os.path.join(r, "find-next.png"))
+    step("Return goes to the next match and scrolls to it")
+    a.key("BackSpace", 11)
+    a.type("zzz")
+    lines = wait_log(log, "find ", 12 + 11 + 3)
+    if finds(lines)[-1] != -1:
+        raise AssertionError("zzz found: %r" % finds(lines)[-3:])
+    step("text that is not there is not found")
+    n = len([l for l in lines if l.startswith("scroll ")])
+    a.key("Escape")
+    a.key("Down")
+    wait_log(log, "scroll", n + 1)
+    step("Esc ends finding")
+    a.key("ctrl+q")
+    step("ok")
+except Exception as e:
+    step("FAIL " + repr(e))
+    try:
+        Amiga().key("ctrl+q")
+    except Exception:
+        pass

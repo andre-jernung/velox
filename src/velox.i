@@ -506,6 +506,11 @@ g_ProxyPort	rs.l	1		; 0 = no proxy
 g_ProxyHost	rs.b	HOST_MAX
 g_VarBuf	rs.b	256
 g_PressLink	rs.l	1
+g_FindOn	rs.l	1		; find in page active
+g_FindRun	rs.l	1		; run with the match, or 0
+g_FindIdx	rs.l	1		; its index (-1 none)
+g_FindOff	rs.l	1		; offset of the match in the run
+g_Find		rs.b	64		; the text being found
 g_StatusText	rs.b	STATUS_MAX
 g_StatusBuf	rs.b	STATUS_MAX
 g_TitleText	rs.b	STATUS_MAX

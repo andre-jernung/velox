@@ -1,0 +1,6 @@
+#!/bin/sh
+# checks for find.script
+d=$(dirname "$1"); fail=0
+sed 's/^/driver: /' "$d/find.driver"
+grep -qx ok "$d/find.driver" || fail=1
+exit $fail

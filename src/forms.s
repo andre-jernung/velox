@@ -11,6 +11,7 @@
 
 	xdef	FormStateOf,FormControlSize,FormIsControl,FormActivate
 	xdef	FormEditKey,FormSubmit,FormLeave
+	xdef	KeyToChars
 	xref	PageAlloc,DomGetAttr,StrIPrefix,ParseDec,Measure
 	xref	BufAppendByte,BufAppendStr,BufClear,UrlResolve
 	xref	NavGo,NavPost,GuiPaintAll,GuiStatus
@@ -714,19 +715,9 @@ FormEditKey:
 	move.w	d3,d0			; Amiga/Ctrl combinations are commands
 	and.w	#$00c8,d0
 	bne	.no
-	; characters through the keymap
-	lea	g_InputEvent(a4),a0
-	clr.l	(a0)			; ie_NextEvent
-	move.b	#IECLASS_RAWKEY,4(a0)	; ie_Class
-	clr.b	5(a0)			; ie_SubClass
-	move.w	d2,6(a0)		; ie_Code
-	move.w	d3,8(a0)		; ie_Qualifier
-	move.l	g_PrevKeys(a4),10(a0)	; ie_EventAddress (dead keys)
-	lea	g_KeyChars(a4),a1
-	moveq	#8,d1
-	suba.l	a2,a2
-	move.l	g_KeymapBase(a4),a6
-	jsr	_LVOMapRawKey(a6)
+	move.l	d2,d0			; characters through the keymap
+	move.l	d3,d1
+	bsr	KeyToChars
 	move.l	d0,d4
 	ble	.yes
 	lea	g_KeyChars(a4),a2
@@ -745,6 +736,29 @@ FormEditKey:
 	bra.s	.x
 .no:	moveq	#0,d0
 .x:	movem.l	(sp)+,d2-d4/a2-a3/a5
+	rts
+
+;--------------------------------------------------------------------
+; KeyToChars - the characters of a raw key (keymap, dead keys)
+; In:  d0 = raw code, d1 = qualifier
+; Out: d0 = number of characters in g_KeyChars (<= 0: none)
+;--------------------------------------------------------------------
+KeyToChars:
+	move.l	a2,-(sp)
+	lea	g_InputEvent(a4),a0
+	clr.l	(a0)			; ie_NextEvent
+	move.b	#IECLASS_RAWKEY,4(a0)	; ie_Class
+	clr.b	5(a0)			; ie_SubClass
+	move.w	d0,6(a0)		; ie_Code
+	move.w	d1,8(a0)		; ie_Qualifier
+	move.l	g_PrevKeys(a4),10(a0)	; ie_EventAddress (dead keys)
+	lea	g_KeyChars(a4),a1
+	moveq	#8,d1
+	suba.l	a2,a2
+	move.l	g_KeymapBase(a4),a6
+	jsr	_LVOMapRawKey(a6)
+	movem.l	(sp)+,a2
+	tst.l	d0
 	rts
 
 ; Insert - insert character d0 at the cursor (a3 = state)

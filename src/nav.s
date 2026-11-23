@@ -25,6 +25,7 @@ NAV_HISTORY	equ	1
 ;--------------------------------------------------------------------
 NavGo:
 	movem.l	d2-d3/a2,-(sp)
+	clr.l	g_FindOn(a4)		; a new page ends finding
 	move.l	d0,d3
 	move.l	a0,-(sp)		; "about:save": save the download,
 	lea	AboutSave(pc),a1	; stay on the page

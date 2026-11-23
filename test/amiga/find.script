@@ -1,0 +1,6 @@
+; find: find in page (test/amiga/find.host)
+Echo >VELOX:r/find.txt "find"
+Echo >VELOX:r/find.start ""
+VELOX:velox http://127.0.0.1:8080/third.html LOG=VELOX:r/find.log
+Echo >>VELOX:r/find.txt "exit rc=$RC"
+Echo >>VELOX:r/find.txt "done"

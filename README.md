@@ -26,7 +26,7 @@ A small, fast web browser for classic AmigaOS 3.x, written entirely in
 - http and https (AmiSSL with certificate checks, or through a proxy),
   keep-alive connections, redirects, chunked transfers, session cookies
 - Downloads of anything that is not a page, with a file requester
-- History, bookmarks, local `file:` pages, a home page
+- History, bookmarks, local `file:` pages, a home page, find in page
 - Keyboard navigation for everything
 
 ## Starting
@@ -65,6 +65,7 @@ you can edit.
 | Ctrl-F               | forward                                 |
 | Ctrl-R               | reload                                  |
 | Ctrl-H               | home                                    |
+| /                    | find in the page (Return: next, Esc: end) |
 | Ctrl-D               | add a bookmark                          |
 | Ctrl-K               | show the bookmarks                      |
 | Amiga-S              | save the page or file                   |

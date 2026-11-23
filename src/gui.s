@@ -15,7 +15,8 @@
 
 	xdef	GuiOpen,GuiClose,GuiEventLoop,GuiPaintAll,GuiStatus
 	xdef	GuiSetUrl,GuiSetTitle,GuiScrollTo,GuiNetHook,GuiBusy
-	xdef	GuiRelayout,GuiPageWidth,GuiAbout
+	xdef	GuiRelayout,GuiPageWidth,GuiAbout,DrawStatus
+	xref	FindStart,FindKey,FindHighlight,KeyToChars
 	xref	LayoutDocument,RunCount,RunPtr,StrLen,StrCopyN
 	xref	NavGo,NavBack,NavForward,NavReload,NavHome,NavLink,UrlFixup
 	xref	DomGetAttr,LogEvent,FormStateOf,FormIsControl,FormActivate
@@ -845,6 +846,13 @@ PaintRun:
 	move.l	ru_Text(a2),a0
 	move.l	ru_Len(a2),d0
 	GFX	Text
+	tst.l	g_FindRun(a4)		; the find match
+	beq.s	.nofind
+	move.l	d3,-(sp)
+	sub.w	ru_Base(a2),d3
+	jsr	FindHighlight
+	move.l	(sp)+,d3
+.nofind:
 	move.l	ru_Link(a2),d0		; keyboard focus: outline the link
 	beq.s	.x
 	cmp.l	g_FocusLink(a4),d0
@@ -1736,6 +1744,11 @@ OnKey:
 	tst.l	d0
 	bne	.x
 .noedit:
+	move.l	d3,d0			; then finding in the page
+	move.l	d4,d1
+	jsr	FindKey
+	tst.l	d0
+	bne	.x
 	cmp.w	#$80,d3			; ignore key releases
 	bhs	.x
 	move.w	d4,d0			; Ctrl / Amiga + key: commands
@@ -1825,7 +1838,14 @@ OnKey:
 	bra.s	.go
 .n5:	cmp.w	#RAW_BACKSPACE,d3
 	beq	ToNavBack
-	rts
+	move.l	d3,d0			; '/' (wherever the keymap has it):
+	move.l	d4,d1			; find in the page
+	jsr	KeyToChars
+	subq.l	#1,d0
+	bne.s	.n6
+	cmp.b	#'/',g_KeyChars(a4)
+	beq	MenuFind
+.n6:	rts
 .go:	add.l	g_ScrollY(a4),d0
 	bra	GuiScrollTo
 
@@ -2030,16 +2050,19 @@ MA_RELOAD	equ	6
 MA_HOME		equ	7
 MA_ADDBM	equ	8
 MA_BOOKMARKS	equ	9
+MA_FIND		equ	10
 MenuActions:
 	dc.w	ActivateUrl-MenuActions,MenuSave-MenuActions
 	dc.w	GuiAbout-MenuActions,MenuQuit-MenuActions
 	dc.w	ToNavBack-MenuActions,ToNavForward-MenuActions
 	dc.w	ToNavReload-MenuActions,ToNavHome-MenuActions
 	dc.w	MenuAddBm-MenuActions,MenuBookmarks-MenuActions
+	dc.w	MenuFind-MenuActions
 
 MenuSave:	jmp	SaveDownload
 MenuAddBm:	jmp	BookmarkAdd
 MenuBookmarks:	jmp	BookmarksShow
+MenuFind:	jmp	FindStart
 MenuQuit:	moveq	#1,d0
 		move.l	d0,g_Quit(a4)
 		rts
@@ -2221,6 +2244,7 @@ NewMenus:
 	NM	NM_TITLE,MProject,0,0
 	NM	NM_ITEM,MOpen,KeyL,MA_OPEN
 	NM	NM_ITEM,MSave,KeyS,MA_SAVE
+	NM	NM_ITEM,MFind,KeySlash,MA_FIND
 	NM	NM_ITEM,NM_BARLABEL,0,0
 	NM	NM_ITEM,MAbout,KeyA,MA_ABOUT
 	NM	NM_ITEM,NM_BARLABEL,0,0
@@ -2246,6 +2270,7 @@ MFwd:		dc.b	"Forward",0
 MReload:	dc.b	"Reload",0
 MHome:		dc.b	"Home",0
 MAddBm:		dc.b	"Add bookmark",0
+MFind:		dc.b	"Find in page",0
 MBookmarks:	dc.b	"Bookmarks",0
 KeyL:		dc.b	"L",0
 KeyS:		dc.b	"S",0
@@ -2256,6 +2281,7 @@ KeyF:		dc.b	"F",0
 KeyR:		dc.b	"R",0
 KeyH:		dc.b	"H",0
 KeyD:		dc.b	"D",0
+KeySlash:	dc.b	"/",0
 KeyK:		dc.b	"K",0
 AboutTitle:	dc.b	"About Velox",0
 AboutText:	dc.b	"Velox "
