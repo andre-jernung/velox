@@ -285,13 +285,13 @@ CopySheet:
 .x:	movem.l	(sp)+,d2/a2
 	rts
 
-StrLenA0:
-	move.l	a0,a1
-.l:	tst.b	(a1)+
+StrLenA0:				; (a0 and a1 are kept)
+	move.l	a0,-(sp)
+	moveq	#-1,d0
+.l:	addq.l	#1,d0
+	tst.b	(a0)+
 	bne.s	.l
-	move.l	a1,d0
-	sub.l	a0,d0
-	subq.l	#1,d0
+	move.l	(sp)+,a0
 	rts
 
 ;--------------------------------------------------------------------
