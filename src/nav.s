@@ -12,7 +12,8 @@
 	xref	DomNewNode,DomAppend,DomGetAttr,StrCopyN,StrCopy,StrIPrefix,StrLen
 	xref	Alloc,Free,ErrorText,FmtDec,LayoutDocument
 	xref	HttpGetCached,CacheFlush,DomAddAttr,PageAlloc,ParseDec
-	xdef	NavRefresh,PageFixups
+	xdef	NavRefresh,PageFixups,CopyAddress,ViewSource
+	xref	ClipCopy
 	xref	GuiStatus,GuiSetUrl,GuiSetTitle,GuiPaintAll,GuiBusy,GuiNetHook
 	xref	GuiPageWidth,GuiScrollTo,LogEvent,CssLoad,BufFree,ImagesStart
 
@@ -88,7 +89,18 @@ NavGo:
 	lea	g_NavUrl(a4),a0
 	bra.s	.built
 .http:	lea	g_NavUrl(a4),a0
-	btst	#1,d3			; NAV_CACHE
+	lea	ViewSrc(pc),a1		; view-source:URL: its text, as text
+	jsr	StrIPrefix
+	beq.s	.nvs
+	jsr	HttpGetCached
+	beq.s	.got
+	lea	g_Resp+r_CType(a4),a1
+	lea	CtPlain(pc),a0
+	jsr	StrCopy
+	bsr	TakeResponse
+	lea	g_NavUrl(a4),a0
+	bra.s	.built
+.nvs:	btst	#1,d3			; NAV_CACHE
 	beq.s	.fetch
 	jsr	HttpGetCached
 	bra.s	.got
@@ -220,6 +232,7 @@ TakeResponse:
 CtHtml:		dc.b	"text/html",0
 CtXhtml:	dc.b	"application/xhtml",0
 CtText:		dc.b	"text/",0
+CtPlain:	dc.b	"text/plain",0
 	even
 
 ; HtmlPage - decode and parse g_PageSrc
@@ -1075,19 +1088,41 @@ NavPost:
 ; In: a0 = <a> element
 NavLink:
 	move.l	a2,-(sp)
-	lea	AnHref(pc),a1
-	jsr	DomGetAttr
-	tst.l	d0
+	bsr	LinkTarget
 	beq.s	.x
-	move.l	d0,a2
-	move.l	a2,a0
+	lea	g_LinkUrl(a4),a0
 	lea	JsPrefix(pc),a1
 	jsr	StrIPrefix
 	beq.s	.notjs
 	lea	MsgNoJs(pc),a0
 	jsr	GuiStatus
 	bra.s	.x
-.notjs:	lea	g_PageUrl(a4),a0	; base: <base href> resolved, or the page
+.notjs:	lea	g_LinkUrl(a4),a0
+	lea	MailPrefix(pc),a1
+	jsr	StrIPrefix
+	beq.s	.go
+	lea	MsgNoMail(pc),a0
+	jsr	GuiStatus
+	bra.s	.x
+.go:	lea	g_LinkUrl(a4),a0
+	moveq	#NAV_HISTORY,d0
+	bsr	NavGo
+.x:	move.l	(sp)+,a2
+	rts
+
+;--------------------------------------------------------------------
+; LinkTarget - the absolute URL of link a0 (its href against <base>
+; or the page) in g_LinkUrl
+; Out: d0 = 0 if there is none (CCR set)
+;--------------------------------------------------------------------
+LinkTarget:
+	move.l	a2,-(sp)
+	lea	AnHref(pc),a1
+	jsr	DomGetAttr
+	tst.l	d0
+	beq.s	.x
+	move.l	d0,a2
+	lea	g_PageUrl(a4),a0	; base: <base href> resolved, or the page
 	move.l	g_BaseHref(a4),d0
 	beq.s	.res
 	move.l	d0,a1
@@ -1102,21 +1137,59 @@ NavLink:
 .res:	move.l	a2,a1
 	lea	g_LinkUrl(a4),a2
 	jsr	UrlResolve
-	tst.l	d0
-	beq.s	.x
-	lea	g_LinkUrl(a4),a0
-	lea	MailPrefix(pc),a1
-	jsr	StrIPrefix
-	beq.s	.go
-	lea	MsgNoMail(pc),a0
-	jsr	GuiStatus
-	bra.s	.x
-.go:	lea	g_LinkUrl(a4),a0
-	moveq	#NAV_HISTORY,d0
-	bsr	NavGo
-.x:	move.l	(sp)+,a2
+.x:	movem.l	(sp)+,a2
 	rts
 
+;--------------------------------------------------------------------
+; CopyAddress - the focused link's address, or the page's, to the
+; clipboard
+;--------------------------------------------------------------------
+CopyAddress:
+	move.l	g_FocusLink(a4),d0
+	beq.s	.page
+	move.l	d0,a0
+	bsr	LinkTarget
+	lea	g_LinkUrl(a4),a0
+	bne.s	.c
+.page:	lea	g_PageUrl(a4),a0
+.c:	move.l	a0,-(sp)
+	jsr	ClipCopy
+	move.l	(sp)+,a1
+	tst.l	d0
+	beq.s	.err
+	lea	LogCopy(pc),a0		; (for tests)
+	move.l	#$80000000,d0
+	jsr	LogEvent
+	lea	MsgCopied(pc),a0
+	jmp	GuiStatus
+.err:	lea	MsgNoCopy(pc),a0
+	jmp	GuiStatus
+
+;--------------------------------------------------------------------
+; ViewSource - show the text of the page (view-source:URL)
+;--------------------------------------------------------------------
+ViewSource:
+	lea	g_PageUrl(a4),a0
+	lea	ViewSrc(pc),a1
+	jsr	StrIPrefix		; already the source
+	bne.s	.x
+	lea	ViewSrc(pc),a0
+	lea	g_UrlTmp2(a4),a1
+	jsr	StrCopy
+	lea	g_PageUrl(a4),a0
+	lea	g_UrlTmp2+ViewSrcEnd-ViewSrc(a4),a1
+	move.l	#URL_MAX-1-(ViewSrcEnd-ViewSrc),d0
+	jsr	StrCopyN
+	lea	g_UrlTmp2(a4),a0
+	moveq	#NAV_HISTORY,d0
+	bra	NavGo
+.x:	rts
+
+LogCopy:	dc.b	"copied",0
+MsgCopied:	dc.b	"Address copied to the clipboard",0
+MsgNoCopy:	dc.b	"Could not use the clipboard",0
+ViewSrc:	dc.b	"view-source:"
+ViewSrcEnd:	dc.b	0
 AnHref:		dc.b	"href",0
 JsPrefix:	dc.b	"javascript:",0
 MailPrefix:	dc.b	"mailto:",0

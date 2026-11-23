@@ -73,6 +73,8 @@ saved in `ENVARC:Velox/Cookies`; delete that file to forget them.
 | Ctrl-D               | add a bookmark                          |
 | Ctrl-K               | show the bookmarks                      |
 | Amiga-S              | save the page or file                   |
+| Amiga-C              | copy the address (of the focused link)  |
+| Amiga-U              | view the page source                    |
 | Ctrl-Q               | quit                                    |
 
 The Amiga key works in place of Ctrl for the menu commands.

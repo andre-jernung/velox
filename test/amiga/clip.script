@@ -1,0 +1,8 @@
+; clip: View source and Copy address (test/amiga/clip.host)
+Echo >VELOX:r/clip.txt "clip"
+Delete >NIL: CLIPS:0
+Echo >VELOX:r/clip.start ""
+VELOX:velox http://127.0.0.1:8080/second.html LOG=VELOX:r/clip.log
+Echo >>VELOX:r/clip.txt "exit rc=$RC"
+Copy CLIPS:0 VELOX:r/clip.iff
+Echo >>VELOX:r/clip.txt "done"

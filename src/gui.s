@@ -17,6 +17,7 @@
 	xdef	GuiSetUrl,GuiSetTitle,GuiScrollTo,GuiNetHook,GuiBusy
 	xdef	GuiRelayout,GuiPageWidth,GuiAbout,DrawStatus
 	xref	FindStart,FindKey,FindHighlight,KeyToChars,NavRefresh
+	xref	CopyAddress,ViewSource
 	xref	LayoutDocument,RunCount,RunPtr,StrLen,StrCopyN
 	xref	NavGo,NavBack,NavForward,NavReload,NavHome,NavLink,UrlFixup
 	xref	DomGetAttr,LogEvent,FormStateOf,FormIsControl,FormActivate
@@ -2058,18 +2059,23 @@ MA_HOME		equ	7
 MA_ADDBM	equ	8
 MA_BOOKMARKS	equ	9
 MA_FIND		equ	10
+MA_COPY		equ	11
+MA_SOURCE	equ	12
 MenuActions:
 	dc.w	ActivateUrl-MenuActions,MenuSave-MenuActions
 	dc.w	GuiAbout-MenuActions,MenuQuit-MenuActions
 	dc.w	ToNavBack-MenuActions,ToNavForward-MenuActions
 	dc.w	ToNavReload-MenuActions,ToNavHome-MenuActions
 	dc.w	MenuAddBm-MenuActions,MenuBookmarks-MenuActions
-	dc.w	MenuFind-MenuActions
+	dc.w	MenuFind-MenuActions,MenuCopy-MenuActions
+	dc.w	MenuSource-MenuActions
 
 MenuSave:	jmp	SaveDownload
 MenuAddBm:	jmp	BookmarkAdd
 MenuBookmarks:	jmp	BookmarksShow
 MenuFind:	jmp	FindStart
+MenuCopy:	jmp	CopyAddress
+MenuSource:	jmp	ViewSource
 MenuQuit:	moveq	#1,d0
 		move.l	d0,g_Quit(a4)
 		rts
@@ -2252,6 +2258,8 @@ NewMenus:
 	NM	NM_ITEM,MOpen,KeyL,MA_OPEN
 	NM	NM_ITEM,MSave,KeyS,MA_SAVE
 	NM	NM_ITEM,MFind,KeySlash,MA_FIND
+	NM	NM_ITEM,MCopy,KeyC,MA_COPY
+	NM	NM_ITEM,MSource,KeyU,MA_SOURCE
 	NM	NM_ITEM,NM_BARLABEL,0,0
 	NM	NM_ITEM,MAbout,KeyA,MA_ABOUT
 	NM	NM_ITEM,NM_BARLABEL,0,0
@@ -2278,6 +2286,8 @@ MReload:	dc.b	"Reload",0
 MHome:		dc.b	"Home",0
 MAddBm:		dc.b	"Add bookmark",0
 MFind:		dc.b	"Find in page",0
+MCopy:		dc.b	"Copy address",0
+MSource:	dc.b	"View source",0
 MBookmarks:	dc.b	"Bookmarks",0
 KeyL:		dc.b	"L",0
 KeyS:		dc.b	"S",0
@@ -2289,6 +2299,8 @@ KeyR:		dc.b	"R",0
 KeyH:		dc.b	"H",0
 KeyD:		dc.b	"D",0
 KeySlash:	dc.b	"/",0
+KeyC:		dc.b	"C",0
+KeyU:		dc.b	"U",0
 KeyK:		dc.b	"K",0
 AboutTitle:	dc.b	"About Velox",0
 AboutText:	dc.b	"Velox "

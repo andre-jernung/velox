@@ -1,0 +1,52 @@
+#!/usr/bin/env python3
+"""Host side of clip.script: Amiga-U shows the page source, Amiga-C
+copies the focused link's address."""
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from xdrive import Amiga, wait_log  # noqa: E402
+
+r = sys.argv[1]
+log = os.path.join(r, "clip.log")
+out = open(os.path.join(r, "clip.driver"), "w")
+U = "http://127.0.0.1:8080/"
+
+
+def step(msg):
+    out.write(msg + "\n")
+    out.flush()
+
+
+try:
+    a = Amiga()
+    wait_log(log, "page " + U + "second.html")
+    time.sleep(1)
+    a.key("amiga+u")
+    wait_log(log, "page view-source:" + U + "second.html")
+    time.sleep(1)
+    a.shot(os.path.join(r, "clip-source.png"))
+    a.key("/")
+    a.type("<title>")
+    lines = wait_log(log, "find ", 7)
+    if int([l for l in lines if l.startswith("find ")][-1].split()[1]) < 0:
+        raise AssertionError("the source text is not shown")
+    a.key("Escape")
+    step("view source shows the HTML text")
+    a.key("BackSpace")
+    wait_log(log, "page " + U + "second.html", 2)
+    time.sleep(1)
+    a.key("Tab")
+    wait_log(log, "focus index.html")
+    a.key("amiga+c")
+    wait_log(log, "copied " + U + "index.html")
+    step("copy address copies the focused link")
+    a.key("ctrl+q")
+    step("ok")
+except Exception as e:
+    step("FAIL " + repr(e))
+    try:
+        Amiga().key("ctrl+q")
+    except Exception:
+        pass
