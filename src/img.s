@@ -30,7 +30,7 @@ bmh_Height		equ	2
 	include	"lvo/datatypes_lib.i"
 
 	xdef	ImagesStart,ImagesStep,ImagesPending,ImagesFree,ImagePaint
-	xref	PageAlloc,DomGetAttr,UrlResolve,HttpGet,ParseDec,BufFree
+	xref	PageAlloc,DomGetAttr,UrlResolve,HttpGetCached,ParseDec,BufFree
 	xref	BufAppend,BufClear,GuiStatus,GuiRelayout,GuiPaintAll,GuiPageWidth
 	xref	FmtDec,StrCopy,LogEvent,GuiNetHook
 
@@ -170,7 +170,7 @@ ImagesStep:
 	lea	GuiNetHook,a0
 	move.l	a0,g_NetSigHook(a4)
 	lea	g_LinkUrl(a4),a0
-	jsr	HttpGet
+	jsr	HttpGetCached
 	clr.l	g_NetSigHook(a4)
 	cmp.l	#200,d0
 	bne	.free

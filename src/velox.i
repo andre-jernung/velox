@@ -492,6 +492,12 @@ g_Cookies	rs.l	1		; list, oldest first
 g_CookieCount	rs.l	1
 g_CookiePath	rs.b	HOST_MAX
 g_CookieBuf	rs.b	4096
+; response cache (cache.s)
+g_CacheHead	rs.l	1
+g_CacheCount	rs.l	1
+g_CacheBytes	rs.l	1
+g_CacheMax	rs.l	1
+g_NoCache	rs.l	1		; Reload: fetch everything anew
 ; kept-alive connection
 g_KeepConn	rs.l	1
 g_KeepPort	rs.l	1

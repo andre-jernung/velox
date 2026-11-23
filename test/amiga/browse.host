@@ -58,8 +58,18 @@ try:
     wait_log(log, "page " + U + "index.html", 2)
     step("ctrl+b goes back")
     a.key("ctrl+f")
-    wait_log(log, "page " + U + "second.html", 3)
+    lines = wait_log(log, "page " + U + "second.html", 3)
     step("ctrl+f goes forward")
+    cached = [l for l in lines if l.startswith("cached ")]
+    for want in ("second.html", "index.html"):
+        if "cached " + U + want not in cached:
+            raise AssertionError("%s not from the cache: %r" % (want, cached))
+    step("back and forward come from the cache")
+    a.key("ctrl+r")
+    lines = wait_log(log, "page " + U + "second.html", 4)
+    if len([l for l in lines if l.startswith("cached ")]) != len(cached):
+        raise AssertionError("reload used the cache")
+    step("reload fetches anew")
     a.key("ctrl+q")
     step("ok")
 except Exception as e:  # report and let the Amiga side time out

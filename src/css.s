@@ -23,7 +23,7 @@
 
 	xdef	CssReset,CssAddSheet,CssApply,CssInvalidate,CssLoad
 	xref	PageAlloc,DomGetAttr,TagLookup,ToLower,ParseColor,ParseLength
-	xref	StrIPrefix,StrIFind,ParseDec,HttpGet,UrlResolve,DecodeCharset
+	xref	StrIPrefix,StrIFind,ParseDec,HttpGetCached,UrlResolve,DecodeCharset
 	xref	BufFree,GuiStatus
 
 MAX_SHEETS	equ	8		; linked style sheets fetched per page
@@ -176,7 +176,7 @@ CssLoad:
 	lea	MsgSheet(pc),a0
 	jsr	GuiStatus
 	lea	g_LinkUrl(a4),a0
-	jsr	HttpGet
+	jsr	HttpGetCached
 	tst.l	d0
 	beq.s	.fetched
 	cmp.l	#200,d0

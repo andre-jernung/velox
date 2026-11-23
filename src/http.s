@@ -9,6 +9,7 @@
 	include	"velox.i"
 
 	xdef	HttpGet,HttpReadResponse,HttpCloseKept
+	xref	CacheStore
 	xref	UrlParse,UrlResolve
 	xref	ConnOpen,ConnClose,ConnWrite,ConnRead,ConnReadLine
 	xref	BufAppend,BufAppendByte,BufAppendStr,BufClear,BufReserve
@@ -69,7 +70,12 @@ HttpGet:
 	jsr	StrCopyN
 	bra	.again
 
-.done:	move.l	d2,d0
+.done:	cmp.l	#200,d2			; keep GET responses for later
+	bne.s	.nost
+	tst.l	g_PostData(a4)
+	bne.s	.nost
+	jsr	CacheStore
+.nost:	move.l	d2,d0
 .x:	clr.l	g_PostData(a4)		; a POST body is used once
 	tst.l	d0			; (the clr changed the flags)
 	movem.l	(sp)+,d2-d3/a2-a3

@@ -11,11 +11,14 @@
 	xref	BufAppendByte,BufClear,CharsetDetect,DecodeCharset,HtmlParse
 	xref	DomNewNode,DomAppend,DomGetAttr,StrCopyN,StrCopy,StrIPrefix,StrLen
 	xref	Alloc,Free,ErrorText,FmtDec,LayoutDocument
+	xref	HttpGetCached,CacheFlush
 	xref	GuiStatus,GuiSetUrl,GuiSetTitle,GuiPaintAll,GuiBusy,GuiNetHook
 	xref	GuiPageWidth,GuiScrollTo,LogEvent,CssLoad,BufFree,ImagesStart
 
 HIST_MAX	equ	HIST_ENTRIES
 NAV_HISTORY	equ	1
+NAV_CACHE	equ	2		; Back/Forward: from the cache if there
+NAV_RELOAD	equ	4		; fetch everything anew
 
 	section	code,code
 
@@ -27,6 +30,9 @@ NavGo:
 	movem.l	d2-d3/a2,-(sp)
 	clr.l	g_FindOn(a4)		; a new page ends finding
 	move.l	d0,d3
+	moveq	#NAV_RELOAD,d1
+	and.l	d0,d1
+	move.l	d1,g_NoCache(a4)
 	move.l	a0,-(sp)		; "about:save": save the download,
 	lea	AboutSave(pc),a1	; stay on the page
 	jsr	StrIPrefix
@@ -79,7 +85,12 @@ NavGo:
 	lea	g_NavUrl(a4),a0
 	bra.s	.built
 .http:	lea	g_NavUrl(a4),a0
-	jsr	HttpGet
+	btst	#1,d3			; NAV_CACHE
+	beq.s	.fetch
+	jsr	HttpGetCached
+	bra.s	.got
+.fetch:	jsr	HttpGet
+.got:
 	tst.l	d0
 	bne.s	.ok
 	tst.l	g_Quit(a4)		; window closed while loading
@@ -104,7 +115,8 @@ NavGo:
 .nohist:
 	moveq	#0,d0
 	jsr	GuiBusy
-.x:	movem.l	(sp)+,d2-d3/a2
+.x:	clr.l	g_NoCache(a4)
+	movem.l	(sp)+,d2-d3/a2
 	rts
 
 AboutPrefix:	dc.b	"about:",0
@@ -990,14 +1002,14 @@ NavStep:
 	lea	g_Hist(a4),a0
 	move.l	4(a0,d0.l*8),g_WantScroll(a4)
 	move.l	(a0,d0.l*8),a0
-	moveq	#0,d0
+	moveq	#NAV_CACHE,d0
 	bra	NavGo
 .x:	rts
 
 NavReload:
 	move.l	g_ScrollY(a4),g_WantScroll(a4)
 	lea	g_PageUrl(a4),a0	; (NavGo copies it first)
-	moveq	#0,d0
+	moveq	#NAV_RELOAD,d0
 	bra	NavGo
 
 NavHome:
@@ -1013,6 +1025,7 @@ HomeUrl:	dc.b	"about:velox",0
 
 ; NavExit - free the history
 NavExit:
+	jsr	CacheFlush
 .l:	tst.l	g_HistCount(a4)
 	beq.s	.x
 	bsr	HistoryDropLast
