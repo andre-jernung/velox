@@ -9,9 +9,15 @@
 
 	include	"velox.i"
 
-	xdef	NetExit,ConnOpen,ConnOpenFile,ConnClose
+	xdef	NetExit,ConnOpen,ConnOpenFile,ConnClose,TlsExit
 	xdef	ConnWrite,ConnRead,ConnGetByte,ConnReadLine
 	xref	Alloc,Free
+
+AmiSSL_SocketBase	equ	TAG_USER+$01
+AmiSSL_ErrNoPtr		equ	TAG_USER+$0b
+AmiSSL_UsesOpenSSLStructs equ	TAG_USER+$0c
+AmiSSL_GetAmiSSLBase	equ	TAG_USER+$0d
+AmiSSL_GetAmiSSLExtBase	equ	TAG_USER+$0e
 
 AF_INET		equ	2
 SOCK_STREAM	equ	1
@@ -38,10 +44,21 @@ NetOpen:
 SockName:	dc.b	"bsdsocket.library",0
 	even
 
+	section	data,data
+TlsTags:
+	dc.l	AmiSSL_UsesOpenSSLStructs,0
+TlsTagBase:	dc.l	AmiSSL_GetAmiSSLBase,0
+TlsTagSock:	dc.l	AmiSSL_SocketBase,0
+TlsTagErrno:	dc.l	AmiSSL_ErrNoPtr,0
+TlsTagExt:	dc.l	AmiSSL_GetAmiSSLExtBase,0
+	dc.l	TAG_DONE
+	section	code,code
+
 ;--------------------------------------------------------------------
 ; NetExit - close bsdsocket.library
 ;--------------------------------------------------------------------
 NetExit:
+	bsr	TlsExit			; AmiSSL uses the socket library
 	move.l	g_SocketBase(a4),d0
 	beq.s	.x
 	clr.l	g_SocketBase(a4)
@@ -58,13 +75,14 @@ ConnOpen:
 	movem.l	d2-d3/a2-a3,-(sp)
 	move.l	a0,a2
 	move.l	d0,d2
-	tst.l	d1
+	move.l	d1,-(sp)		; TLS wanted?
+	bsr	NetOpen
+	beq	.fail1
+	tst.l	(sp)
 	beq.s	.plain
-	SETERR	ERR_TLS
-	bra	.fail0
+	bsr	TlsInit			; AmiSSL needs the socket library
+	beq	.fail1
 .plain:
-	bsr.s	NetOpen
-	beq	.fail0
 
 	; resolve: dotted quad first, then DNS
 	move.l	a2,a0
@@ -93,7 +111,7 @@ ConnOpen:
 
 	move.l	#CONN_SIZEOF,d0
 	bsr	Alloc
-	beq	.fail0
+	beq	.fail1
 	move.l	d0,a3
 	moveq	#-1,d0
 	move.l	d0,c_Sock(a3)
@@ -111,18 +129,184 @@ ConnOpen:
 	SOCK	connect
 	tst.l	d0
 	bmi.s	.noconnect
-	move.l	a3,d0
-.x:	movem.l	(sp)+,d2-d3/a2-a3
+	tst.l	(sp)
+	beq.s	.ok
+	move.l	a2,g_TlsHost(a4)
+	move.l	a3,a0
+	bsr	TlsHandshake
+	beq.s	.failclose
+.ok:	move.l	a3,d0
+.x:	addq.l	#4,sp
+	movem.l	(sp)+,d2-d3/a2-a3
 	rts
 .noresolve:
 	SETERR	ERR_RESOLVE
-	bra.s	.fail0
+	bra.s	.fail1
 .noconnect:
 	SETERR	ERR_CONNECT
+.failclose:
 	move.l	a3,a0
 	bsr	ConnClose
-.fail0:	moveq	#0,d0
+.fail1:	moveq	#0,d0
 	bra.s	.x
+
+;--------------------------------------------------------------------
+; TlsInit - open AmiSSL and create the SSL context (once)
+; Out: d0 = 0 if TLS is not available (g_Error set)
+;--------------------------------------------------------------------
+TlsInit:
+	move.l	g_SslState(a4),d0
+	bgt.s	.ok
+	bmi	.none
+	movem.l	d2-d3/a2,-(sp)
+	moveq	#-1,d0			; until proven otherwise
+	move.l	d0,g_SslState(a4)
+	lea	MasterName(pc),a1
+	moveq	#5,d0
+	EXEC	OpenLibrary
+	move.l	d0,g_AmiSSLMasterBase(a4)
+	beq.s	.fail
+	lea	g_AmiSSLBase(a4),a0	; OpenAmiSSLTagList(API, tags)
+	move.l	a0,TlsTagBase+4
+	move.l	g_SocketBase(a4),TlsTagSock+4
+	lea	g_Errno(a4),a0
+	move.l	a0,TlsTagErrno+4
+	lea	g_AmiSSLExtBase(a4),a0
+	move.l	a0,TlsTagExt+4
+	move.l	#AMISSL_API,d0
+	lea	TlsTags,a0
+	move.l	g_AmiSSLMasterBase(a4),a6
+	jsr	_LVOOpenAmiSSLTagList(a6)
+	tst.l	d0
+	bne.s	.fail
+	tst.l	g_AmiSSLBase(a4)
+	beq.s	.fail
+	SSL	TLS_client_method
+	move.l	d0,a0
+	SSL	SSL_CTX_new
+	move.l	d0,g_SslCtx(a4)
+	beq.s	.fail
+	move.l	d0,a0
+	SSL	SSL_CTX_set_default_verify_paths
+	move.l	g_SslCtx(a4),a0		; verify the server's certificate
+	moveq	#1,d0			; SSL_VERIFY_PEER
+	tst.l	g_Insecure(a4)
+	beq.s	.v
+	moveq	#0,d0			; SSL_VERIFY_NONE (tests only)
+.v:	suba.l	a1,a1
+	SSL	SSL_CTX_set_verify
+	moveq	#1,d0
+	move.l	d0,g_SslState(a4)
+	movem.l	(sp)+,d2-d3/a2
+.ok:	moveq	#1,d0
+	rts
+.fail:	movem.l	(sp)+,d2-d3/a2
+	bsr	TlsExit
+	moveq	#-1,d0
+	move.l	d0,g_SslState(a4)
+.none:	SETERR	ERR_NOAMISSL
+	moveq	#0,d0
+	rts
+
+AMISSL_API	equ	47		; AMISSL_V41x: AmiSSL 6
+MasterName:	dc.b	"amisslmaster.library",0
+	even
+
+;--------------------------------------------------------------------
+; TlsExit - free the context and close AmiSSL
+;--------------------------------------------------------------------
+TlsExit:
+	move.l	g_SslCtx(a4),d0
+	beq.s	.noctx
+	clr.l	g_SslCtx(a4)
+	move.l	d0,a0
+	SSL	SSL_CTX_free
+	SSL	OPENSSL_thread_stop	; per task OpenSSL state
+.noctx:	move.l	g_AmiSSLMasterBase(a4),d0
+	beq.s	.x
+	tst.l	g_AmiSSLBase(a4)
+	beq.s	.nobase
+	clr.l	g_AmiSSLBase(a4)
+	move.l	d0,a6
+	jsr	_LVOCloseAmiSSL(a6)
+.nobase:
+	move.l	g_AmiSSLMasterBase(a4),a1
+	clr.l	g_AmiSSLMasterBase(a4)
+	EXEC	CloseLibrary
+.x:	clr.l	g_SslState(a4)
+	rts
+
+;--------------------------------------------------------------------
+; TlsHandshake - start TLS on a connected socket
+; In:  a0 = Conn, g_TlsHost = server name
+; Out: d0 = 0 on failure (g_Error = ERR_TLS or ERR_CERT)
+;--------------------------------------------------------------------
+TlsHandshake:
+	movem.l	d2/a2,-(sp)
+	move.l	a0,a2
+	move.l	g_SslCtx(a4),a0
+	SSL	SSL_new
+	move.l	d0,c_SSL(a2)
+	beq.s	.fail
+	move.l	d0,a0
+	move.l	c_Sock(a2),d0
+	SSL	SSL_set_fd
+	move.l	c_SSL(a2),a0		; SNI: SSL_set_tlsext_host_name
+	moveq	#55,d0			; SSL_CTRL_SET_TLSEXT_HOSTNAME
+	moveq	#0,d1			; TLSEXT_NAMETYPE_host_name
+	move.l	g_TlsHost(a4),a1
+	SSL	SSL_ctrl
+	move.l	c_SSL(a2),a0		; the certificate must name the host
+	SSL	SSL_get0_param		; (or its IP address)
+	move.l	d0,a0
+	move.l	g_TlsHost(a4),a1
+	bsr	IsDottedQuad
+	bne.s	.ip
+	moveq	#0,d0			; length 0: NUL terminated
+	SSL	X509_VERIFY_PARAM_set1_host
+	bra.s	.conn
+.ip:	SSL	X509_VERIFY_PARAM_set1_ip_asc
+.conn:
+	move.l	c_SSL(a2),a0
+	SSL	SSL_connect
+	cmp.l	#1,d0
+	beq.s	.ok
+	move.l	c_SSL(a2),a0		; failed: was it the certificate?
+	SSL	SSL_get_verify_result
+	tst.l	d0
+	beq.s	.fail
+	SETERR	ERR_CERT
+	bra.s	.x0
+.fail:	SETERR	ERR_TLS
+.x0:	moveq	#0,d0
+	bra.s	.x
+.ok:	moveq	#1,d0
+.x:	movem.l	(sp)+,d2/a2
+	rts
+
+; IsDottedQuad - is a1 a numeric IPv4 address?
+; Out: Z clear if yes (a0/a1 kept)
+IsDottedQuad:
+	move.l	a1,-(sp)
+	moveq	#0,d1			; dots
+.l:	move.b	(a1)+,d0
+	beq.s	.end
+	cmp.b	#'.',d0
+	bne.s	.d
+	addq.l	#1,d1
+	bra.s	.l
+.d:	sub.b	#'0',d0
+	cmp.b	#9,d0
+	bls.s	.l
+	moveq	#0,d1			; a letter: a name
+	bra.s	.x
+.end:	cmp.l	#3,d1
+	seq	d1
+	ext.w	d1
+	ext.l	d1
+.x:	move.l	(sp)+,a1
+	tst.l	d1
+	rts
 
 ;--------------------------------------------------------------------
 ; ConnOpenFile - open a DOS file as a Conn (tests)
@@ -161,7 +345,11 @@ ConnClose:
 	move.l	a0,d0
 	beq.s	.x
 	move.l	a0,a2
-	move.l	c_Sock(a2),d0
+	move.l	c_SSL(a2),d0
+	beq.s	.nossl
+	move.l	d0,a0
+	SSL	SSL_free
+.nossl:	move.l	c_Sock(a2),d0
 	bmi.s	.nosock
 	SOCK	CloseSocket
 .nosock:
@@ -249,10 +437,19 @@ ConnWrite:
 	move.l	d0,d3
 .l:	tst.l	d3
 	beq.s	.ok
-	move.l	c_Sock(a2),d0
+	move.l	c_SSL(a2),d0
+	beq.s	.plain
+	move.l	d0,a0			; TLS: AmiSSL writes it all
+	move.l	a3,a1
+	move.l	d3,d0
+	SSL	SSL_write
+	tst.l	d0
+	ble.s	.err
+	bra.s	.sent
+.plain:	move.l	c_Sock(a2),d0
 	bmi.s	.err
 	moveq	#1,d1
-	bsr.s	WaitSocket
+	bsr	WaitSocket
 	beq.s	.fail
 	move.l	c_Sock(a2),d0
 	move.l	a3,a0
@@ -261,7 +458,7 @@ ConnWrite:
 	SOCK	send
 	tst.l	d0
 	ble.s	.err
-	add.l	d0,a3
+.sent:	add.l	d0,a3
 	sub.l	d0,d3
 	bra.s	.l
 .ok:	moveq	#1,d0
@@ -290,10 +487,37 @@ ConnFill:
 	bra.s	.got
 .sock:	move.l	c_Sock(a2),d0
 	bmi.s	.err
+	tst.l	c_SSL(a2)		; TLS with data already decrypted:
+	beq.s	.wait			; no need to wait for the socket
+	move.l	c_SSL(a2),a0
+	SSL	SSL_pending
+	tst.l	d0
+	bgt.s	.tls
+.wait:	move.l	c_Sock(a2),d0
 	moveq	#0,d1
 	bsr	WaitSocket
 	beq.s	.fail
-	move.l	c_Sock(a2),d0
+	tst.l	c_SSL(a2)
+	beq.s	.recv
+.tls:	move.l	c_SSL(a2),a0
+	lea	c_Buf(a2),a1
+	move.l	#CONN_BUFSIZE,d0
+	SSL	SSL_read
+	tst.l	d0
+	bgt.s	.got
+	move.l	d0,d1			; why not?  closed = end of stream
+	move.l	c_SSL(a2),a0
+	SSL	SSL_get_error
+	cmp.l	#6,d0			; SSL_ERROR_ZERO_RETURN
+	beq.s	.eos
+	cmp.l	#5,d0			; SSL_ERROR_SYSCALL (closed without
+	beq.s	.eos			;   close_notify, as many servers do)
+	cmp.l	#2,d0			; SSL_ERROR_WANT_READ: try again
+	beq.s	.wait
+	bra.s	.err
+.eos:	moveq	#0,d0
+	bra.s	.got
+.recv:	move.l	c_Sock(a2),d0
 	lea	c_Buf(a2),a0
 	move.l	#CONN_BUFSIZE,d1
 	moveq	#0,d2

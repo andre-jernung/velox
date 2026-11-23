@@ -329,7 +329,8 @@ ErrorText:
 ErrTab:
 	dc.w	e0-ErrTab,e1-ErrTab,e2-ErrTab,e3-ErrTab,e4-ErrTab
 	dc.w	e5-ErrTab,e6-ErrTab,e7-ErrTab,e8-ErrTab,e9-ErrTab
-	dc.w	e10-ErrTab,e11-ErrTab,e12-ErrTab,e13-ErrTab
+	dc.w	e10-ErrTab,e11-ErrTab,e12-ErrTab,e13-ErrTab,e14-ErrTab
+	dc.w	e15-ErrTab
 e0:	dc.b	"No error",0
 e1:	dc.b	"Out of memory",0
 e2:	dc.b	"Invalid or unsupported URL",0
@@ -342,6 +343,8 @@ e8:	dc.b	"Connection timed out",0
 e9:	dc.b	"Aborted",0
 e10:	dc.b	"Invalid HTTP response",0
 e11:	dc.b	"Too many redirects",0
-e12:	dc.b	"HTTPS is not available",0
+e12:	dc.b	"Secure connection (TLS) failed",0
 e13:	dc.b	"File error",0
+e14:	dc.b	"HTTPS needs AmiSSL 6 or a proxy (PROXY=)",0
+e15:	dc.b	"The site's certificate could not be verified",0
 	even

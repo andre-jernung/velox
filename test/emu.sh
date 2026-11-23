@@ -46,6 +46,32 @@ if [ ! -d "$SYS/Fonts" ]; then
 	rm -rf "$t"
 fi
 
+# Test certificates: a local CA and a server certificate it signed
+if [ ! -e "$B/tls/ca.pem" ]; then
+	mkdir -p "$B/tls"
+	(cd "$B/tls" &&
+	 openssl req -x509 -newkey rsa:2048 -nodes -keyout ca.key -out ca.pem -days 3650 \
+		-subj "/CN=Velox Test CA" 2>/dev/null &&
+	 openssl req -newkey rsa:2048 -nodes -keyout key.pem -out server.csr \
+		-subj "/CN=127.0.0.1" 2>/dev/null &&
+	 printf 'subjectAltName=IP:127.0.0.1,DNS:localhost\n' >san.ext &&
+	 openssl x509 -req -in server.csr -CA ca.pem -CAkey ca.key -CAcreateserial \
+		-out cert.pem -days 3650 -extfile san.ext 2>/dev/null)
+fi
+# AmiSSL 6 in the test system, trusting the test CA
+if [ ! -d "$SYS/AmiSSL" ] && [ -d "$ROOT/tools/src/amissl/AmiSSL" ]; then
+	# the layout Install-AmiSSL creates
+	A="$ROOT/tools/src/amissl/AmiSSL"
+	mkdir -p "$SYS/AmiSSL/Libs/AmiSSL"
+	cp "$A/Libs/AmigaOS3/amisslmaster.library" "$SYS/AmiSSL/Libs/"
+	cp "$A/Libs/AmigaOS3/AmiSSL/68020-40/"*.library "$SYS/AmiSSL/Libs/AmiSSL/"
+	cp -r "$A/Certs" "$SYS/AmiSSL/Certs"
+	printf 'Assign AmiSSL: SYS:AmiSSL\nAssign LIBS: AmiSSL:Libs ADD\n' >>"$SYS/S/User-Startup"
+fi
+if [ -d "$SYS/AmiSSL/Certs" ]; then
+	cp "$B/tls/ca.pem" "$SYS/AmiSSL/Certs/$(openssl x509 -hash -noout -in "$B/tls/ca.pem").0"
+fi
+
 rm -rf "$B/r" "$B/t" "$B/shot.req" "$B/autotest" "$B/alldone" "$B/screenshot.png"
 if [ $AUTO = 1 ]; then
 	mkdir -p "$B/r" "$B/t"
@@ -82,12 +108,7 @@ window_width = 960
 window_height = 600
 EOF
 
-# test server: http on 8080, https (self-signed) on 8443; and the proxy
-if [ ! -e "$B/tls/cert.pem" ]; then
-	mkdir -p "$B/tls"
-	openssl req -x509 -newkey rsa:2048 -nodes -keyout "$B/tls/key.pem" \
-		-out "$B/tls/cert.pem" -days 3650 -subj "/CN=127.0.0.1" 2>/dev/null
-fi
+# test server: http on 8080, https on 8443; and the proxy
 python3 "$ROOT/test/server.py" 8080 "$ROOT/test/www" 8443 "$B/tls/cert.pem" "$B/tls/key.pem" \
 	2>"$B/server.log" &
 SRV=$!

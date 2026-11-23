@@ -1,0 +1,23 @@
+; tls: direct HTTPS through AmiSSL 6
+Echo >VELOX:r/tls.txt "tls"
+VELOX:velox https://127.0.0.1:8443/hello DUMP >VELOX:r/tls-hello.out
+Echo >>VELOX:r/tls.txt "hello rc=$RC"
+VELOX:velox https://localhost:8443/chunked DUMP >VELOX:r/tls-chunked.out
+Echo >>VELOX:r/tls.txt "chunked rc=$RC"
+VELOX:velox https://127.0.0.1:8443/big DUMP >VELOX:r/tls-big.out
+Echo >>VELOX:r/tls.txt "big rc=$RC"
+VELOX:velox https://127.0.0.1:8443/redirect INFO >VELOX:r/tls-redirect.out
+Echo >>VELOX:r/tls.txt "redirect rc=$RC"
+; the certificate does not name 127.0.0.2
+VELOX:velox https://127.0.0.2:8443/hello INFO >VELOX:r/tls-wronghost.out
+Echo >>VELOX:r/tls.txt "wronghost rc=$RC"
+; leak check over repeated TLS fetches
+Avail >NIL: FLUSH
+Echo >>VELOX:r/tls.txt "mem_before " NOLINE
+Avail >>VELOX:r/tls.txt TOTAL
+VELOX:velox https://127.0.0.1:8443/hello DUMP >NIL:
+VELOX:velox https://127.0.0.2:8443/hello DUMP >NIL:
+Avail >NIL: FLUSH
+Echo >>VELOX:r/tls.txt "mem_after " NOLINE
+Avail >>VELOX:r/tls.txt TOTAL
+Echo >>VELOX:r/tls.txt "done"

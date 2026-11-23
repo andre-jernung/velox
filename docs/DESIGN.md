@@ -70,3 +70,13 @@ JS is not on the roadmap yet, but it must stay possible to add. That means:
    images via datatypes.library [ ], CSS subset [ ]
 6. [ ] HTTPS via AmiSSL and via proxy
 7. [ ] Cookies, downloads, menus, settings
+
+## Known issues
+
+- Every TLS connection loses 48 bytes of memory in the emulated test system
+  (A1200, KS 3.1, FS-UAE bsdsocket emulation, AmiSSL 6.1). This happens
+  whether or not the handshake succeeds. Opening and closing AmiSSL without a
+  connection loses nothing, plain HTTP loses nothing, and calling
+  `OPENSSL_thread_stop()` did not change it. The cause is not found yet; it
+  may be in AmiSSL's socket I/O or in the bsdsocket emulation. The `tls`
+  emulator test tolerates up to 64 bytes per connection.

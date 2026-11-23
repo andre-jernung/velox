@@ -1,0 +1,40 @@
+#!/usr/bin/env python3
+"""checks for tls.script"""
+import os
+import sys
+
+r = sys.argv[1]
+d = os.path.dirname(r)
+res = open(r).read().splitlines()
+fail = []
+
+
+def out(n):
+    return open(os.path.join(d, "tls-%s.out" % n), "rb").read()
+
+
+for name, rc in (("hello", 0), ("chunked", 0), ("big", 0), ("redirect", 0), ("wronghost", 20)):
+    if "%s rc=%d" % (name, rc) not in res:
+        fail.append("%s: expected rc=%d (%s)" % (name, rc, out(name)[:100]))
+if out("hello") != b"Hello from the Velox test server\n":
+    fail.append("hello: %r" % out("hello")[:80])
+if out("chunked") != b"chunk one, chunk two, chunk three\n":
+    fail.append("chunked: %r" % out("chunked")[:80])
+big = bytes((i * 7 + 13) % 251 for i in range(100000))
+if out("big") != big:
+    fail.append("big: %d bytes" % len(out("big")))
+if b"url: https://127.0.0.1:8443/hello\n" not in out("redirect"):
+    fail.append("redirect: %r" % out("redirect"))
+if out("wronghost") != b"velox: The site's certificate could not be verified\n":
+    fail.append("wronghost: %r" % out("wronghost"))
+mem = dict(l.split() for l in res if l.startswith("mem_"))
+lost = int(mem["mem_before"]) - int(mem["mem_after"]) if mem else None
+print("memory: before=%s after=%s lost=%s" % (mem.get("mem_before"), mem.get("mem_after"), lost))
+# Known issue (docs/DESIGN.md): every TLS connection loses 48 bytes,
+# with or without a successful handshake; AmiSSL init/exit alone and
+# plain sockets lose nothing.  Allow that, catch anything more.
+if lost is None or lost > 2 * 64:
+    fail.append("memory not fully returned")
+for f in fail:
+    print(f)
+sys.exit(1 if fail else 0)

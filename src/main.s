@@ -186,13 +186,25 @@ LoadSettings:
 	moveq	#0,d4
 	DOS	GetVar
 	tst.l	d0
-	ble.s	.x
+	ble.s	.np
 	lea	g_VarBuf(a4),a0
 	bsr	SetProxy
+.np:	lea	VarInsecure(pc),a0	; Velox/InsecureTLS: no certificate
+	move.l	a0,d1			; checks (testing with self-signed
+	lea	g_VarBuf(a4),a0		; certificates only!)
+	move.l	a0,d2
+	move.l	#255,d3
+	moveq	#0,d4
+	DOS	GetVar
+	tst.l	d0
+	ble.s	.x
+	moveq	#1,d0
+	move.l	d0,g_Insecure(a4)
 .x:	movem.l	(sp)+,d2-d4
 	rts
 
 VarProxy:	dc.b	"Velox/Proxy",0
+VarInsecure:	dc.b	"Velox/InsecureTLS",0
 	even
 
 ;--------------------------------------------------------------------

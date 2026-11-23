@@ -31,6 +31,8 @@ VELOX_I	SET	1
 	include	"lvo/graphics_lib.i"
 	include	"lvo_bsdsocket.i"
 	include	"lvo/keymap_lib.i"
+	include	"lvo_amisslmaster.i"
+	include	"lvo_amissl.i"
 	include	"tags.i"
 
 VERSION_STR	MACRO
@@ -68,7 +70,9 @@ ERR_PROTOCOL	equ	10		; not a valid HTTP response
 ERR_REDIRECTS	equ	11
 ERR_TLS		equ	12
 ERR_FILE	equ	13
-ERR_COUNT	equ	14
+ERR_NOAMISSL	equ	14		; https without AmiSSL 6 or a proxy
+ERR_CERT	equ	15		; certificate not trusted
+ERR_COUNT	equ	16
 
 ;--------------------------------------------------------------------
 ; Buf - growable byte buffer, always NUL terminated when allocated
@@ -370,6 +374,15 @@ g_FormBuf	rs.b	BUF_SIZEOF	; encoded form data
 g_PageCharset	rs.l	1		; CS_xxx the page was decoded from
 g_PostData	rs.l	1		; body for the next request (POST) or 0
 g_PostLen	rs.l	1
+; TLS (AmiSSL)
+g_AmiSSLMasterBase rs.l	1
+g_AmiSSLBase	rs.l	1
+g_AmiSSLExtBase	rs.l	1
+g_SslCtx	rs.l	1
+g_SslState	rs.l	1		; 0 = not tried, 1 = ready, -1 = unavailable
+g_Errno		rs.l	1
+g_Insecure	rs.l	1		; don't verify certificates (tests)
+g_TlsHost	rs.l	1		; host name for SNI / verification
 ; settings
 g_ProxyPort	rs.l	1		; 0 = no proxy
 g_ProxyHost	rs.b	HOST_MAX
@@ -420,6 +433,11 @@ GT	MACRO
 
 LAYERS	MACRO
 	move.l	g_LayersBase(a4),a6
+	jsr	_LVO\1(a6)
+	ENDM
+
+SSL	MACRO
+	move.l	g_AmiSSLBase(a4),a6
 	jsr	_LVO\1(a6)
 	ENDM
 

@@ -20,6 +20,13 @@ if [ ! -d ndk/Include_I ]; then
 	cp -r src/ndk/Include_I src/ndk/FD src/ndk/SFD ndk/
 	cp -r "src/ndk/SANA+RoadshowTCP-IP/sfd" ndk/net_sfd
 fi
+# AmiSSL 6 for the emulated test system (TLS tests)
+if [ ! -d src/amissl/AmiSSL ]; then
+	curl -L -o src/AmiSSL-6.1-OS3.lha \
+		https://github.com/jens-maus/amissl/releases/download/6.1/AmiSSL-6.1-OS3.lha
+	mkdir -p src/amissl
+	(cd src/amissl && 7z x -y ../AmiSSL-6.1-OS3.lha >/dev/null)
+fi
 if [ ! -x venv/bin/vamos ]; then
 	python3 -m venv venv
 	venv/bin/pip install amitools greenlet machine68k python-xlib
