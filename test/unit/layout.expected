@@ -56,7 +56,7 @@ layout test/unit/layout/squeeze.html 200 =>
 height 252
 box  0 8 184 76 0 f0 s0 c000000
 box  3 11 178 14 0 f0 s0 c000000
-img  5 13 174 10 10 f128 s222 c000000
+img  5 13 174 10 10 f1 s0 c000000
 box  19 11 86 54 0 f0 s0 c000000
 text 21 13 24 10 8 f1 s0 c000000 "nav"
 box  19 99 90 54 0 f0 s0 c000000
@@ -99,4 +99,14 @@ text 207 145 40 10 8 f1 s0 c000000 "descr"
 text 217 145 40 10 8 f1 s0 c000000 "iptio"
 text 227 145 40 10 8 f1 s0 c000000 "n_wor"
 text 237 145 8 10 8 f1 s0 c000000 "d"
+
+# frames and iframes become links to their documents
+layout test/unit/layout/frames.html 400 => 
+height 60
+text 0 8 88 10 8 f1 s1 c0000ee L "Frame: menu"
+text 10 8 128 10 8 f1 s1 c0000ee L "Frame: main.html"
+text 20 8 80 10 8 f1 s0 c000000 "No frames."
+text 40 8 48 10 8 f1 s0 c000000 "Before"
+text 40 64 96 10 8 f1 s1 c0000ee L "Frame: Video"
+text 40 168 48 10 8 f1 s0 c000000 "after."
 

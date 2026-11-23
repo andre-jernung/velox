@@ -957,6 +957,10 @@ LayoutReplaced:
 	move.w	st_Height(a3),d3
 	ble.s	.alt
 .box:	move.l	d3,d4			; sits on the baseline
+	moveq	#0,d6			; font code (PlaceBox stores it)
+	move.b	st_Soft(a3),d6
+	lsl.w	#8,d6
+	move.b	st_Font(a3),d6
 	moveq	#RT_IMAGE,d5
 	bsr	PlaceBox
 	bra	.x

@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+"""Host side of frames.script: a meta refresh moves on by itself (and is
+not kept in the history); frames are links to their documents."""
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from xdrive import Amiga, wait_log  # noqa: E402
+
+r = sys.argv[1]
+log = os.path.join(r, "frames.log")
+out = open(os.path.join(r, "frames.driver"), "w")
+U = "http://127.0.0.1:8080/"
+
+
+def step(msg):
+    out.write(msg + "\n")
+    out.flush()
+
+
+try:
+    a = Amiga()
+    wait_log(log, "page " + U + "index.html")
+    time.sleep(1)
+    a.key("ctrl+l")
+    a.type("127.0.0.1:8080/refresh.html")
+    a.key("Return")
+    wait_log(log, "page " + U + "refresh.html")
+    t0 = time.time()
+    wait_log(log, "page " + U + "second.html", timeout=20)
+    step("meta refresh went on to the target")
+    a.key("BackSpace")
+    lines = wait_log(log, "page " + U + "index.html", 2)
+    step("back skips the refresh page")
+    a.key("ctrl+l")
+    a.type("127.0.0.1:8080/frames.html")
+    a.key("Return")
+    wait_log(log, "page " + U + "frames.html")
+    time.sleep(1)
+    a.shot(os.path.join(r, "frames.png"))
+    a.key("Tab")
+    wait_log(log, "focus second.html")
+    a.key("Tab")
+    wait_log(log, "focus third.html")
+    step("frames are links")
+    a.key("Return")
+    wait_log(log, "page " + U + "third.html")
+    step("a frame link opens the frame's page")
+    a.key("ctrl+q")
+    step("ok")
+except Exception as e:
+    step("FAIL " + repr(e))
+    try:
+        Amiga().key("ctrl+q")
+    except Exception:
+        pass

@@ -11,7 +11,8 @@
 	xref	BufAppendByte,BufClear,CharsetDetect,DecodeCharset,HtmlParse
 	xref	DomNewNode,DomAppend,DomGetAttr,StrCopyN,StrCopy,StrIPrefix,StrLen
 	xref	Alloc,Free,ErrorText,FmtDec,LayoutDocument
-	xref	HttpGetCached,CacheFlush
+	xref	HttpGetCached,CacheFlush,DomAddAttr,PageAlloc,ParseDec
+	xdef	NavRefresh,PageFixups
 	xref	GuiStatus,GuiSetUrl,GuiSetTitle,GuiPaintAll,GuiBusy,GuiNetHook
 	xref	GuiPageWidth,GuiScrollTo,LogEvent,CssLoad,BufFree,ImagesStart
 
@@ -19,6 +20,7 @@ HIST_MAX	equ	HIST_ENTRIES
 NAV_HISTORY	equ	1
 NAV_CACHE	equ	2		; Back/Forward: from the cache if there
 NAV_RELOAD	equ	4		; fetch everything anew
+NAV_REPLACE	equ	8		; replaces the current history entry
 
 	section	code,code
 
@@ -29,6 +31,7 @@ NAV_RELOAD	equ	4		; fetch everything anew
 NavGo:
 	movem.l	d2-d3/a2,-(sp)
 	clr.l	g_FindOn(a4)		; a new page ends finding
+	clr.l	g_RefreshTicks(a4)	; and a pending meta refresh
 	move.l	d0,d3
 	moveq	#NAV_RELOAD,d1
 	and.l	d0,d1
@@ -103,6 +106,7 @@ NavGo:
 .built:	lea	g_PageUrl(a4),a1
 	move.l	#URL_MAX-1,d0
 	jsr	StrCopyN
+	bsr	PageFixups
 	jsr	CssLoad
 	clr.l	g_NetSigHook(a4)
 	tst.l	g_Quit(a4)
@@ -110,7 +114,11 @@ NavGo:
 	bsr	ShowPage
 .hist:	btst	#0,d3
 	beq.s	.nohist
-	lea	g_PageUrl(a4),a0
+	btst	#3,d3			; NAV_REPLACE (a meta refresh)
+	beq.s	.push
+	bsr	HistoryReplace
+	bra.s	.nohist
+.push:	lea	g_PageUrl(a4),a0
 	bsr	HistoryPush
 .nohist:
 	moveq	#0,d0
@@ -412,6 +420,218 @@ PgStart:
 	dc.b	"</ul><h3>Keys</h3><p>Cursor up/down, Shift+cursor and Space "
 	dc.b	"scroll. Backspace goes back. Click Reload while a page is "
 	dc.b	"loading to stop it.</p></body></html>",0
+	even
+
+;--------------------------------------------------------------------
+; PageFixups - after parsing: frames and iframes become links to their
+; documents, and a <meta http-equiv="refresh"> is noted
+;--------------------------------------------------------------------
+PageFixups:
+	movem.l	a2,-(sp)
+	move.l	g_Doc(a4),d0
+	beq.s	.x
+	move.l	d0,a2
+.walk:	move.l	n_First(a2),d0		; the next node in document order
+	bne.s	.go
+.up:	move.l	n_Next(a2),d0
+	bne.s	.go
+	move.l	n_Parent(a2),d0
+	beq.s	.x
+	move.l	d0,a2
+	bra.s	.up
+.go:	move.l	d0,a2
+	cmp.b	#DN_ELEMENT,n_Type(a2)
+	bne.s	.walk
+	move.w	n_Tag(a2),d0
+	cmp.w	#TAG_FRAME,d0
+	beq.s	.frame
+	cmp.w	#TAG_IFRAME,d0
+	beq.s	.frame
+	cmp.w	#TAG_META,d0
+	bne.s	.walk
+	bsr	MetaRefresh
+	bra.s	.walk
+.frame:	bsr	FrameLink
+	bra.s	.walk
+.x:	movem.l	(sp)+,a2
+	rts
+
+; FrameLink - frame a2 gets a link "Frame: name" to its src
+FrameLink:
+	movem.l	d2-d4/a3,-(sp)
+	move.l	a2,a0
+	lea	AnSrc(pc),a1
+	jsr	DomGetAttr
+	move.l	d0,d2			; d2 = src
+	beq	.x
+	move.l	a2,a0			; label: name, title or src
+	lea	AnName(pc),a1
+	jsr	DomGetAttr
+	tst.l	d0
+	bne.s	.lab
+	move.l	a2,a0
+	lea	AnTitle(pc),a1
+	jsr	DomGetAttr
+	tst.l	d0
+	bne.s	.lab
+	move.l	d2,d0
+.lab:	move.l	d0,a0
+	move.l	a0,-(sp)
+	jsr	StrLen
+	move.l	d0,d3
+	addq.l	#SFrameEnd-SFrame,d3	; d3 = text length
+	move.l	d3,d0
+	addq.l	#1,d0			; (and the NUL copied below)
+	jsr	PageAlloc
+	movem.l	(sp)+,a0
+	tst.l	d0
+	beq.s	.x
+	move.l	d0,d4			; d4 = text
+	move.l	d0,a1
+	lea	SFrame(pc),a3
+	moveq	#SFrameEnd-SFrame-1,d0
+.p:	move.b	(a3)+,(a1)+
+	dbf	d0,.p
+.c:	move.b	(a0)+,(a1)+		; (the label's NUL is not needed)
+	bne.s	.c
+	clr.l	n_First(a2)		; an iframe's fallback content goes
+	clr.l	n_Last(a2)
+	moveq	#DN_ELEMENT,d0
+	moveq	#TAG_A,d1
+	jsr	DomNewNode
+	beq.s	.x
+	move.l	d0,a3
+	move.l	a3,a0
+	lea	AnHref(pc),a1
+	move.l	d2,d0
+	jsr	DomAddAttr
+	move.l	a2,a0
+	move.l	a3,a1
+	jsr	DomAppend
+	moveq	#DN_TEXT,d0
+	moveq	#0,d1
+	jsr	DomNewNode
+	beq.s	.x
+	move.l	d0,a1
+	move.l	d4,n_Data(a1)
+	move.l	d3,n_Data2(a1)
+	move.l	a3,a0
+	jsr	DomAppend
+.x:	movem.l	(sp)+,d2-d4/a3
+	rts
+
+; MetaRefresh - <meta> a2: content="5; url=next.html" (up to 10 s)
+MetaRefresh:
+	movem.l	d2/a3,-(sp)
+	move.l	a2,a0
+	lea	AnHttpEquiv(pc),a1
+	jsr	DomGetAttr
+	tst.l	d0
+	beq	.x
+	move.l	d0,a0
+	lea	SRefresh(pc),a1
+	jsr	StrIPrefix
+	beq	.x
+	move.l	a2,a0
+	lea	AnContent(pc),a1
+	jsr	DomGetAttr
+	tst.l	d0
+	beq	.x
+	move.l	d0,a0
+	bsr	.blanks
+	jsr	ParseDec		; seconds
+	move.l	d0,d2
+	cmp.l	#10,d2
+	bhi	.x
+.frac:	cmp.b	#'.',(a0)		; ("0.5")
+	beq.s	.fr
+	move.b	(a0),d0
+	sub.b	#'0',d0
+	cmp.b	#9,d0
+	bhi.s	.sep
+.fr:	addq.l	#1,a0
+	bra.s	.frac
+.sep:	bsr	.blanks
+	cmp.b	#';',(a0)
+	beq.s	.sp
+	cmp.b	#',',(a0)
+	bne.s	.u
+.sp:	addq.l	#1,a0
+	bsr	.blanks
+.u:	move.l	a0,a3			; "url =" is optional
+	lea	SUrl(pc),a1
+	jsr	StrIPrefix
+	beq.s	.nourl
+	bsr	.blanks
+	cmp.b	#'=',(a0)
+	bne.s	.nourl
+	addq.l	#1,a0
+	bsr	.blanks
+	move.l	a0,a3
+.nourl:	move.l	a3,a0
+	moveq	#0,d1			; quoted?
+	move.b	(a0),d0
+	cmp.b	#'"',d0
+	beq.s	.q
+	cmp.b	#39,d0
+	bne.s	.cp
+.q:	move.b	d0,d1
+	addq.l	#1,a0
+.cp:	lea	g_RefreshUrl(a4),a1
+	move.l	#URL_MAX-2,d0
+.cl:	move.b	(a0)+,(a1)
+	beq.s	.ce
+	cmp.b	(a1),d1
+	beq.s	.ce
+	addq.l	#1,a1
+	subq.l	#1,d0
+	bpl.s	.cl
+.ce:	clr.b	(a1)
+.tr:	lea	g_RefreshUrl(a4),a0	; trailing blanks
+	cmp.l	a0,a1
+	beq.s	.x			; no URL: reloading itself, ignored
+	cmp.b	#' ',-1(a1)
+	bhi.s	.set
+	clr.b	-(a1)
+	bra.s	.tr
+.set:	mulu.w	#10,d2			; IntuiTicks: 10 a second
+	bne.s	.t
+	moveq	#1,d2
+.t:	move.l	d2,g_RefreshTicks(a4)
+.x:	movem.l	(sp)+,d2/a3
+	rts
+.blanks:
+	cmp.b	#' ',(a0)
+	bne.s	.bx
+	addq.l	#1,a0
+	bra.s	.blanks
+.bx:	rts
+
+;--------------------------------------------------------------------
+; NavRefresh - the meta refresh is due: go there instead of this page
+;--------------------------------------------------------------------
+NavRefresh:
+	movem.l	a2,-(sp)
+	lea	g_PageUrl(a4),a0
+	lea	g_RefreshUrl(a4),a1
+	lea	g_UrlTmp2(a4),a2
+	jsr	UrlResolve
+	movem.l	(sp)+,a2
+	beq.s	.x
+	lea	g_UrlTmp2(a4),a0
+	moveq	#NAV_HISTORY|NAV_REPLACE,d0
+	bra	NavGo
+.x:	rts
+
+AnSrc:		dc.b	"src",0
+AnTitle:	dc.b	"title",0
+AnName:		dc.b	"name",0
+AnHttpEquiv:	dc.b	"http-equiv",0
+AnContent:	dc.b	"content",0
+SRefresh:	dc.b	"refresh",0
+SUrl:		dc.b	"url",0
+SFrame:		dc.b	"Frame: "
+SFrameEnd:
 	even
 
 ;--------------------------------------------------------------------
@@ -962,6 +1182,31 @@ HistoryPush:
 	addq.l	#1,g_HistCount(a4)
 .x:	movem.l	(sp)+,d2/a2
 	rts
+
+; HistoryReplace - the current entry becomes g_PageUrl
+HistoryReplace:
+	move.l	g_HistPos(a4),d0
+	bmi.s	.push
+	movem.l	a2,-(sp)
+	lea	g_PageUrl(a4),a0
+	jsr	StrLen
+	addq.l	#1,d0
+	jsr	Alloc
+	beq.s	.x
+	move.l	d0,a2
+	lea	g_PageUrl(a4),a0
+	move.l	a2,a1
+	jsr	StrCopy
+	move.l	g_HistPos(a4),d0
+	lea	g_Hist(a4),a0
+	move.l	(a0,d0.l*8),a1
+	move.l	a2,(a0,d0.l*8)
+	clr.l	4(a0,d0.l*8)
+	jsr	Free
+.x:	movem.l	(sp)+,a2
+	rts
+.push:	lea	g_PageUrl(a4),a0
+	bra	HistoryPush
 
 HistoryDropLast:
 	subq.l	#1,g_HistCount(a4)

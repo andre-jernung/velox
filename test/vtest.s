@@ -24,7 +24,7 @@
 	xref	PutStr,PutBuf,PutNum,PutNL,PutChar,FlushOut,ErrorText
 	xref	PageNew,BufReserve,BufClear,CharsetDetect,DecodeCharset
 	xref	HtmlParse,TagNameOf,LayoutDocument,RunCount,RunPtr,ParseDec,CssLoad
-	xref	CookieSet,CookieHeader,UrlParse,BufFree
+	xref	CookieSet,CookieHeader,UrlParse,BufFree,PageFixups
 
 T_LINEMAX	equ	2048
 T_MAXWORDS	equ	4
@@ -577,6 +577,7 @@ CmdLayout:
 	jsr	HtmlParse
 	tst.l	d0
 	beq	.err
+	jsr	PageFixups		; frames become links
 	jsr	CssLoad			; <style> sheets (no network here)
 	move.l	d3,d0
 	jsr	LayoutDocument

@@ -513,6 +513,8 @@ g_ProxyHost	rs.b	HOST_MAX
 g_VarBuf	rs.b	256
 g_PressLink	rs.l	1
 g_Squeeze	rs.l	1		; laying out a squeezed table
+g_RefreshTicks	rs.l	1		; meta refresh: ticks to go (0 = none)
+g_RefreshUrl	rs.b	URL_MAX		; meta refresh target (relative)
 g_FindOn	rs.l	1		; find in page active
 g_FindRun	rs.l	1		; run with the match, or 0
 g_FindIdx	rs.l	1		; its index (-1 none)

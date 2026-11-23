@@ -167,7 +167,7 @@ UaStyle:
 	dc.w	$0000	; font
 	dc.w	$0001	; footer
 	dc.w	$0001	; form
-	dc.w	$0003	; frame
+	dc.w	$0001	; frame
 	dc.w	$0001	; frameset
 	dc.w	$2a41	; h1
 	dc.w	$2a51	; h2

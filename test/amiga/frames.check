@@ -1,0 +1,6 @@
+#!/bin/sh
+# checks for frames.script
+d=$(dirname "$1"); fail=0
+sed 's/^/driver: /' "$d/frames.driver"
+grep -qx ok "$d/frames.driver" || fail=1
+exit $fail

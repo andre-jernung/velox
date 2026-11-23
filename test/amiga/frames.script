@@ -1,0 +1,6 @@
+; frames: meta refresh and frames (test/amiga/frames.host)
+Echo >VELOX:r/frames.txt "frames"
+Echo >VELOX:r/frames.start ""
+VELOX:velox http://127.0.0.1:8080/index.html LOG=VELOX:r/frames.log
+Echo >>VELOX:r/frames.txt "exit rc=$RC"
+Echo >>VELOX:r/frames.txt "done"

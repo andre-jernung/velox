@@ -28,6 +28,7 @@ DomNewNode:
 	move.l	d0,a0
 	move.b	d2,n_Type(a0)
 	move.w	d3,n_Tag(a0)
+	tst.l	d0			; (the CCR follows d0)
 .x:	movem.l	(sp)+,d2-d3
 	rts
 

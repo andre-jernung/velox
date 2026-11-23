@@ -29,6 +29,7 @@ A small, fast web browser for classic AmigaOS 3.x, written entirely in
   fetch again (Reload does)
 - Downloads of anything that is not a page, with a file requester
 - History, bookmarks, local `file:` pages, a home page, find in page
+- Frames and iframes as links to their pages; `<meta>` refresh redirects
 - Keyboard navigation for everything
 
 ## Starting

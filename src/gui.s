@@ -16,7 +16,7 @@
 	xdef	GuiOpen,GuiClose,GuiEventLoop,GuiPaintAll,GuiStatus
 	xdef	GuiSetUrl,GuiSetTitle,GuiScrollTo,GuiNetHook,GuiBusy
 	xdef	GuiRelayout,GuiPageWidth,GuiAbout,DrawStatus
-	xref	FindStart,FindKey,FindHighlight,KeyToChars
+	xref	FindStart,FindKey,FindHighlight,KeyToChars,NavRefresh
 	xref	LayoutDocument,RunCount,RunPtr,StrLen,StrCopyN
 	xref	NavGo,NavBack,NavForward,NavReload,NavHome,NavLink,UrlFixup
 	xref	DomGetAttr,LogEvent,FormStateOf,FormIsControl,FormActivate
@@ -1692,7 +1692,14 @@ HandleEvent:
 	bne.s	.x
 	move.l	d3,d0
 	bra	GuiScrollTo
-.ngd:	cmp.l	#IDCMP_MENUPICK,d2
+.ngd:	cmp.l	#IDCMP_INTUITICKS,d2	; a meta refresh counting down
+	bne.s	.nt
+	tst.l	g_RefreshTicks(a4)
+	beq.s	.x
+	subq.l	#1,g_RefreshTicks(a4)
+	bne.s	.x
+	jmp	NavRefresh
+.nt:	cmp.l	#IDCMP_MENUPICK,d2
 	beq	OnMenu
 	cmp.l	#IDCMP_MOUSEBUTTONS,d2
 	beq	OnClick

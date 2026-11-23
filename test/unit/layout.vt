@@ -3,3 +3,5 @@ layout test/unit/layout/text.html 200
 layout test/unit/layout/table.html 300
 # colspan widens only as needed; minimums too wide: squeezed, nowrap wraps
 layout test/unit/layout/squeeze.html 200
+# frames and iframes become links to their documents
+layout test/unit/layout/frames.html 400
