@@ -78,3 +78,8 @@ text 50 8 32 10 8 f1 s0 c000000 "ok-c"
 text 70 8 32 10 8 f1 s0 c000000 "ok-d"
 text 90 8 32 10 8 f1 s0 c000000 "ok-e"
 
+# <style media="print"> is not for the screen
+layout test/unit/layout/mediaattr.html 400 => 
+height 30
+text 10 8 216 10 8 f1 s0 c000000 "visible-print-sheet-ignored"
+

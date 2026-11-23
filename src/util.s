@@ -97,10 +97,10 @@ StrIPrefix:
 ;--------------------------------------------------------------------
 ; StrIFind - search a lower case needle in a string, ignoring case
 ; In:  a0 = string, a1 = needle
-; Out: d0 = 1 if found (a0 = after the match), else 0
+; Out: d0 = 1 if found (a0 = after the match), else 0 (a0 kept)
 ;--------------------------------------------------------------------
 StrIFind:
-	movem.l	a2-a3,-(sp)
+	movem.l	a0/a2-a3,-(sp)
 	move.l	a0,a2
 	move.l	a1,a3
 .l:	tst.b	(a2)
@@ -111,8 +111,11 @@ StrIFind:
 	bne.s	.x
 	addq.l	#1,a2
 	bra.s	.l
-.no:	moveq	#0,d0
-.x:	movem.l	(sp)+,a2-a3
+.no:	moveq	#0,d0			; not found: a0 as it was
+	movem.l	(sp)+,a0/a2-a3
+	rts
+.x:	lea	4(sp),sp		; found: a0 after the match
+	movem.l	(sp)+,a2-a3
 	rts
 
 ;--------------------------------------------------------------------
