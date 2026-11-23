@@ -1,0 +1,48 @@
+#!/usr/bin/env python3
+"""Host side of typeahead.script: Ctrl-L and an address typed while a
+slow page loads are not lost; the address is opened after the load."""
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from xdrive import Amiga, wait_log  # noqa: E402
+
+r = sys.argv[1]
+log = os.path.join(r, "typeahead.log")
+out = open(os.path.join(r, "typeahead.driver"), "w")
+U = "http://127.0.0.1:8080/"
+
+
+def step(msg):
+    out.write(msg + "\n")
+    out.flush()
+
+
+try:
+    a = Amiga()
+    wait_log(log, "page " + U + "index.html")
+    time.sleep(1)
+    a.key("ctrl+l")
+    a.type("127.0.0.1:8080/slowpage")
+    a.key("Return")
+    wait_log(log, "go " + U + "slowpage")
+    time.sleep(0.5)
+    a.key("ctrl+l")                 # while the slow page loads
+    a.type("127.0.0.1:8080/third.html")
+    a.key("Return")
+    lines = wait_log(log, "page " + U + "slowpage", timeout=30)
+    step("the slow page loaded")
+    lines = wait_log(log, "page " + U + "third.html", timeout=30)
+    gos = [l for l in lines if l.startswith("go ")]
+    if gos[-1] != "go " + U + "third.html":
+        raise AssertionError("went to %r" % gos[-1])
+    step("the address typed meanwhile was opened after it")
+    a.key("ctrl+q")
+    step("ok")
+except Exception as e:
+    step("FAIL " + repr(e))
+    try:
+        Amiga().key("ctrl+q")
+    except Exception:
+        pass

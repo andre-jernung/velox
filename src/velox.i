@@ -513,6 +513,9 @@ g_ProxyHost	rs.b	HOST_MAX
 g_VarBuf	rs.b	256
 g_PressLink	rs.l	1
 g_Squeeze	rs.l	1		; laying out a squeezed table
+TYPEAHEAD	equ	32
+g_TaCount	rs.l	1		; keys typed while loading
+g_TaKeys	rs.l	TYPEAHEAD*2	; code.w, qualifier.w, dead keys.l
 g_CookieExp	rs.l	1		; cookies.s scratch
 g_CookieAge	rs.l	1
 g_TestNow	rs.l	1		; fixed clock for tests (0 = real)

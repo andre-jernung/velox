@@ -51,6 +51,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                                          ("Set-Cookie", "sess=2; Path=/"),
                                          ("Set-Cookie", "keep=1; Max-Age=86400; Path=/"),
                                          ("Set-Cookie", "far=3; Expires=Mon, 01 Jan 2060 00:00:00 GMT; Path=/")])
+        elif p == "/slowpage":
+            time.sleep(12)
+            self.send(200, b"<title>Slow</title><p>A slow page.", "text/html")
         elif p.startswith("/slow/"):
             # a slow image: the browser must stay usable meanwhile
             time.sleep(8)

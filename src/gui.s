@@ -1635,6 +1635,16 @@ GuiEventLoop:
 ; HandleMessages - process all pending window messages
 HandleMessages:
 	movem.l	d2-d7/a2,-(sp)
+.ta:	bsr	TypeAheadKey		; keys typed while a page loaded
+	beq.s	.next
+	move.l	#IDCMP_RAWKEY,d2
+	move.l	d0,d3
+	move.l	d1,d4
+	suba.l	a2,a2
+	bsr	HandleEvent
+	tst.l	g_Quit(a4)
+	bne.s	.x
+	bra.s	.ta
 .next:	move.l	g_Window(a4),a0
 	move.l	wd_UserPort(a0),a0
 	GT	GT_GetIMsg
@@ -1868,17 +1878,78 @@ ToFormActivate:	jmp	FormActivate
 ; ActivateUrl - empty the URL gadget and put the cursor into it
 ; ("open location"; clicking the gadget edits the current URL instead)
 ActivateUrl:
-	lea	EmptyStr(pc),a0
+	movem.l	d2-d4/a2-a3,-(sp)
+	; keys typed right after Ctrl-L may already be queued (when the
+	; event loop was busy): they belong in the field
+	lea	g_StatusBuf(a4),a3
+	moveq	#0,d4			; length
+.peek:	bsr	TypeAheadKey
+	beq.s	.port
+	move.l	d0,d2
+	move.l	d1,d3
+	bra.s	.key
+.port:	move.l	g_Window(a4),a0
+	move.l	wd_UserPort(a0),a2
+	move.l	MP_MSGLIST+LH_HEAD(a2),a1
+	tst.l	LN_SUCC(a1)
+	beq.s	.set
+	cmp.l	#IDCMP_RAWKEY,im_Class(a1)
+	bne.s	.set
+	move.l	a2,a0
+	GT	GT_GetIMsg
+	tst.l	d0
+	beq.s	.set
+	move.l	d0,a1
+	moveq	#0,d2
+	move.w	im_Code(a1),d2
+	moveq	#0,d3
+	move.w	im_Qualifier(a1),d3
+	move.l	im_IAddress(a1),a0
+	move.l	(a0),g_PrevKeys(a4)	; (dead keys)
+	GT	GT_ReplyIMsg
+.key:	cmp.w	#$80,d2			; releases
+	bhs.s	.peek
+	cmp.w	#RAW_RETURN,d2
+	beq.s	.go
+	cmp.w	#RAW_ENTER,d2
+	beq.s	.go
+	move.l	d2,d0
+	move.l	d3,d1
+	jsr	KeyToChars
+	move.l	d0,d2
+	ble.s	.peek
+	lea	g_KeyChars(a4),a0
+.ch:	move.b	(a0)+,d0
+	cmp.b	#32,d0
+	blo.s	.chn
+	cmp.l	#STATUS_MAX-2,d4
+	bhs.s	.chn
+	move.b	d0,(a3,d4.l)
+	addq.l	#1,d4
+.chn:	subq.l	#1,d2
+	bne.s	.ch
+	bra.s	.peek
+.set:	clr.b	(a3,d4.l)
+	move.l	a3,a0
 	bsr	GuiSetUrl
 	move.l	g_GadUrl(a4),d0
 	beq.s	.x
 	move.l	d0,a0
+	move.l	gg_SpecialInfo(a0),a1	; the cursor after the text
+	move.w	d4,si_BufferPos(a1)
 	move.l	g_Window(a4),a1
-	move.l	a2,-(sp)
 	suba.l	a2,a2
 	INTUI	ActivateGadget
-	move.l	(sp)+,a2
-.x:	rts
+.x:	movem.l	(sp)+,d2-d4/a2-a3
+	rts
+.go:	clr.b	(a3,d4.l)		; Return was typed too: go there
+	move.l	a3,a0
+	lea	g_UrlTmp2(a4),a1
+	jsr	UrlFixup
+	movem.l	(sp)+,d2-d4/a2-a3
+	lea	g_UrlTmp2(a4),a0
+	moveq	#1,d0
+	jmp	NavGo
 
 ; FocusNext - move the keyboard focus to the next/previous link
 ; In: d0 = 1 forward, -1 backward
@@ -2165,8 +2236,14 @@ GuiNetHook:
 	move.l	d0,a1
 	move.l	im_Class(a1),d2
 	move.w	im_Code(a1),d3
+	move.w	im_Qualifier(a1),d4
 	move.l	im_IAddress(a1),a2
-	GT	GT_ReplyIMsg
+	cmp.l	#IDCMP_RAWKEY,d2	; (IAddress is only valid until
+	bne.s	.rp			; the reply)
+	lea	g_InputEvent(a4),a0
+	move.l	(a2),(a0)
+	move.l	a0,a2
+.rp:	GT	GT_ReplyIMsg
 	cmp.l	#IDCMP_CLOSEWINDOW,d2
 	bne.s	.nc
 	moveq	#1,d0
@@ -2180,7 +2257,21 @@ GuiNetHook:
 	moveq	#-1,d0
 	GT	GT_EndRefresh
 	bra.s	.next
-.nr:	cmp.l	#IDCMP_GADGETUP,d2
+.nr:	cmp.l	#IDCMP_RAWKEY,d2	; keys: kept for after the load
+	bne.s	.ng
+	cmp.w	#$80,d3
+	bhs.s	.next
+	move.l	g_TaCount(a4),d0
+	cmp.l	#TYPEAHEAD,d0
+	bhs.s	.next
+	addq.l	#1,g_TaCount(a4)
+	lea	g_TaKeys(a4),a0
+	lea	(a0,d0.l*8),a0
+	move.w	d3,(a0)+
+	move.w	d4,(a0)+
+	move.l	(a2),(a0)		; (IAddress: the dead keys)
+	bra.s	.next
+.ng:	cmp.l	#IDCMP_GADGETUP,d2
 	bne.s	.next
 	cmp.w	#GID_RELOAD,gg_GadgetID(a2)	; "Reload" stops a load
 	bne.s	.next
@@ -2192,6 +2283,31 @@ GuiNetHook:
 .abort:	moveq	#1,d0
 .x:	movem.l	(sp)+,d2-d7/a2
 	rts
+
+;--------------------------------------------------------------------
+; TypeAheadKey - the oldest key kept by GuiNetHook
+; Out: d0 = raw code, d1 = qualifier (g_PrevKeys set); Z set if none
+;--------------------------------------------------------------------
+TypeAheadKey:
+	move.l	g_TaCount(a4),d0
+	beq.s	.x
+	lea	g_TaKeys(a4),a0
+	move.w	(a0),d0
+	move.w	2(a0),d1
+	move.l	4(a0),g_PrevKeys(a4)
+	movem.l	d0-d1,-(sp)
+	move.l	g_TaCount(a4),d0	; move the rest down
+	subq.l	#1,d0
+	move.l	d0,g_TaCount(a4)
+	bra.s	.me
+.m:	move.l	8(a0),(a0)+
+	move.l	8(a0),(a0)+
+.me:	dbf	d0,.m
+	movem.l	(sp)+,d0-d1
+	and.l	#$ffff,d0
+	and.l	#$ffff,d1
+	and.b	#$fb,ccr		; Z clear: a key
+.x:	rts
 
 ;--------------------------------------------------------------------
 ; ImgNetHook - the network hook while an image loads: anything the user

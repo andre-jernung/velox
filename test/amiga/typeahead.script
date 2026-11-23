@@ -1,0 +1,6 @@
+; typeahead: keys typed while a page loads are used afterwards
+Echo >VELOX:r/typeahead.txt "typeahead"
+Echo >VELOX:r/typeahead.start ""
+VELOX:velox http://127.0.0.1:8080/index.html LOG=VELOX:r/typeahead.log
+Echo >>VELOX:r/typeahead.txt "exit rc=$RC"
+Echo >>VELOX:r/typeahead.txt "done"

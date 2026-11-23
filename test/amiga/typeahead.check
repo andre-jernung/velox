@@ -1,0 +1,6 @@
+#!/bin/sh
+# checks for typeahead.script
+d=$(dirname "$1"); fail=0
+sed 's/^/driver: /' "$d/typeahead.driver"
+grep -qx ok "$d/typeahead.driver" || fail=1
+exit $fail
