@@ -179,6 +179,7 @@ n_Tag		rs.w	1		; TAG_xxx (elements)
 n_Data		rs.l	1		; element: first Attr; text: text
 n_Data2		rs.l	1		; element: aux data; text: length
 n_Css		rs.l	1		; element: cached CSS matches or 0
+n_Style		rs.l	1		; element: its style as last computed (StyleOf)
 NODE_SIZEOF	rs.b	0
 
 	RSRESET
@@ -858,6 +859,7 @@ g_PbmPlanar	rs.l	1		; a standard planar bitmap: own c2p
 g_PbmKeep	rs.l	1		; keep the pixels (g_PbmSave) for the cache
 g_PbmSave	rs.l	1		; the pixels (pens or ARGB), AllocVec
 g_PalSig	rs.l	1		; the screen's colours (cache key)
+g_StyleGen	rs.l	1		; style.s: changes when kept styles are stale
 g_ImgKeyOk	rs.l	1		; img.s: g_ImgKey is the image's
 g_ImgHash	rs.l	1		; the cached image's file hash
 g_DecDcImg	rs.l	1		; cached pixels an orphan decoder reads

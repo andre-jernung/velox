@@ -12,7 +12,7 @@ r = sys.argv[1]
 log = os.path.join(r, "pagespeed.log")
 out = open(os.path.join(r, "pagespeed.driver"), "w")
 U = "http://127.0.0.1:8080/"
-names = {"m": "cached page shown", "n": "parse", "o": "CSS", "p": "layout"}
+names = {"l": "relayout", "m": "cached page shown", "n": "parse", "o": "CSS", "p": "layout"}
 
 
 def go(a, path):
@@ -21,20 +21,27 @@ def go(a, path):
     a.key("Return")
 
 
+def count(prefix):
+    return len([l for l in open(log).read().split("\n") if l.startswith(prefix)])
+
+
 try:
     a = Amiga()
     wait_log(log, "page " + U + "index.html", timeout=120)
     time.sleep(2)
-    for n, what in ((1, "fetched"), (2, "from the disk cache")):
-        go(a, "big.html")
-        wait_log(log, "page " + U + "big.html", n, timeout=600)
+    for what, path in (("fetched", "big.html"), ("from the disk cache", "big.html"),
+                       ("coming in 4 parts", "bigslow")):
+        n = count("page " + U + path + " ")
+        go(a, path)
+        wait_log(log, "page " + U + path, n + 1, timeout=600)
         time.sleep(3)
+        n = count("page " + U + "index.html ")
         go(a, "index.html")
-        lines = wait_log(log, "page " + U + "index.html", n + 1, timeout=600)
+        wait_log(log, "page " + U + "index.html", n + 1, timeout=600)
         text = open(log).read().split("\n")
-        i = [k for k, l in enumerate(text) if l.startswith("go " + U + "big.html")][-1]
+        i = [k for k, l in enumerate(text) if l.startswith("go " + U + path)][-1]
         j = [k for k, l in enumerate(text) if l.startswith("go " + U + "index.html")][-1]
-        out.write("big.html %s:\n" % what)
+        out.write("%s %s:\n" % (path, what))
         for l in text[i:j]:
             if l.startswith("prof"):
                 out.write("  %-18s %6s ms\n" % (names.get(l[4], l[4]), l.split()[1]))

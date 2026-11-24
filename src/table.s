@@ -12,7 +12,7 @@
 	include	"velox.i"
 
 	xdef	LayoutTable
-	xref	StyleCompute,CssApply,LayoutBlockContent,LayoutNode
+	xref	StyleCompute,CssApply,LayoutBlockContent,LayoutNode,StyleOf
 	xref	LineReset,AddRun,RunPtr,RunCount,ApplyPendingMargin
 	xref	Measure,DomGetAttr,ParseDec,FormIsControl,FormControlSize
 	xref	ClearFloats
@@ -1014,10 +1014,7 @@ RowStyle:
 	movem.l	a2/a5,-(sp)
 	move.l	a0,a5
 	lea	tb_RowStyle(a3),a2
-	jsr	StyleCompute
-	move.l	a5,a0
-	lea	tb_RowStyle(a3),a1
-	jsr	CssApply
+	jsr	StyleOf
 	moveq	#1,d0
 	cmp.b	#DISP_NONE,tb_RowStyle+st_Display(a3)
 	bne.s	.x
@@ -1029,10 +1026,7 @@ RowStyle:
 CellStyle:
 	movem.l	a2/a5,-(sp)
 	move.l	a0,a5
-	jsr	StyleCompute
-	move.l	a5,a0
-	move.l	a2,a1
-	jsr	CssApply
+	jsr	StyleOf
 	movem.l	(sp)+,a2/a5
 	rts
 
@@ -1112,10 +1106,7 @@ MeasureNode:
 	move.l	sp,a2
 	move.l	a5,a0
 	move.l	a3,a1
-	jsr	StyleCompute
-	move.l	a5,a0
-	move.l	sp,a1
-	jsr	CssApply
+	jsr	StyleOf
 	move.l	sp,a3			; a3 = this element's style
 	move.b	st_Display(a3),d0
 	cmp.b	#DISP_NONE,d0

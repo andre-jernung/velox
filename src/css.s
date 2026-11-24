@@ -22,6 +22,7 @@
 	include	"velox.i"
 
 	xdef	CssReset,CssAddSheet,CssApply,CssInvalidate,CssLoad
+	xref	StyleStale
 	xref	PageAlloc,DomGetAttr,TagLookup,ToLower,ParseColor,ParseLength
 	xref	StrIPrefix,StrIFind,ParseDec,HttpGetCached,UrlResolve,DecodeCharset
 	xref	BgFind
@@ -80,6 +81,7 @@ CP_COUNT	rs.b	0
 ; CssReset - forget all rules (new page)
 ;--------------------------------------------------------------------
 CssReset:
+	jsr	StyleStale
 	clr.l	g_CssRules(a4)
 	clr.l	g_CssHasMq(a4)
 	moveq	#-1,d0
@@ -933,7 +935,21 @@ ParseDecls:
 	bhi.s	.noimp
 	subq.l	#1,a1
 	bra.s	.ti
-.noimp:	; append prop, important, value, NUL (if it fits)
+.noimp:	; "inherit", "initial", "unset": dropped here, once (not for
+	; every element at every layout)
+	move.l	a1,-(sp)
+	move.l	a2,a0
+	lea	KwInherit(pc),a1
+	bsr	Kw
+	bne.s	.kws
+	lea	KwInitial(pc),a1
+	bsr	Kw
+	bne.s	.kws
+	lea	KwUnset(pc),a1
+	bsr	Kw
+.kws:	movem.l	(sp)+,a1
+	bne	.skip
+	; append prop, important, value, NUL (if it fits)
 	move.l	a1,d0
 	sub.l	a2,d0
 	add.l	a3,d0
@@ -1729,6 +1745,7 @@ Hash:
 ; width changed and some rules depend on it)
 ;--------------------------------------------------------------------
 CssInvalidate:
+	jsr	StyleStale		; (kept styles too)
 	move.l	g_Doc(a4),d0
 	beq.s	.x
 	move.l	d0,a1			; root
@@ -2361,18 +2378,8 @@ ApplyProp:
 	move.l	d0,d2			; property (Kw destroys d0)
 	move.l	a0,a2			; value
 	move.l	a1,a3			; style
-	move.l	a2,a0			; "inherit", "initial", "unset": skip
-	lea	KwInherit(pc),a1
-	bsr	Kw
-	bne	.x
-	lea	KwInitial(pc),a1
-	bsr	Kw
-	bne	.x
-	lea	KwUnset(pc),a1
-	bsr	Kw
-	bne	.x
-	move.l	d2,d0
-	cmp.w	#CP_COUNT,d0
+	move.l	d2,d0			; ("inherit" and the like were dropped
+	cmp.w	#CP_COUNT,d0		;  when parsed)
 	bhs	.x
 	add.w	d0,d0
 	move.w	PropJump(pc,d0.w),d0

@@ -19,7 +19,7 @@
 	IFD	PROFILE
 	xref	ProfRead
 	ENDC
-	xref	StyleRoot,StyleCompute,BufClear,BufReserve,PageAlloc,FmtDec
+	xref	StyleRoot,StyleCompute,BufClear,BufReserve,PageAlloc,FmtDec,StyleOf
 	xref	DomGetAttr,ParseDec,LayoutTable,CssApply
 	xref	FormIsControl,FormControlSize,CssInvalidate
 
@@ -142,10 +142,7 @@ LayoutNode:
 	move.l	sp,a3
 	move.l	a5,a0
 	move.l	a3,a2
-	jsr	StyleCompute
-	move.l	a5,a0
-	move.l	a3,a1
-	jsr	CssApply		; author styles on top
+	jsr	StyleOf			; (UA, attributes, author styles)
 	move.b	st_Display(a3),d0
 	cmp.b	#DISP_NONE,d0
 	beq.s	.pop

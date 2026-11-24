@@ -80,6 +80,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send(200, b"%d" % CACHED["v"])
         elif p == "/cached-count":
             self.send(200, b"200:%d 304:%d" % (CACHED["200"], CACHED["304"]))
+        elif p == "/bigslow":
+            # big.html in four parts, 2 s apart: laid out again as it comes
+            with open(os.path.join(DOCROOT, "big.html"), "rb") as f:
+                data = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Transfer-Encoding", "chunked")
+            self.end_headers()
+            q = len(data) // 4
+            for i in range(4):
+                part = data[i * q:] if i == 3 else data[i * q:(i + 1) * q]
+                if i:
+                    time.sleep(2)
+                self.wfile.write(b"%x\r\n%s\r\n" % (len(part), part))
+                self.wfile.flush()
+            self.wfile.write(b"0\r\n\r\n")
         elif p == "/trickle":
             # a page in three parts, 5 s apart (chunked): shown as it
             # comes; its style sheet is fetched in the middle of it

@@ -9,7 +9,8 @@
 
 	include	"velox.i"
 
-	xdef	StyleRoot,StyleCompute,ParseColor,ParseLength
+	xdef	StyleRoot,StyleCompute,ParseColor,ParseLength,StyleOf,StyleStale
+	xref	PageAlloc,CssApply
 	xref	UaStyle,DomGetAttr,ToLower,StrIPrefix,StrIFind,SkipSpace
 	xref	BgFind
 
@@ -29,6 +30,72 @@ StyleRoot:
 	move.l	g_PageFg(a4),st_Color(a0)
 	moveq	#-1,d0
 	move.l	d0,st_Bg(a0)
+	rts
+
+;--------------------------------------------------------------------
+; StyleOf - the style of element a0 with parent style a1, into a2: UA
+; style and presentational attributes (StyleCompute), then the author's
+; (CssApply).  Each element keeps the style it got and the parent style
+; it got it from (n_Style), so that laying out again (a page coming in,
+; an image loaded, a new window size) costs a copy: computed again only
+; when the parent's style differs or the style sheets or media changed
+; (StyleStale).
+;--------------------------------------------------------------------
+	IFNE	STYLE_SIZEOF&3
+	FAIL	"StyleOf copies longs: STYLE_SIZEOF must be a multiple of 4"
+	ENDC
+SK_GEN		equ	0			; n_Style: g_StyleGen,
+SK_PARENT	equ	4			; the parent's style,
+SK_STYLE	equ	4+STYLE_SIZEOF		; the element's
+SK_SIZEOF	equ	4+2*STYLE_SIZEOF
+StyleOf:
+	movem.l	d2/a2-a3/a5,-(sp)
+	move.l	a0,a5			; a5 = element, a3 = parent's style,
+	move.l	a1,a3			; a2 = output
+	move.l	n_Style(a5),d0
+	beq.s	.new
+	move.l	d0,a0			; kept: still right?
+	move.l	(a0)+,d0
+	cmp.l	g_StyleGen(a4),d0
+	bne.s	.calc
+	move.l	a3,a1
+	moveq	#STYLE_SIZEOF/4-1,d0
+.cmp:	cmpm.l	(a0)+,(a1)+
+	bne.s	.calc
+	dbf	d0,.cmp
+	move.l	a2,a1			; (a0 = the kept style)
+	moveq	#STYLE_SIZEOF/4-1,d0
+.cp:	move.l	(a0)+,(a1)+
+	dbf	d0,.cp
+	bra.s	.x
+.new:	move.l	#SK_SIZEOF,d0		; (no memory: computed every time)
+	jsr	PageAlloc
+	move.l	d0,n_Style(a5)
+.calc:	move.l	a5,a0
+	move.l	a3,a1
+	bsr	StyleCompute		; (a2 = output)
+	move.l	a5,a0
+	move.l	a2,a1
+	jsr	CssApply
+	move.l	n_Style(a5),d0		; keep it
+	beq.s	.x
+	move.l	d0,a1
+	move.l	g_StyleGen(a4),(a1)+
+	move.l	a3,a0
+	moveq	#STYLE_SIZEOF/4-1,d0
+.kp:	move.l	(a0)+,(a1)+
+	dbf	d0,.kp
+	move.l	a2,a0
+	moveq	#STYLE_SIZEOF/4-1,d0
+.ks:	move.l	(a0)+,(a1)+
+	dbf	d0,.ks
+.x:	movem.l	(sp)+,d2/a2-a3/a5
+	rts
+
+; StyleStale - the style sheets or media changed: kept styles are not
+; to be used
+StyleStale:
+	addq.l	#1,g_StyleGen(a4)
 	rts
 
 ;--------------------------------------------------------------------

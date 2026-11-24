@@ -18,6 +18,9 @@
 	xdef	GuiOpen,GuiClose,GuiEventLoop,GuiPaintAll,GuiStatus,GuiPaintNode
 	xdef	GuiSetUrl,GuiSetTitle,GuiScrollTo,GuiNetHook,GuiBusy
 	xdef	BusyEvents,GuiRelayout,GuiRefresh,GuiPageWidth,GuiAbout,DrawStatus,ImgNetHook,GuiProgress
+	IFD	PROFILE
+	xref	ProfRead,ProfLog
+	ENDC
 	xref	FindStart,FindKey,FindHighlight,KeyToChars,NavRefresh
 	xref	CopyAddress,ViewSource,SelPress,SelMove,SelRelease,SelHighlight,ParseDec,FmtDec,StrCopy
 	xref	LayoutDocument,RunCount,RunPtr,StrLen,StrCopyN
@@ -2198,8 +2201,13 @@ GuiScrollTo:
 ; GuiRelayout - lay the page out for the current width and repaint
 ; what changed
 GuiRelayout:
+	PROFB	11
 	bsr	GuiPageWidth
 	jsr	LayoutDocument
+	PROFE	11
+	IFD	PROFILE
+	jsr	ProfLog			; (each relayout's time)
+	ENDC
 	move.l	g_ScrollY(a4),d0
 	clr.l	g_ScrollY(a4)
 	bsr	ClampScroll
