@@ -2,7 +2,7 @@
 #
 #   make            build build/velox (stripped AmigaOS executable)
 #   make test       build build/vtest and run the headless tests (vamos)
-#   make size       show executable size against the budget
+#   make size       show executable size against the target
 #   make clean      remove build output
 
 TOOLS   := tools/bin
@@ -16,7 +16,7 @@ VLINK   := $(TOOLS)/vlink
 ASFLAGS := -Fhunk -m68020 -quiet -x -opt-allbra -I src -I $(NDK)
 LDFLAGS := -bamigahunk -Bstatic -s -sc -sd
 
-# Size budget for the executable, in bytes.
+# Size target for the executable, in bytes (can be raised when needed).
 BUDGET  := 65536
 
 CORE    := $(patsubst src/%.s,build/%.o,$(filter-out src/main.s,$(wildcard src/*.s)))
@@ -68,7 +68,7 @@ dist: $(TARGET)
 	cp tools/velox-proxy.py README.md build/dist/Velox/
 
 size: $(TARGET)
-	@s=$$(stat -c %s $(TARGET)); echo "$(TARGET): $$s bytes ($$((s * 100 / $(BUDGET)))% of $(BUDGET) budget)"
+	@s=$$(stat -c %s $(TARGET)); echo "$(TARGET): $$s bytes ($$((s * 100 / $(BUDGET)))% of the $(BUDGET) target)"
 
 clean:
 	rm -rf build

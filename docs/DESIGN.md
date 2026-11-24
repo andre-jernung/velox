@@ -13,7 +13,7 @@ entirely in 68k assembly.
 | Assembler     | vasm (Motorola syntax) + vlink, Amiga hunk format              |
 | Networking    | bsdsocket.library (Roadshow, AmiTCP, Miami)                    |
 | HTTPS         | Both: AmiSSL (in-process) **and** an optional rewriting proxy  |
-| Size budget   | 64 KB executable (`make size`)                                 |
+| Size          | As small as is realistic; 64 KB is a target, not a limit (`make size`) |
 | JavaScript    | Not now, but the architecture must not rule it out (see below) |
 
 ## Pipeline

@@ -8,7 +8,10 @@ and a single event dispatch point.
 ## Build
 
 - `make`: assembles `src/*.s` into `build/velox` (Amiga hunk executable)
-- `make size`: size against the 64 KB budget
+- `make size`: size against the 64 KB target. The target can be raised
+  when a feature needs it. Keep the code small and optimized, but don't
+  give up a realistic solution (correctness, responsiveness) to stay
+  under it.
 - `make lint`: static checks of the register conventions below (d1/a1
   used after a call, routines whose callers test flags not set from d0).
   It must stay clean. A routine that keeps or returns d1/a1 says so in
