@@ -222,17 +222,17 @@ CookieSet:
 	move.l	d2,d0
 	bsr	CookieRemove
 	bra.s	.x
-.keep:	bsr	Store
+.keep:	bsr	CkStore
 .x:	lea	MAX_SEGS*4(sp),sp
 	movem.l	(sp)+,d2-d7/a2-a3/a5
 	rts
 
 ;--------------------------------------------------------------------
-; Store - add a cookie, replacing one with the same domain, path and
+; CkStore - add a cookie, replacing one with the same domain, path and
 ; name.  In: d2 = name, d3 = value, d4 = flags, d5 = domain, d6 = path,
 ; d7 = expiry (0 = session)
 ;--------------------------------------------------------------------
-Store:
+CkStore:
 	movem.l	d1-d7/a2-a3,-(sp)
 	move.l	d5,a0
 	move.l	d6,a1
@@ -817,7 +817,7 @@ CookiesLoad:
 	move.l	12(sp),d6		; path
 	move.l	16(sp),d2		; name
 	move.l	20(sp),d3		; value
-	bsr	Store
+	bsr	CkStore
 .bad:	lea	24(sp),sp
 	move.l	(sp)+,a3
 	bra.s	.line
