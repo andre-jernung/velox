@@ -91,6 +91,37 @@ px = [((x * 2311) & 0xffff, (y * 4099) & 0xffff, (x * y * 37) & 0xffff, ((x + y)
 png16("prgba16.png", "RGBA", 27, 21, px)
 png16("prgb16.png", "RGB", 27, 21, [p[:3] for p in px])
 
+# JPEG: baseline with each subsampling, grey, optimized Huffman tables,
+# progressive, restart intervals, Adobe RGB (cjpeg), odd sizes
+import subprocess  # noqa: E402
+jp = picture(83, 61).convert("RGB")
+save(jp, "j444.jpg", quality=90, subsampling=0)
+save(jp, "j422.jpg", quality=85, subsampling=1)
+save(jp, "j420.jpg", quality=75, subsampling=2)
+save(jp, "jq30.jpg", quality=30)
+save(jp.convert("L"), "jgrey.jpg", quality=85)
+save(jp, "jopt.jpg", quality=80, optimize=True)
+save(jp, "jprog.jpg", quality=80, progressive=True)
+save(jp.convert("L"), "jprogg.jpg", quality=80, progressive=True)
+big = picture(320, 240).convert("RGB")
+save(big, "jbig.jpg", quality=85)
+save(big, "jbigp.jpg", quality=85, progressive=True)
+ppm = os.path.join(d, "tmp.ppm")
+jp.save(ppm)
+
+
+def cjpeg(name, *args):
+    with open(os.path.join(d, name), "wb") as f:
+        subprocess.run(["cjpeg"] + list(args) + [ppm], stdout=f, check=True)
+
+
+cjpeg("jrst.jpg", "-restart", "1", "-quality", "80")
+cjpeg("jrstp.jpg", "-restart", "2", "-progressive", "-quality", "80")
+cjpeg("j411.jpg", "-sample", "4x1", "-quality", "85")
+cjpeg("j440.jpg", "-sample", "1x2", "-quality", "85")
+cjpeg("jrgb.jpg", "-rgb", "-quality", "90")
+os.remove(ppm)
+
 # broken files: cut short, and with bytes overwritten; decoding them
 # must not crash (their output is not compared: ".bad")
 random.seed(11)

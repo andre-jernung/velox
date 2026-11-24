@@ -593,6 +593,39 @@ g_PngRaw	rs.l	1		; the rows (after a row of zeros)
 g_PngZero	rs.l	1		; size of that row
 g_PngPW		rs.l	1		; pass: width,
 g_PngRB		rs.l	1		; bytes in a row
+g_JWork		rs.l	1		; jpeg.s: working memory
+g_JFrame	rs.l	1		; the frame header was read
+g_JScans	rs.l	1		; scans decoded
+g_JProg		rs.l	1		; progressive
+g_JStream	rs.l	1		; decoded a row of MCUs at a time
+g_JW		rs.l	1		; the image
+g_JH		rs.l	1
+g_JNf		rs.l	1		; components
+g_JHmax		rs.l	1		; largest sampling factors
+g_JVmax		rs.l	1
+g_JMcuX		rs.l	1		; MCUs across, down
+g_JMcuY		rs.l	1
+g_JShift	rs.l	1		; scale: 0 (1:1) or 3 (1/8)
+g_JBs		rs.l	1		; pixels of a block side (8 >> shift)
+g_JOutW		rs.l	1		; the output
+g_JOutH		rs.l	1
+g_JRestart	rs.l	1		; restart interval (0: none)
+g_JToGo		rs.l	1		; MCUs to the next restart
+g_JAdobe	rs.l	1		; Adobe colour transform or -1
+g_JNs		rs.l	1		; the scan: components,
+g_JScanC	rs.l	4		; ... which (JComp pointers),
+g_JSs		rs.l	1		; spectral selection,
+g_JSe		rs.l	1
+g_JAh		rs.l	1		; successive approximation
+g_JAl		rs.l	1
+g_JDec		rs.l	1		; block decoder
+g_JEob		rs.l	1		; blocks left in an EOB run
+g_JMarker	rs.l	1		; the bits ran into a marker
+g_JCur		rs.l	1		; component of the block
+g_JAcTab	rs.l	1		; its AC table
+g_JLine		rs.l	1		; output: first line of the MCU row,
+g_JLy		rs.l	1		; line in it
+g_JComp		rs.b	4*40		; components (jpeg.s: JC_SIZEOF)
 g_InfOut	rs.l	1		; inflate.s: start of the output,
 g_InfOver	rs.l	1		; bytes read past the end,
 g_InfWork	rs.l	1		; working memory
