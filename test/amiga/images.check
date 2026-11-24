@@ -1,9 +1,9 @@
 #!/bin/sh
-# checks for images.script.  GIF, PNG (twice) and JPEG are decoded by
-# Velox, ILBM by the datatype of both systems; the missing image never
-# loads.
+# checks for images.script.  GIF, PNG (twice), JPEG and WebP are
+# decoded by Velox, ILBM by the datatype of both systems; the missing
+# image never loads.
 d=$(dirname "$1"); fail=0
-want=5
+want=6
 sed 's/^/driver: /' "$d/images.driver"
 grep -q "^images $want\$" "$d/images.driver" || { echo "expected $want images"; fail=1; }
 grep -q "^image loads repaint only what changed" "$d/images.driver" || fail=1

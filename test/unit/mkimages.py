@@ -136,6 +136,15 @@ save(wp.convert("RGB").quantize(16).convert("RGB"), "wl-pal16.webp", lossless=Tr
 save(wp.convert("RGB").quantize(200).convert("RGB"), "wl-pal200.webp", lossless=True)
 save(picture(300, 200).convert("RGB"), "wl-big.webp", lossless=True)
 
+wy = picture(83, 61)
+save(wy.convert("RGB"), "wy-q75.webp", quality=75)
+save(wy.convert("RGB"), "wy-q20.webp", quality=20)
+save(wy.convert("RGB"), "wy-q95.webp", quality=95, method=6)
+save(wy.convert("RGB"), "wy-m0.webp", quality=60, method=0)
+save(picture(320, 240).convert("RGB"), "wy-big.webp", quality=80)
+save(picture(83, 61, alpha=True), "wy-alpha.webp", quality=80)
+save(picture(83, 61, alpha=True), "wy-alpha2.webp", quality=50, alpha_quality=50, method=6)
+
 # broken files: cut short, and with bytes overwritten; decoding them
 # must not crash (their output is not compared: ".bad")
 random.seed(11)

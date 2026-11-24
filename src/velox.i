@@ -626,6 +626,72 @@ g_JAcTab	rs.l	1		; its AC table
 g_JLine		rs.l	1		; output: first line of the MCU row,
 g_JLy		rs.l	1		; line in it
 g_JComp		rs.b	4*40		; components (jpeg.s: JC_SIZEOF)
+g_8Off		rs.b	0		; vp8.s: the working memory:
+g_8Proba	rs.l	1		; token probabilities [4][8][3][11]
+g_8Coef		rs.l	1		; coefficients of a macroblock
+g_8WB		rs.l	1		; the work block
+g_8Top		rs.l	1		; unfiltered bottom rows, by column
+g_8ITop		rs.l	1		; 4x4 modes above, by column
+g_8NzTop	rs.l	1		; nonzero above, by column (10)
+g_8Info		rs.l	1		; loop filter of each macroblock (4)
+g_8Y		rs.l	1		; the planes
+g_8U		rs.l	1
+g_8V		rs.l	1
+g_8Rgb		rs.l	1		; YUV -> RGB tables
+g_8Clip		rs.l	1
+g_8Work		rs.l	1		; (allocated)
+g_8End		rs.l	1		; end of the data
+g_8After	rs.l	1		; end of the first partition
+g_8W		rs.l	1		; the image
+g_8H		rs.l	1
+g_8MbW		rs.l	1		; macroblocks
+g_8MbH		rs.l	1
+g_8MbX		rs.l	1
+g_8MbY		rs.l	1
+g_8YS		rs.l	1		; bytes a row: Y, U/V
+g_8US		rs.l	1
+g_8Seg		rs.l	1		; segmentation
+g_8SegMap	rs.l	1
+g_8SegAbs	rs.l	1
+g_8SegQ		rs.b	4
+g_8SegF		rs.b	4
+g_8SegP		rs.b	4
+g_8Simple	rs.l	1		; loop filter
+g_8Level	rs.l	1
+g_8Sharp	rs.l	1
+g_8UseLfd	rs.l	1
+g_8RefLfd	rs.b	4
+g_8ModeLfd	rs.b	4
+g_8FType	rs.l	1		; 0 none, 1 simple, 2 normal
+g_8Strength	rs.l	8		; limit, ilevel, hev of segment, i4x4
+g_8PMask	rs.l	1		; token partitions - 1
+g_8Base		rs.l	1		; quantizer index
+g_8Dq		rs.b	6		; its deltas
+g_8Q		rs.w	4*6		; steps of each segment
+g_8UseSkip	rs.l	1
+g_8SkipP	rs.l	1
+g_8BD		rs.b	9*20		; bool decoders: first, tokens
+g_8ILeft	rs.b	4		; 4x4 modes to the left
+g_8NzLeft	rs.b	10		; nonzero to the left
+g_8MSeg		rs.l	1		; the macroblock: segment,
+g_8MSkip	rs.l	1		; no tokens,
+g_8MI4		rs.l	1		; 4x4 prediction,
+g_8MModes	rs.b	16		; modes,
+g_8MUV		rs.l	1		; chroma mode,
+g_8MNz		rs.l	1		; any coefficient
+g_8BNz		rs.b	24		; per block: 0, 1 DC, 2 more
+g_8Dc		rs.w	16		; the Y2 block
+g_8QPtr		rs.l	1		; its segment's steps
+g_8TProba	rs.l	1		; token probabilities of the block type
+g_8FH		rs.l	1		; loop filter: step across the edge,
+g_8FV		rs.l	1		; along it,
+g_8FT		rs.l	1		; limit,
+g_8FI		rs.l	1		; interior limit,
+g_8FHev		rs.l	1		; high edge variance threshold,
+g_8FKind	rs.l	1		; 2: macroblock edge, 1: inner
+g_WAlph		rs.l	1		; webp.s: the ALPH chunk,
+g_WAlphLen	rs.l	1		; its length
+g_WArgb		rs.l	1		; its pixels when lossless
 g_VChain	rs.l	1		; vp8l.s: memory to free
 g_VOver		rs.l	1		; bytes read past the end
 g_VW		rs.l	1		; width of the image

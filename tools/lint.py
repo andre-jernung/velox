@@ -108,6 +108,8 @@ def scratch(files):
                 continue
             d = dst.strip()
             reads = regs(src)
+            if not d and re.match(r"(clr|s(t|f|hi|ls|cc|cs|ne|eq|vc|vs|pl|mi|ge|lt|gt|le))(\.b)?$", mn):
+                reads = set()		# Scc/clr dN: a write
             if mn.startswith("movem") and "(" in src:
                 pass				# a load into registers
             elif d and not re.fullmatch(r"[da][0-7]", d):
