@@ -26,7 +26,7 @@ VTEST   := build/vtest
 
 .PHONY: all clean size test dist lint
 
-all: $(TARGET) build/wbrun
+all: $(TARGET) build/wbrun build/mouse
 
 $(TARGET): build/main.o $(CORE)
 	$(VLINK) $(LDFLAGS) -o $@ $^
@@ -41,6 +41,11 @@ build/%.o: src/%.s $(INCS) | build
 build/wbrun: test/wbrun.s | build
 	$(VASM) $(ASFLAGS) -o build/wbrun.o $<
 	$(VLINK) $(LDFLAGS) -o $@ build/wbrun.o
+
+# mouse: moves the pointer / uses the button (the 'select' emulator test)
+build/mouse: test/mouse.s | build
+	$(VASM) $(ASFLAGS) -o build/mouse.o $<
+	$(VLINK) $(LDFLAGS) -o $@ build/mouse.o
 
 build/vtest.o: test/vtest.s $(INCS) | build
 	$(VASM) $(ASFLAGS) -o $@ $<

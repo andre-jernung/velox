@@ -1,0 +1,19 @@
+; select: drag over text with the mouse, it lands on the clipboard
+; (test/amiga/select.host computes where; VELOX:mouse moves the mouse)
+Echo >VELOX:r/select.txt "select"
+Delete >NIL: CLIPS:0 VELOX:r/select.go
+Echo >VELOX:r/select.start ""
+Run >NIL: VELOX:velox http://127.0.0.1:8080/second.html LOG=VELOX:r/select.log
+Lab wait
+IF NOT EXISTS VELOX:r/select.go
+  Wait 1
+  Skip wait BACK
+EndIF
+Execute VELOX:r/select.go
+Wait 2
+Status >ENV:vpid COMMAND=VELOX:velox
+Break $vpid C
+Wait 2
+Delete >NIL: ENV:vpid
+Copy CLIPS:0 VELOX:r/select.iff
+Echo >>VELOX:r/select.txt "done"

@@ -249,6 +249,8 @@ ShowFind:
 ;     of the run's top
 ;--------------------------------------------------------------------
 FindHighlight:
+	tst.l	g_FindRun(a4)
+	beq.s	.x
 	cmp.l	g_FindRun(a4),a2
 	bne.s	.x
 	movem.l	d2-d5,-(sp)

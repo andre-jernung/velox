@@ -525,6 +525,14 @@ g_TestNow	rs.l	1		; fixed clock for tests (0 = real)
 g_CookiesDirty	rs.w	1		; persistent cookies changed
 g_RefreshTicks	rs.l	1		; meta refresh: ticks to go (0 = none)
 g_RefreshUrl	rs.b	URL_MAX		; meta refresh target (relative)
+g_SelOn		rs.l	1		; selecting (button down)
+g_SelShown	rs.l	1		; a selection is drawn
+g_SelA		rs.l	1		; anchor: run, offset
+g_SelAOff	rs.l	1
+g_SelB		rs.l	1		; end: run, offset
+g_SelBOff	rs.l	1
+g_SelFrom	rs.l	1		; scratch
+g_PaintIdx	rs.l	1		; index of the run being painted
 g_FindOn	rs.l	1		; find in page active
 g_FindRun	rs.l	1		; run with the match, or 0
 g_FindIdx	rs.l	1		; its index (-1 none)

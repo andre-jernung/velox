@@ -1,0 +1,21 @@
+#!/usr/bin/env python3
+"""checks for select.script: the clipboard holds the selected text"""
+import os
+import struct
+import sys
+
+r = sys.argv[1]
+d = os.path.dirname(r)
+drv = open(os.path.join(d, "select.driver")).read()
+print("".join("driver: " + l + "\n" for l in drv.splitlines()), end="")
+fail = "ok" not in drv.splitlines()
+p = os.path.join(d, "select.iff")
+data = open(p, "rb").read() if os.path.exists(p) else b""
+text = b""
+if data[:4] == b"FORM" and data[8:16] == b"FTXTCHRS":
+    text = data[20:20 + struct.unpack(">I", data[16:20])[0]]
+print("clipboard: %r" % text)
+if not text.startswith(b"Second page\n") or b"Back to" not in text:
+    print("the selection is not the heading and the next line")
+    fail = True
+sys.exit(1 if fail else 0)

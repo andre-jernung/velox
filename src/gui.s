@@ -17,7 +17,7 @@
 	xdef	GuiSetUrl,GuiSetTitle,GuiScrollTo,GuiNetHook,GuiBusy
 	xdef	GuiRelayout,GuiPageWidth,GuiAbout,DrawStatus,ImgNetHook,GuiProgress
 	xref	FindStart,FindKey,FindHighlight,KeyToChars,NavRefresh
-	xref	CopyAddress,ViewSource,ParseDec,FmtDec,StrCopy
+	xref	CopyAddress,ViewSource,SelPress,SelMove,SelRelease,SelHighlight,ParseDec,FmtDec,StrCopy
 	xref	LayoutDocument,RunCount,RunPtr,StrLen,StrCopyN
 	xref	NavGo,NavBack,NavForward,NavReload,NavHome,NavLink,UrlFixup
 	xref	DomGetAttr,LogEvent,FormStateOf,FormIsControl,FormActivate
@@ -137,6 +137,19 @@ GuiOpen:
 	GFX	SetDrMd
 	bsr	CreateGadgets
 	beq.s	.fail
+	move.l	g_Window(a4),a2		; (the page origin on the screen,
+	moveq	#0,d0			; for tests that use the mouse)
+	move.w	wd_LeftEdge(a2),d0
+	add.l	g_PageX(a4),d0
+	lea	LogPageX(pc),a0
+	suba.l	a1,a1
+	jsr	LogEvent
+	moveq	#0,d0
+	move.w	wd_TopEdge(a2),d0
+	add.l	g_PageY(a4),d0
+	lea	LogPageY(pc),a0
+	suba.l	a1,a1
+	jsr	LogEvent
 	bsr	CreateMenus		; (no menus is not fatal)
 	moveq	#1,d0
 	bra.s	.x
@@ -729,6 +742,7 @@ PaintRange:
 	add.l	d1,d0
 	cmp.l	d6,d0
 	ble.s	.n
+	move.l	d4,g_PaintIdx(a4)
 	bsr	PaintRun
 .n:	addq.l	#1,d4
 	bra.s	.l
@@ -856,13 +870,11 @@ PaintRun:
 	move.l	ru_Text(a2),a0
 	move.l	ru_Len(a2),d0
 	GFX	Text
-	tst.l	g_FindRun(a4)		; the find match
-	beq.s	.nofind
-	move.l	d3,-(sp)
+	move.l	d3,-(sp)		; the find match, the selection
 	sub.w	ru_Base(a2),d3
 	jsr	FindHighlight
+	jsr	SelHighlight
 	move.l	(sp)+,d3
-.nofind:
 	move.l	ru_Link(a2),d0		; keyboard focus: outline the link
 	beq.s	.x
 	cmp.l	g_FocusLink(a4),d0
@@ -2082,7 +2094,10 @@ LinkAt:
 
 ; OnHover - show the link under the mouse in the status line
 OnHover:
-	bsr	LinkAt
+	tst.l	g_SelOn(a4)		; selecting
+	beq.s	.nosel
+	jmp	SelMove
+.nosel:	bsr	LinkAt
 	cmp.l	g_HoverLink(a4),d0
 	beq.s	.x
 	move.l	d0,g_HoverLink(a4)
@@ -2182,11 +2197,15 @@ OnClick:
 	bne.s	.up
 	bsr	LinkAt
 	move.l	d0,g_PressLink(a4)
-	cmp.l	g_EditField(a4),d0	; clicking elsewhere ends editing
+	bne.s	.link
+	jsr	SelPress		; on text: a selection starts
+	moveq	#0,d0
+.link:	cmp.l	g_EditField(a4),d0	; clicking elsewhere ends editing
 	beq.s	.x
 	jmp	FormLeave
 .up:	cmp.w	#IECODE_LBUTTON|IECODE_UP_PREFIX,d3
 	bne.s	.x
+	jsr	SelRelease
 	bsr	LinkAt
 	tst.l	d0
 	beq.s	.x
@@ -2427,6 +2446,8 @@ GuiProgress:
 
 MsgRecv:	dc.b	"Received ",0
 LogRecv:	dc.b	"recv",0
+LogPageX:	dc.b	"pagex",0
+LogPageY:	dc.b	"pagey",0
 MsgOf:		dc.b	" of ",0
 MsgKB:		dc.b	" KB",0
 	even

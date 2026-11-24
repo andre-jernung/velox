@@ -31,7 +31,10 @@ and a single event dispatch point.
   Amiga), and reads Velox's `LOG=` event log. `test/amiga/NAME.prep`, if
   present, runs on the host before boot to create files in `VELOX:t`.
   `build/wbrun PROG` starts a program as Workbench does (with its icon's
-  tool types).
+  tool types). `build/mouse X Y [DOWN|DRAG|UP]` moves the Amiga pointer
+  and uses the left button through input.device (host-side XTEST mouse
+  moves are relative in FS-UAE); Velox logs `pagex`/`pagey`, the page
+  origin on the screen, for such tests.
 - FS-UAE turns cursor keys into a joystick unless `joystick_port_1 = none`
   is set, which the test config does.
 - `OS=3.2 test/emu.sh --auto` runs the same tests on AmigaOS 3.2 (Kickstart
