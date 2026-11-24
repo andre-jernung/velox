@@ -74,6 +74,9 @@ JS is not on the roadmap yet, but it must stay possible to add. That means:
    persistent cookies, meta refresh, frames as links, view source, copy
    address, `:not()`/`:is()` and structural selectors, tables squeezed
    to the window.
+10. [x] Text selection to the clipboard, type-ahead while loading,
+   transfer progress, window geometry, public screen setting, floating
+   images, rowspan, media query ranges, HTTP Basic authentication.
 
 ## Modules
 
@@ -98,6 +101,7 @@ JS is not on the roadmap yet, but it must stay possible to add. That means:
 | img.s       | images through datatypes.library                                |
 | gui.s       | window, gadgets, menus, painting, events                        |
 | find.s      | find in page                                                    |
+| sel.s       | selecting text with the mouse                                   |
 | clip.s      | clipboard                                                       |
 | nav.s       | navigation, history, built-in pages, bookmarks, downloads        |
 
