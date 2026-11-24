@@ -28,6 +28,7 @@
 	xref	DomGetAttr,LogEvent,FormStateOf,FormIsControl,FormActivate
 	xref	FormEditKey,FormLeave,SaveDownload,BookmarkAdd,BookmarksShow
 	xref	PalFree,ImagesStop,ImagesPending,ImagesStep,ImagesFree,ImagePaint
+	xref	KeepFreeAll
 	xref	TaskResume,TaskLoopWait,TaskBusy,TaskAbort,NavStop,ImagesReap,ImagesReapNow,ImagesQuit,FragCheck,TaskNow
 
 PROP_FONT	equ	0
@@ -213,6 +214,7 @@ GuiClose:
 	move.l	g_GList(a4),a0
 	clr.l	g_GList(a4)
 	GT	FreeGadgets
+	jsr	KeepFreeAll		; (pages kept for Back: their images)
 	jsr	ImagesFree		; (before the screen goes)
 	clr.l	g_PageFreeHook(a4)
 	move.l	g_DataTypesBase(a4),d0

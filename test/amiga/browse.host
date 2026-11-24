@@ -61,10 +61,11 @@ try:
     lines = wait_log(log, "page " + U + "second.html", 3)
     step("ctrl+f goes forward")
     cached = [l for l in lines if l.startswith("cached ")]
-    for want in ("second.html", "index.html"):
-        if "cached " + U + want not in cached:
-            raise AssertionError("%s not from the cache: %r" % (want, cached))
-    step("back and forward come from the cache")
+    restored = [l for l in lines if l.startswith("restored ")]
+    for want in ("second.html 1", "index.html 0", "second.html 1"):
+        if "restored " + U + want not in restored:
+            raise AssertionError("%s not kept: %r" % (want, restored))
+    step("back and forward show the pages kept")
     a.key("ctrl+r")
     lines = wait_log(log, "page " + U + "second.html", 4)
     if len([l for l in lines if l.startswith("cached ")]) != len(cached):

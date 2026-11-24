@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+"""Host side of keep.script: Back/Forward to kept pages."""
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from xdrive import Amiga, wait_log  # noqa: E402
+
+r = sys.argv[1]
+log = os.path.join(r, "keep.log")
+log2 = os.path.join(r, "keep2.log")
+out = open(os.path.join(r, "keep.driver"), "w")
+U = "http://127.0.0.1:8080/"
+
+
+def step(msg):
+    out.write(msg + "\n")
+    out.flush()
+
+
+def since(lines, mark):
+    """The lines after the last one that starts with `mark`."""
+    i = max(i for i, l in enumerate(lines) if l.startswith(mark))
+    return lines[i + 1:]
+
+
+def go(a, url):
+    a.key("ctrl+l")
+    a.type("127.0.0.1:8080/" + url)
+    a.key("Return")
+
+
+try:
+    a = Amiga()
+    wait_log(log, "page " + U + "form.html")
+    time.sleep(1)
+    a.key("Tab")
+    wait_log(log, "focus q")
+    a.key("Return")            # edit the field
+    a.type(" xyz")
+    a.key("Escape")            # done editing (the focus stays)
+    time.sleep(0.5)
+    go(a, "third.html")
+    lines = wait_log(log, "page " + U + "third.html")
+    if "kept " + U + "form.html 0" not in lines:
+        raise AssertionError("form.html was not kept")
+    step("the page left is kept")
+    a.key("Down", 4)
+    time.sleep(2)
+    lines = wait_log(log, "scroll")
+    top = [l for l in lines if l.startswith("scroll ")][-1].split()[1]
+    a.key("BackSpace")
+    lines = wait_log(log, "restored " + U + "form.html 0")
+    after = since(lines, "kept " + U + "third.html")
+    if any(l.startswith("go ") or l.startswith("shown ") for l in after):
+        raise AssertionError("back loaded the page: %r" % after)
+    step("back shows the kept page, nothing loaded")
+    a.key("ctrl+f")
+    lines = wait_log(log, "restored " + U + "third.html 1")
+    got = [l for l in lines if l.startswith("top ")][-1].split()[1]
+    if got != top:
+        raise AssertionError("scroll position %s, was %s" % (got, top))
+    step("forward shows the kept page where it was (top %s)" % got)
+    time.sleep(1)
+    a.shot(os.path.join(r, "keep-third.png"))
+    a.key("BackSpace")
+    wait_log(log, "restored " + U + "form.html 0", 2)
+    a.key("Tab")               # the focus is still on the field: on to
+    a.key("Tab", 3)            # c1 c2 s go
+    wait_log(log, "focus go")
+    a.key("Return")
+    want = U + "echo?q=hello+xyz&c1=on&s=g&h=x+y"
+    wait_log(log, "page " + want)
+    step("the text typed was kept: " + want)
+    a.key("ctrl+q")
+    # Velox/KeepPages 1: one page kept, the farthest one gives way
+    wait_log(log2, "page " + U + "form.html")
+    time.sleep(1)
+    go(a, "second.html")
+    wait_log(log2, "page " + U + "second.html")
+    go(a, "third.html")
+    lines = wait_log(log2, "page " + U + "third.html")
+    if "dropped 0" not in lines:
+        raise AssertionError("form.html was not dropped: %r" % lines)
+    step("one page kept: the oldest gives way")
+    a.key("BackSpace")
+    wait_log(log2, "restored " + U + "second.html 1")
+    a.key("BackSpace")
+    lines = wait_log(log2, "page " + U + "form.html", 2)
+    if "restored " + U + "form.html 0" in lines:
+        raise AssertionError("form.html restored after it was dropped")
+    step("the page dropped is loaded again")
+    a.key("ctrl+q")
+    step("ok")
+except Exception as e:  # report and let the Amiga side time out
+    step("FAIL " + repr(e))
+    try:
+        Amiga().key("ctrl+q")
+    except Exception:
+        pass

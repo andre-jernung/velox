@@ -64,6 +64,9 @@ icon (remove the parentheses to enable one) or environment variables
 | `DOWNLOADDIR=drawer` | `Velox/DownloadDir` | where downloads go (default `RAM:`) |
 | `NOIMAGES`           | `Velox/NoImages`    | do not load images                  |
 | `PUBSCREEN=name`     | `Velox/PubScreen`   | open on that public screen          |
+|                      | `Velox/CacheDir`    | disk cache drawer (default `PROGDIR:Cache`) |
+|                      | `Velox/CacheSize`   | disk cache size in KB (default 4096, 0: none) |
+|                      | `Velox/KeepPages`   | pages kept in memory for Back/Forward (default 4, 0: none) |
 |                      | `Velox/InsecureTLS` | skip certificate checks (testing)   |
 
 The window opens where it was last closed (`Velox/Window`).

@@ -38,6 +38,8 @@ bmh_Height		equ	2
 	xdef	ProfRead,ProfLog
 	ENDC
 	xdef	ImagesStop,ImagesStart,ImagesStep,ImagesPending,ImagesFree,ImagePaint
+	xdef	ImgListFree,ImagesAgain
+	xref	KeepEvict
 	xref	PageAlloc,DomGetAttr,UrlResolve,HttpGetCached,ParseDec,BufFree
 	xref	G,BusyEvents,PicInfo,PicDecode,PicFree,PalInit,PicToBitMap,PicAlloc,BufAppend,BufClear,GuiStatus,GuiRelayout,GuiRefresh,GuiPageWidth,GuiPaintImage
 	xref	FmtDec,StrCopy,LogEvent,ImgNetHook
@@ -135,19 +137,66 @@ ImagesPending:
 	rts
 
 ;--------------------------------------------------------------------
+; ImagesAgain - a kept page is shown again: the images ImagesStop left
+; are to be loaded (ImagesLoad); those there are skipped
+; Out: d0 = 1 if there are any (CCR set)
+;--------------------------------------------------------------------
+ImagesAgain:
+	tst.l	g_ImgCut(a4)
+	beq.s	.x
+	clr.l	g_ImgCut(a4)
+	clr.l	g_ImgNext(a4)
+	move.l	g_BgList(a4),d0
+.b:	beq.s	.y
+	move.l	d0,a0
+	cmp.l	#2,bg_State(a0)
+	bne.s	.n
+	clr.l	bg_State(a0)
+.n:	move.l	bg_Next(a0),d0
+	bra.s	.b
+.y:	moveq	#1,d0
+.x:	rts
+
+;--------------------------------------------------------------------
+; ChipRoom - is there a piece of chip memory of d0 bytes?  Pages kept
+; for Back give theirs up for it.
+; Out: d0 = 1 if so (CCR set)
+;--------------------------------------------------------------------
+ChipRoom:
+	move.l	d2,-(sp)
+	move.l	d0,d2
+.l:	move.l	#MEMF_CHIP|MEMF_LARGEST,d1
+	EXEC	AvailMem
+	cmp.l	d2,d0
+	bhs.s	.y
+	jsr	KeepEvict
+	bne.s	.l
+	moveq	#0,d0
+	bra.s	.x
+.y:	moveq	#1,d0
+.x:	movem.l	(sp)+,d2
+	rts
+
+;--------------------------------------------------------------------
 ; ImagesStop - load no more images of this page (Esc)
 ;--------------------------------------------------------------------
 ImagesStop:
 	move.l	g_BgList(a4),d0		; backgrounds: none more either
 .bs:	beq.s	.bd
 	move.l	d0,a0
-	move.l	#1,bg_State(a0)
-	move.l	bg_Next(a0),d0
+	tst.l	bg_State(a0)
+	bne.s	.bn
+	moveq	#2,d1			; (left: ImagesAgain)
+	move.l	d1,bg_State(a0)
+	move.l	d1,g_ImgCut(a4)
+.bn:	move.l	bg_Next(a0),d0
 	bra.s	.bs
 .bd:	move.l	g_ImgNext(a4),d0
 	cmp.l	g_ImgCount(a4),d0
 	bhs.s	.x
 	move.l	g_ImgCount(a4),g_ImgNext(a4)
+	moveq	#1,d0
+	move.l	d0,g_ImgCut(a4)
 	lea	LogImgStop(pc),a0
 	suba.l	a1,a1
 	jsr	LogEvent
@@ -248,10 +297,9 @@ BgStep:
 	move.l	#1,bg_State(a5)
 	lea	MsgBg(pc),a0
 	jsr	GuiStatus
-	move.l	#MEMF_CHIP|MEMF_LARGEST,d1
-	EXEC	AvailMem
-	cmp.l	#CHIP_RESERVE,d0
-	blo	.x
+	move.l	#CHIP_RESERVE,d0
+	bsr	ChipRoom
+	beq	.x
 	lea	bg_Url(a5),a0		; fetch (the user can stop it)
 	lea	g_LinkUrl(a4),a1
 	move.l	#URL_MAX-1,d0
@@ -322,16 +370,14 @@ DecodeBg:
 	move.l	(sp)+,d4
 	bsr.s	.tile
 	exg	d4,d5			; d4/d5 = width, height
-	move.l	#MEMF_CHIP|MEMF_LARGEST,d1	; chip memory for it?
-	EXEC	AvailMem
-	move.l	d4,d1
-	add.l	#15,d1
-	lsr.l	#3,d1
-	mulu.l	d5,d1
-	lsl.l	#3,d1
-	add.l	#CHIP_RESERVE,d1
-	cmp.l	d1,d0
-	blo.s	.x
+	move.l	d4,d0			; chip memory for it?
+	add.l	#15,d0
+	lsr.l	#3,d0
+	mulu.l	d5,d0
+	lsl.l	#3,d0
+	add.l	#CHIP_RESERVE,d0
+	bsr	ChipRoom
+	beq.s	.x
 	jsr	PalInit
 	move.l	d4,g_DecW(a4)
 	move.l	d5,g_DecH(a4)
@@ -399,10 +445,9 @@ ImagesStep:
 	lea	g_StatusBuf(a4),a0
 	jsr	GuiStatus
 	; enough chip memory left?
-	move.l	#MEMF_CHIP|MEMF_LARGEST,d1
-	EXEC	AvailMem
-	cmp.l	#CHIP_RESERVE,d0
-	blo	.done
+	move.l	#CHIP_RESERVE,d0
+	bsr	ChipRoom
+	beq	.done
 	; the URL
 	move.l	a5,a0
 	lea	AnSrc(pc),a1
@@ -1191,16 +1236,14 @@ WantedSize:
 	cmp.l	#4000,d5		; sanity
 	bhi	.no
 	; chip memory for the copy?
-	move.l	#MEMF_CHIP|MEMF_LARGEST,d1
-	EXEC	AvailMem
-	move.l	d4,d1
-	add.l	#15,d1
-	lsr.l	#3,d1
-	mulu.l	d5,d1
-	lsl.l	#3,d1			; up to 8 planes
-	add.l	#CHIP_RESERVE,d1
-	cmp.l	d1,d0
-	blo	.no
+	move.l	d4,d0
+	add.l	#15,d0
+	lsr.l	#3,d0
+	mulu.l	d5,d0
+	lsl.l	#3,d0			; up to 8 planes
+	add.l	#CHIP_RESERVE,d0
+	bsr	ChipRoom
+	beq	.no
 	moveq	#1,d0
 	rts
 .no:	moveq	#0,d0
@@ -1379,13 +1422,17 @@ PxAttr:
 ; ImagesFree - free the bitmaps of the page's images (page change)
 ;--------------------------------------------------------------------
 ImagesFree:
-	move.l	a2,-(sp)
 	clr.l	g_BgList(a4)		; (their records are in the page)
 	clr.l	g_PageBgRec(a4)
 	clr.l	g_ImgCount(a4)
 	clr.l	g_ImgNext(a4)
-	move.l	g_ImgList(a4),a2
+	move.l	g_ImgList(a4),a0
 	clr.l	g_ImgList(a4)
+; ImgListFree - free the bitmaps of the ImageInfos in list a0 (a page
+; kept for Back: keep.s)
+ImgListFree:
+	move.l	a2,-(sp)
+	move.l	a0,a2
 	GFX	WaitBlit
 .l:	move.l	a2,d0
 	beq.s	.x

@@ -38,9 +38,10 @@ try:
     wait_log(log, "page " + want)
     step("GET form: " + want)
     a.key("BackSpace")
-    wait_log(log, "page " + U + "form.html", 2)
-    # select: 4th control; cycle green -> blue
-    a.key("Tab", 4)
+    wait_log(log, "restored " + U + "form.html", 1)
+    # the page kept, its focus on q still; select: 3 more; cycle green
+    # -> blue
+    a.key("Tab", 3)
     wait_log(log, "focus s")
     a.key("Return")
     # radio "2": q c1 c2 s go msg r r -> two more after go, msg

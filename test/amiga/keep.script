@@ -1,0 +1,25 @@
+; keep: Back/Forward show kept pages at once (test/amiga/keep.host);
+; then with Velox/KeepPages 1 the oldest kept page gives way.  No memory
+; may be lost.
+Echo >VELOX:r/keep.txt "keep"
+; warm-up run (one-time OS allocations: fonts, CLI, ...)
+Run >NIL: VELOX:velox http://127.0.0.1:8080/second.html
+Wait 4
+Status >ENV:vpid COMMAND=VELOX:velox
+Break $vpid C
+Wait 2
+Delete >NIL: ENV:vpid
+Avail >NIL: FLUSH
+Echo >>VELOX:r/keep.txt "mem_before " NOLINE
+Avail >>VELOX:r/keep.txt TOTAL
+Echo >VELOX:r/keep.start ""
+VELOX:velox http://127.0.0.1:8080/form.html LOG=VELOX:r/keep.log
+Echo >>VELOX:r/keep.txt "exit rc=$RC"
+Avail >NIL: FLUSH
+Echo >>VELOX:r/keep.txt "mem_after " NOLINE
+Avail >>VELOX:r/keep.txt TOTAL
+SetEnv Velox/KeepPages 1
+VELOX:velox http://127.0.0.1:8080/form.html LOG=VELOX:r/keep2.log
+Echo >>VELOX:r/keep.txt "exit2 rc=$RC"
+Delete >NIL: ENV:Velox/KeepPages
+Echo >>VELOX:r/keep.txt "done"

@@ -9,6 +9,7 @@
 
 	xdef	MemInit,MemExit,Alloc,Free,PageNew,PageFree,PageAlloc
 	xdef	BufReserve,BufAppend,BufAppendByte,BufAppendStr,BufClear,BufFree
+	xref	PageLeave,KeepEvict
 
 	section	code,code
 
@@ -79,12 +80,16 @@ Free:
 ;--------------------------------------------------------------------
 PageNew:
 	movem.l	d2,-(sp)
-	bsr.s	PageFree
+	jsr	PageLeave		; (kept for Back, or freed)
 	move.l	#MEMF_ANY|MEMF_CLEAR,d0
 	move.l	#32768,d1
 	move.l	#8192,d2
 	EXEC	CreatePool
 	move.l	d0,g_PagePool(a4)
+	clr.l	g_PageDone(a4)		; (not in the history yet)
+	clr.l	g_ImgCut(a4)
+	moveq	#-1,d1
+	move.l	d1,g_PageHist(a4)
 	movem.l	(sp)+,d2
 	tst.l	d0
 	bne.s	.x
@@ -120,13 +125,18 @@ PageFree:
 ; Out: d0 = pointer or 0 (g_Error = ERR_NOMEM)
 ;--------------------------------------------------------------------
 PageAlloc:
+	move.l	d0,-(sp)
+.try:	move.l	(sp),d0
 	move.l	g_PagePool(a4),a0
 	EXEC	AllocPooled
 	tst.l	d0
 	bne.s	.x
+	jsr	KeepEvict		; pages kept for Back give way
+	bne.s	.try
 	SETERR	ERR_NOMEM
 	moveq	#0,d0			; (Z set again after SETERR)
-.x:	rts
+.x:	addq.l	#4,sp			; (CCR kept)
+	rts
 
 ;--------------------------------------------------------------------
 ; BufReserve - make room for d0 more bytes (plus a terminating NUL)

@@ -60,6 +60,8 @@ MAX_REDIRECTS	equ	8
 STATUS_MAX	equ	160		; status line / title buffers
 PEN_CACHE	equ	64		; colours with an allocated pen
 HIST_ENTRIES	equ	32
+KEEP_PAGES	equ	4		; pages kept for Back/Forward
+KEEP_FREE	equ	384*1024	; memory left free when keeping one
 
 RC_OK		equ	0
 RC_WARN		equ	5
@@ -290,6 +292,28 @@ CS_SIZEOF	rs.b	0
 CSS_IDBUCKETS	equ	64
 CSS_CLBUCKETS	equ	128
 CSS_MAXMATCH	equ	64		; matched rules kept per element
+
+;--------------------------------------------------------------------
+; a page kept for its history entry (keep.s): the globals that make
+; the page shown, copied (KeepTab lists them)
+;--------------------------------------------------------------------
+	RSRESET
+kp_Pool		rs.b	28		; g_PagePool, g_PageSrc .. g_BaseHref
+kp_Runs		rs.b	24		; g_Runs, g_Anchors
+kp_Css		rs.b	28		; g_CssIdTab .. g_CssCacheW
+kp_Img		rs.b	24		; g_ImgQueue .. g_ImgList
+kp_Bg		rs.b	12		; g_PageBgRec .. g_BgList
+kp_Focus	rs.b	8		; g_FocusLink, g_FocusIdx
+kp_Edit		rs.l	1		; g_EditField
+kp_Lay		rs.b	20		; g_LayWidth .. g_LinkColor
+kp_Charset	rs.l	1
+kp_Status	rs.l	1
+kp_StyleGen	rs.l	1
+kp_ScrollY	rs.l	1
+kp_Done		rs.b	12		; g_PageDone, g_PageHist, g_ImgCut
+kp_Url		rs.b	URL_MAX
+kp_Title	rs.b	STATUS_MAX
+KP_SIZEOF	rs.b	0
 
 ;--------------------------------------------------------------------
 ; Run - one item of the display list made by layout
@@ -891,6 +915,11 @@ g_WantScroll	rs.l	1		; scroll position to restore or -1
 g_HistPos	rs.l	1		; current history entry or -1
 g_HistCount	rs.l	1
 g_Hist		rs.l	HIST_ENTRIES*2	; URL, scroll position
+g_HistKept	rs.l	HIST_ENTRIES	; the entry's page kept (keep.s) or 0
+g_KeepMax	rs.l	1		; pages kept at most (Velox/KeepPages)
+g_PageDone	rs.l	1		; the page is all there (-1: never kept)
+g_PageHist	rs.l	1		; its history entry, or -1
+g_ImgCut	rs.l	1		; images of the page were left unloaded
 g_PageUrl	rs.b	URL_MAX		; URL of the page shown
 g_NavUrl	rs.b	URL_MAX		; URL being loaded
 g_LinkUrl	rs.b	URL_MAX

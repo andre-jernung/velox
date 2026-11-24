@@ -92,6 +92,9 @@ Main:
 	move.l	d0,g_WantScroll(a4)
 	move.l	d0,g_FocusIdx(a4)
 	move.l	d0,g_NavUndo(a4)
+	move.l	d0,g_PageHist(a4)
+	moveq	#KEEP_PAGES,d0
+	move.l	d0,g_KeepMax(a4)
 	moveq	#RC_FAIL,d2
 	bsr	OpenLibs
 	beq	.cleanup
@@ -265,14 +268,30 @@ LoadSettings:
 	moveq	#0,d4
 	DOS	GetVar
 	tst.l	d0
-	ble.s	.x
+	ble.s	.keep
 	moveq	#1,d0
 	move.l	d0,g_Insecure(a4)
+.keep:	lea	VarKeep(pc),a0		; Velox/KeepPages: pages kept for
+	move.l	a0,d1			; Back/Forward (0: none)
+	lea	g_VarBuf(a4),a0
+	move.l	a0,d2
+	move.l	#255,d3
+	moveq	#0,d4
+	DOS	GetVar
+	tst.l	d0
+	ble.s	.x
+	lea	g_VarBuf(a4),a0
+	jsr	ParseDec
+	cmp.l	#HIST_ENTRIES,d0
+	bls.s	.km
+	moveq	#HIST_ENTRIES,d0
+.km:	move.l	d0,g_KeepMax(a4)
 .x:	movem.l	(sp)+,d2-d4
 	rts
 
 VarProxy:	dc.b	"Velox/Proxy",0
 VarInsecure:	dc.b	"Velox/InsecureTLS",0
+VarKeep:	dc.b	"Velox/KeepPages",0
 VarDlDir:	dc.b	"Velox/DownloadDir",0
 VarNoImg:	dc.b	"Velox/NoImages",0
 VarHome:	dc.b	"Velox/Home",0

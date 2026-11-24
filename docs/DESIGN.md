@@ -85,7 +85,8 @@ default 4096, 0 for none; the oldest files go).
   it is still fresh: 304 keeps it; a newer version is shown as it comes,
   where the user had scrolled to, unless the user has typed into the
   page meanwhile (then the status line says so). Offline, the copy
-  stays. Back and Forward use the cache as it is.
+  stays. Back and Forward to a page that was not kept (see below) use
+  the cache as it is.
 - **Style sheets** come from memory, then disk (checked when stale),
   then the network.
 - **Images** are kept as they were shown: scaled and dithered for this
@@ -98,6 +99,25 @@ Caching the parsed DOM instead of the page's HTML was measured and
 rejected: showing a 53 KB page from the cache takes 1.0 s to parse but
 4.0 s to lay out on a stock A1200, so a saved DOM would save a sixth
 while tying the cache to the program's data layout.
+
+### Kept pages (Back and Forward)
+
+A page that is left is not freed but kept with its history entry
+(keep.s): its pool (DOM, styles, CSS, form state), its source, runs and
+anchors, its images' bitmaps, and the globals that make it the page
+shown (`KeepTab`: copied into a `KeepPage` record and back). Back or
+Forward to that entry swaps it in: it is shown as it was left, with its
+scroll position, focus and what was typed, with nothing fetched, parsed
+or laid out (unless the window's width changed); only painted. On a
+stock A1200 that takes 0.1 s for big.html, which takes 5.7 s from the
+disk cache. Images it had not loaded yet load then.
+
+Only complete pages are kept, not error pages, and not a page replaced
+by itself (Reload, a newer version of a cached copy). At most
+`Velox/KeepPages` (default 4) are kept, and only while 384 KB stay
+free; the kept page farthest from the current entry goes first, also
+when a page allocation or an image's chip memory would fail otherwise.
+Like other browsers, Back does not check the server; Reload does.
 
 ### Painting
 
@@ -180,6 +200,8 @@ JS is not on the roadmap yet, but it must stay possible to add. That means:
 12. [x] The loader as a coroutine of the event loop, pages shown while
    they come, instant in-page links, disk cache (pages, style sheets,
    images as shown), styles kept per element, painting rectangles.
+13. [ ] Pages kept in memory for Back/Forward; laid-out pages on disk;
+   faster layout.
 
 ## Modules
 
@@ -192,6 +214,7 @@ JS is not on the roadmap yet, but it must stay possible to add. That means:
 | conn.s      | sockets (non-blocking), AmiSSL, DNS cache, I/O through `WaitSelect` |
 | http.s      | requests, responses, redirects, keep-alive                      |
 | task.s      | the loader: a coroutine of the event loop                       |
+| keep.s      | pages kept for Back/Forward                                     |
 | cache.s     | memory cache of recent responses                                |
 | diskcache.s | disk cache: pages and style sheets, images as shown             |
 | cookies.s   | cookie store, persistent cookies in ENVARC:                     |

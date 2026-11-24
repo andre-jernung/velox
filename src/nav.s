@@ -23,6 +23,7 @@
 	xref	GuiPageWidth,GuiScrollTo,LogEvent,CssLoad,BufFree,ImagesStart
 	xref	GuiProgress,TaskAbort,TaskStart,ImagesLoad,TaskBusy,TaskNow
 	xref	HtmlBegin,HtmlMore,IsValidUtf8,GuiRelayout
+	xref	PageRestore,KeepDrop,ImagesAgain
 
 HIST_MAX	equ	HIST_ENTRIES
 NAV_HISTORY	equ	1
@@ -517,16 +518,19 @@ ShowCached:
 	moveq	#1,d0
 .x:	rts
 
-; NavHistory - add g_PageUrl to the history as flags d3 say
+; NavHistory - add g_PageUrl to the history as flags d3 say; the page
+; shown belongs to the current entry then
 NavHistory:
 	btst	#0,d3
 	beq.s	.x
 	btst	#3,d3			; NAV_REPLACE (a meta refresh)
 	beq.s	.push
-	bra	HistoryReplace
+	bsr	HistoryReplace
+	bra.s	.x
 .push:	lea	g_PageUrl(a4),a0
-	bra	HistoryPush
-.x:	rts
+	bsr	HistoryPush
+.x:	move.l	g_HistPos(a4),g_PageHist(a4)
+	rts
 
 ;--------------------------------------------------------------------
 ; NavLoad - (the loader's job) load g_NavUrl (g_NavFlags) and show it,
@@ -953,6 +957,8 @@ ErrorPage:
 	bsr	GenEsc
 	lea	PgErr3(pc),a1
 	bsr	Gen
+	moveq	#-1,d0			; (never kept: Back tries again)
+	move.l	d0,g_PageDone(a4)
 	bra	GenEnd
 
 PgErr1:	dc.b	"<title>Error</title><h2>Cannot show this page</h2><p><b>",0
@@ -1656,6 +1662,11 @@ ShowPage:
 
 ; ShowDone - the page is all there: log it (tests), queue its images
 ShowDone:
+	tst.l	g_PageDone(a4)		; (to be kept for Back, unless an
+	bmi.s	.nd			;  error page)
+	moveq	#1,d0
+	move.l	d0,g_PageDone(a4)
+.nd:
 	IFD	PROFILE
 	jsr	ProfLog			; (stage times, for the speed test)
 	ENDC
@@ -1875,6 +1886,8 @@ HistoryReplace:
 	move.l	a2,a1
 	jsr	StrCopy
 	move.l	g_HistPos(a4),d0
+	jsr	KeepDrop		; (a page kept for it: not this one)
+	move.l	g_HistPos(a4),d0
 	lea	g_Hist(a4),a0
 	move.l	(a0,d0.l*8),a1
 	move.l	a2,(a0,d0.l*8)
@@ -1888,12 +1901,24 @@ HistoryReplace:
 HistoryDropLast:
 	subq.l	#1,g_HistCount(a4)
 	move.l	g_HistCount(a4),d0
+	jsr	KeepDrop
+	move.l	g_HistCount(a4),d0
 	lea	g_Hist(a4),a0
 	move.l	(a0,d0.l*8),a1
 	jmp	Free
 
 HistoryDropFirst:
-	lea	g_Hist(a4),a0
+	moveq	#0,d0
+	jsr	KeepDrop
+	lea	g_HistKept(a4),a0	; (kept pages move along)
+	moveq	#HIST_ENTRIES-2,d0
+.k:	move.l	4(a0),(a0)+
+	dbf	d0,.k
+	clr.l	(a0)
+	tst.l	g_PageHist(a4)		; (0: dropped, -1 by KeepDrop)
+	ble.s	.ph
+	subq.l	#1,g_PageHist(a4)
+.ph:	lea	g_Hist(a4),a0
 	move.l	(a0),a1
 	move.l	g_HistCount(a4),d0
 	subq.l	#2,d0
@@ -1920,6 +1945,9 @@ NavStep:
 	bmi.s	.x
 	cmp.l	g_HistCount(a4),d0
 	bge.s	.x
+	lea	g_HistKept(a4),a0	; kept: shown at once
+	tst.l	(a0,d0.l*4)
+	bne	NavKept
 	move.l	g_HistPos(a4),-(sp)	; (where it was: if stopped, the
 	move.l	d0,-(sp)		;  history stays there)
 	bsr	SaveScroll
@@ -1932,6 +1960,94 @@ NavStep:
 	bsr	NavGo
 	move.l	(sp)+,g_NavUndo(a4)
 .x:	rts
+
+;--------------------------------------------------------------------
+; NavKept - Back/Forward to history entry d0, whose page was kept:
+; shown as it was left (laid out again only if the width changed), its
+; images that were left loaded now
+;--------------------------------------------------------------------
+NavKept:
+	move.l	d2,-(sp)
+	PROFB	12
+	move.l	d0,d2
+	bsr	SaveScroll		; (the entry left)
+	move.l	d2,g_HistPos(a4)
+	lea	g_HistKept(a4),a1
+	move.l	(a1,d2.l*4),a0
+	clr.l	(a1,d2.l*4)
+	jsr	PageRestore
+	move.l	d2,g_PageHist(a4)
+	moveq	#-1,d0
+	move.l	d0,g_NavUndo(a4)
+	move.l	d0,g_WantScroll(a4)
+	clr.l	g_FindOn(a4)		; what belonged to the page left
+	clr.l	g_FindRun(a4)
+	clr.l	g_SelOn(a4)
+	clr.l	g_SelShown(a4)
+	clr.l	g_HoverLink(a4)
+	clr.l	g_PressLink(a4)
+	clr.l	g_RefreshTicks(a4)
+	clr.l	g_FragPend(a4)
+	clr.l	g_EditField(a4)		; (the focus stays, not the editing)
+	bsr	FragSet
+	lea	g_TitleText(a4),a0
+	jsr	GuiSetTitle
+	lea	g_PageUrl(a4),a0
+	jsr	GuiSetUrl
+	lea	g_TitleText(a4),a0
+	lea	g_StatusText(a4),a1
+	move.l	#STATUS_MAX-1,d0
+	jsr	StrCopyN
+	addq.l	#1,g_PageGen(a4)	; (all of the view is painted)
+	jsr	GuiPageWidth
+	cmp.l	g_LayWidth(a4),d0
+	bne.s	.lay
+	moveq	#1,d0			; the runs are those of the page
+	move.l	d0,g_ViewLive(a4)
+	move.l	g_ScrollY(a4),d0	; (the window may be smaller now)
+	move.l	g_DocHeight(a4),d1
+	sub.l	g_PageH(a4),d1
+	bpl.s	.m
+	moveq	#0,d1
+.m:	cmp.l	d1,d0
+	ble.s	.s
+	move.l	d1,g_ScrollY(a4)
+.s:	jsr	GuiRefresh
+	bra.s	.log
+.lay:	jsr	GuiRelayout		; another width
+.log:	PROFE	12
+	IFD	PROFILE
+	jsr	ProfLog
+	ENDC
+	lea	LogRestored(pc),a0	; (for tests)
+	lea	g_PageUrl(a4),a1
+	move.l	d2,d0
+	jsr	LogEvent
+	lea	LogPage(pc),a0
+	lea	g_PageUrl(a4),a1
+	move.l	g_DocHeight(a4),d0
+	jsr	LogEvent
+	lea	LogTop(pc),a0
+	suba.l	a1,a1
+	move.l	g_ScrollY(a4),d0
+	jsr	LogEvent
+	jsr	ImagesAgain		; images left unloaded: now
+	beq.s	.x
+	lea	KeptImages(pc),a0
+	jsr	TaskStart
+.x:	move.l	(sp)+,d2
+	rts
+
+; KeptImages - (the loader's job) a kept page's images left unloaded
+KeptImages:
+	moveq	#2,d0			; (the page shown loads)
+	move.l	d0,g_LoadPhase(a4)
+	jsr	ImagesLoad
+	clr.l	g_LoadPhase(a4)
+	rts
+
+LogRestored:	dc.b	"restored",0
+	even
 
 NavReload:
 	move.l	g_ScrollY(a4),g_WantScroll(a4)
