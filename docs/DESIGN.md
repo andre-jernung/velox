@@ -33,26 +33,71 @@ interface, so stages can be unit-tested in isolation.
 
 ### Staying responsive
 
-The window is served while anything loads. Sockets are non-blocking,
-so connecting, the TLS handshake and reading all wait in `WaitSocket`
-(`WaitSelect` on the socket and the window). A window message calls the
-network hook, and the hook calls `BusyEvents`. Messages that only change
-the view, such as scrolling, the scroller, hovering, selecting, resizing
-and window refreshes, are handled there and then (`IsViewEvent`). Other
-messages are kept in a queue (`Defer`) that the event loop replays
-first:
-- **While images load,** the first kept message stops the image fetch.
-  The image is fetched again later.
-- **While a page loads,** keys are kept for after the load. Gadgets,
-  menus and links of the page shown stop the load, and that page stays
-  (as with Esc and Reload).
-- **Image decoding** (`NewDTObject` and the remapping) runs in a process
-  of its own at a lower priority. Velox serves the window while it
-  waits.
+Velox is one process with one event loop, which always serves the window
+first. Loading runs as a coroutine of that loop (task.s, "the loader"):
+fetching a page, its style sheets and images, parsing and laying out run
+on a stack of their own in the same process.
+- **Waiting.** Where the loader would wait (`WaitSocket` for a socket,
+  the image decoder process), it yields to the event loop instead. The
+  loop sleeps in `WaitSelect` on the window, Ctrl-C and the loader's
+  socket or signal, and resumes the loader when that is ready.
+- **Computing.** While it computes, the loader yields whenever a window
+  message is waiting (`TaskPoll`; the parser checks every 32 tokens).
+- **No locking.** Control changes hands only at those points. There the
+  DOM, the runs and the view are always consistent: a layout never
+  yields. So window messages need no special handling while something
+  loads: scrolling, typing, clicking all work as usual.
+- **Stopping.** `NavGo` returns at once. A link to another page stops the
+  load in progress (`TaskAbort`): the loader's waits fail with
+  `ERR_ABORT` and it unwinds through its normal error paths, closing
+  connections and freeing buffers. Esc, Reload and Ctrl-C stop it the
+  same way. A #fragment of the page shown just scrolls, through the
+  anchors the last layout noted (`g_Anchors`). If the anchor has not
+  come yet, the page scrolls to it after the layout that brings it,
+  unless the user scrolls first.
+- **The image decoders** run in a process of their own at a lower
+  priority. They are long computations that would be slow to cut into
+  pieces, and a lower priority gives exactly "only when the window has
+  nothing to do". A decoder left running by a stopped load ends on its
+  own, and what it made is freed then.
+
+Pages are shown while they come. After each piece of the body,
+`PageHook` decodes it (a UTF-8 character cut at the end waits) and
+parses it (`HtmlMore`: a token not yet complete waits). Once the body
+begins, the style sheets are fetched, with the page's response put aside
+meanwhile, and the page is shown. It is laid out again as more comes, at
+most every 4 times the last layout took (at least 1 s), never within
+0.3 s of the user scrolling and never while the scroller is held.
+Elements keep their computed style (`StyleOf`), so laying out again
+costs much less than the first time.
 
 Host names that were already looked up are cached, because
 `gethostbyname` blocks. What still blocks: DNS for a new host, the
-crypto of the TLS handshake, and parsing and layout.
+crypto of the TLS handshake, and one layout of a big page.
+
+### Disk cache
+
+diskcache.s keeps pages and style sheets on disk as they came, with
+their validators (ETag, Last-Modified) and max-age, in a cache directory
+(`Velox/CacheDir`, default `PROGDIR:Cache`; `Velox/CacheSize` in KB,
+default 4096, 0 for none; the oldest files go).
+- **Pages.** A page in the cache is shown at once, then checked unless
+  it is still fresh: 304 keeps it; a newer version is shown as it comes,
+  where the user had scrolled to, unless the user has typed into the
+  page meanwhile (then the status line says so). Offline, the copy
+  stays. Back and Forward use the cache as it is.
+- **Style sheets** come from memory, then disk (checked when stale),
+  then the network.
+- **Images** are kept as they were shown: scaled and dithered for this
+  screen, with their mask, keyed by URL, width=/height=, the page width
+  and the screen's colours. They come back without fetching or decoding,
+  and are checked like pages. For an image without validators the file
+  is fetched again, but decoded only if its hash changed.
+
+Caching the parsed DOM instead of the page's HTML was measured and
+rejected: showing a 53 KB page from the cache takes 1.0 s to parse but
+4.0 s to lay out on a stock A1200, so a saved DOM would save a sixth
+while tying the cache to the program's data layout.
 
 ### Painting
 
@@ -70,7 +115,16 @@ the page they belong to). It compares the hashes with those of what is on
 the screen, and paints only the bands that differ. Unchanged parts of the
 view, such as a site's header on the next page, stay as they are.
 `GuiPaintAll` repaints everything. Scrolling, window damage and resizing
-make the next refresh paint everything too. This fits the JavaScript
+make the next refresh paint everything too.
+
+Changes whose place is known paint a rectangle instead (`PaintRect`):
+only the runs over it are drawn, clipped to it, and only it is copied to
+the window. An image that comes into a box whose size was known is
+painted where it is shown, every copy, with no text drawn
+(`GuiPaintImage`). Typing into a field, toggling a control or moving the
+focus paints the control's box (`GuiPaintNode`). After that the band
+hashes are taken again, so the next `GuiRefresh` does not paint it a
+second time. This fits the JavaScript
 plan: a script that changes the DOM triggers a relayout, then
 `GuiRefresh`.
 
@@ -123,6 +177,9 @@ JS is not on the roadmap yet, but it must stay possible to add. That means:
 11. [x] Painting without flicker (off-screen strips, only what changed),
    staying responsive while loading (non-blocking sockets, a decoder
    process), Velox's own JPEG/PNG/GIF/WebP decoders, background images.
+12. [x] The loader as a coroutine of the event loop, pages shown while
+   they come, instant in-page links, disk cache (pages, style sheets,
+   images as shown), styles kept per element, painting rectangles.
 
 ## Modules
 
@@ -134,7 +191,9 @@ JS is not on the roadmap yet, but it must stay possible to add. That means:
 | url.s       | parsing, resolving (RFC 3986), fixing typed addresses           |
 | conn.s      | sockets (non-blocking), AmiSSL, DNS cache, I/O through `WaitSelect` |
 | http.s      | requests, responses, redirects, keep-alive                      |
+| task.s      | the loader: a coroutine of the event loop                       |
 | cache.s     | memory cache of recent responses                                |
+| diskcache.s | disk cache: pages and style sheets, images as shown             |
 | cookies.s   | cookie store, persistent cookies in ENVARC:                     |
 | charset.s   | UTF-8 / Windows-1252 / Latin-1 to Latin-1, entities              |
 | html.s      | tokenizer and tree builder (DOM)                                |

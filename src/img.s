@@ -39,7 +39,7 @@ bmh_Height		equ	2
 	ENDC
 	xdef	ImagesStop,ImagesStart,ImagesStep,ImagesPending,ImagesFree,ImagePaint
 	xref	PageAlloc,DomGetAttr,UrlResolve,HttpGetCached,ParseDec,BufFree
-	xref	G,BusyEvents,PicInfo,PicDecode,PicFree,PalInit,PicToBitMap,PicAlloc,BufAppend,BufClear,GuiStatus,GuiRelayout,GuiRefresh,GuiPageWidth
+	xref	G,BusyEvents,PicInfo,PicDecode,PicFree,PalInit,PicToBitMap,PicAlloc,BufAppend,BufClear,GuiStatus,GuiRelayout,GuiRefresh,GuiPageWidth,GuiPaintImage
 	xref	FmtDec,StrCopy,LogEvent,ImgNetHook
 
 MAX_IMAGES	equ	64
@@ -527,7 +527,12 @@ ImagesStep:
 .relay:	clr.l	g_ImgRelayout(a4)
 	jsr	GuiRelayout
 	bra.s	.end
-.paint:	jsr	GuiRefresh
+.paint:	move.l	n_Data2(a5),d0		; an image came, the layout the same:
+	beq.s	.ref			; just it (and its copies) painted
+	move.l	d0,a0
+	jsr	GuiPaintImage
+	bra.s	.end
+.ref:	jsr	GuiRefresh
 .end:	move.l	g_ImgNext(a4),d0
 	cmp.l	g_ImgCount(a4),d0
 	blo.s	.x

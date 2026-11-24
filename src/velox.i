@@ -449,6 +449,10 @@ g_IncEvery	rs.l	1		; ticks between layouts
 g_IncT0		rs.l	1		; when the last layout started
 g_UserTick	rs.l	1		; the user's last key or scroller use
 g_Dragging	rs.l	1		; the scroller is held
+g_PaintRect	rs.l	1		; PaintRange paints a rectangle:
+g_PaintX0	rs.l	1		; its columns (document x),
+g_PaintX1	rs.l	1		; right exclusive
+g_StripRegion	rs.l	1		; the strip's clip region (PaintRect)
 g_Revalid	rs.l	1		; checking a page shown from the disk cache
 g_FormTouched	rs.l	1		; the user changed a form control of it
 g_DcOn		rs.l	1		; diskcache.s: a cache directory

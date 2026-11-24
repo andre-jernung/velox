@@ -86,3 +86,10 @@ and a single event dispatch point.
 - Each routine gets a header comment stating In/Out.
 - Cleanup routines must be safe to call when the resource was never
   acquired (test, clear, then free).
+- Loading runs in the loader, a coroutine of the event loop (task.s).
+  Anything that can wait yields to the event loop: `WaitSocket`,
+  `TaskPoll`, `BgRun`, so any network call or image decode. Don't keep
+  data in shared scratch globals (`g_LinkUrl`, `g_UrlTmp2`,
+  `g_StatusBuf`, `g_Line`) across such a call, because window handlers
+  use them meanwhile (this bug happened). Never yield inside a layout:
+  the view must always match the runs.

@@ -15,7 +15,7 @@
 	include	"lvo/diskfont_lib.i"
 	include	"lvo/asl_lib.i"
 
-	xdef	GuiOpen,GuiClose,GuiEventLoop,GuiPaintAll,GuiStatus,GuiPaintNode
+	xdef	GuiOpen,GuiClose,GuiEventLoop,GuiPaintAll,GuiStatus,GuiPaintNode,GuiPaintImage
 	xdef	GuiSetUrl,GuiSetTitle,GuiScrollTo,GuiNetHook,GuiBusy
 	xdef	BusyEvents,GuiRelayout,GuiRefresh,GuiPageWidth,GuiAbout,DrawStatus,ImgNetHook,GuiProgress
 	IFD	PROFILE
@@ -1035,6 +1035,11 @@ PaintRange:
 	movem.l	d2-d7/a2-a3/a5,-(sp)
 	tst.l	g_Window(a4)
 	beq	.x
+	tst.l	g_PaintRect(a4)		; (from PaintRect: its columns)
+	bne.s	.cols
+	clr.l	g_PaintX0(a4)
+	move.l	g_PageW(a4),g_PaintX1(a4)
+.cols:
 	move.l	g_ScrollY(a4),d2	; clip to the view
 	cmp.l	d2,d0
 	bge.s	.t
@@ -1072,21 +1077,23 @@ PaintRange:
 	move.l	a3,a1
 	GFX	SetAPen
 	move.l	a3,a1
-	moveq	#0,d0
+	move.l	g_PaintX0(a4),d0	; (a rectangle: only its columns)
 	moveq	#0,d1
-	move.l	g_PageW(a4),d2
+	move.l	g_PaintX1(a4),d2
 	subq.l	#1,d2
 	moveq	#STRIP_H-1,d3
 	GFX	RectFill
-	moveq	#0,d0			; the page's background image
+	move.l	g_PaintX0(a4),d0	; the page's background image
 	moveq	#0,d1
-	move.l	g_PageW(a4),d2
+	move.l	g_PaintX1(a4),d2
 	subq.l	#1,d2
 	moveq	#STRIP_H-1,d3
 	bsr	PageBgImage
+	bsr	StripClip		; (a rectangle: runs clipped to it)
 	move.l	d6,d0
 	move.l	d5,d1
 	bsr	PaintRuns
+	bsr	StripUnclip
 	move.l	(sp)+,g_PageY(a4)
 	move.l	(sp)+,g_PageX(a4)
 	move.l	d5,-(sp)		; copy it to the window
@@ -1095,9 +1102,11 @@ PaintRange:
 	sub.l	g_ScrollY(a4),d3
 	add.l	g_PageY(a4),d3
 	move.l	g_PageX(a4),d2
-	move.l	g_PageW(a4),d4
+	add.l	g_PaintX0(a4),d2
+	move.l	g_PaintX1(a4),d4
+	sub.l	g_PaintX0(a4),d4
 	move.l	g_StripBM(a4),a0
-	moveq	#0,d0
+	move.l	g_PaintX0(a4),d0
 	moveq	#0,d1
 	move.l	g_Window(a4),a1
 	move.l	wd_RPort(a1),a1
@@ -1119,10 +1128,12 @@ PaintRange:
 	add.l	g_PageY(a4),d1
 	subq.l	#1,d1
 	lea	g_ClipRect(a4),a0
-	move.w	g_PageX+2(a4),ra_MinX(a0)
+	move.l	g_PageX(a4),d2
+	add.l	g_PaintX0(a4),d2
+	move.w	d2,ra_MinX(a0)
 	move.w	d0,ra_MinY(a0)
 	move.l	g_PageX(a4),d2
-	add.l	g_PageW(a4),d2
+	add.l	g_PaintX1(a4),d2
 	subq.l	#1,d2
 	move.w	d2,ra_MaxX(a0)
 	move.w	d1,ra_MaxY(a0)
@@ -1168,14 +1179,16 @@ PaintRange:
 .x:	movem.l	(sp)+,d2-d7/a2-a3/a5
 	rts
 
-; GuiPaintNode - repaint only the lines of element a0's runs (a link or
-; a form control whose state changed: typing, focus, a click), not the
+; GuiPaintNode - repaint only the box of element a0's runs (a link or a
+; form control whose state changed: typing, focus, a click), not the
 ; whole view
 GuiPaintNode:
-	movem.l	d2-d5/a2,-(sp)
+	movem.l	d2-d7/a2,-(sp)
 	move.l	a0,a2
-	move.l	#$7fffffff,d4		; d4/d5 = top/bottom of its runs
-	moveq	#-1,d5
+	move.l	#$7fffffff,d4		; d4/d5 = top/bottom, d6/d7 = left/
+	moveq	#-1,d5			; right of its runs
+	move.l	d4,d6
+	moveq	#-1,d7
 	jsr	RunCount
 	move.l	d0,d3
 	moveq	#0,d2
@@ -1186,26 +1199,155 @@ GuiPaintNode:
 	addq.l	#1,d2
 	cmp.l	ru_Link(a0),a2
 	bne.s	.l
-	move.l	ru_Y(a0),d0
-	cmp.l	d4,d0
+	bsr	RunBox
+	cmp.l	d4,d1
 	bge.s	.t
-	move.l	d0,d4
-.t:	moveq	#0,d1
+	move.l	d1,d4
+.t:	cmp.l	d6,d0
+	bge.s	.lf
+	move.l	d0,d6
+.lf:	moveq	#0,d1
 	move.w	ru_H(a0),d1
-	add.l	d1,d0
-	cmp.l	d5,d0
+	add.l	ru_Y(a0),d1
+	cmp.l	d5,d1
+	ble.s	.b
+	move.l	d1,d5
+.b:	moveq	#0,d1
+	move.w	ru_W(a0),d1
+	add.l	d0,d1
+	cmp.l	d7,d1
 	ble.s	.l
-	move.l	d0,d5
+	move.l	d1,d7
 	bra.s	.l
 .done:	cmp.l	d4,d5
 	ble.s	.x
-	move.l	d4,d0			; (2 lines more: the focus outline)
+	move.l	d6,d0			; (2 pixels more: the focus outline)
 	subq.l	#2,d0
-	move.l	d5,d1
-	addq.l	#2,d1
-	bsr	PaintRange
-.x:	movem.l	(sp)+,d2-d5/a2
+	move.l	d4,d1
+	subq.l	#2,d1
+	move.l	d7,d2
+	addq.l	#2,d2
+	move.l	d5,d3
+	addq.l	#2,d3
+	bsr	PaintRect
+	bsr	BandsSync
+.x:	movem.l	(sp)+,d2-d7/a2
 	rts
+
+; RunBox - In: a0 = run; Out: d0 = its left (document x), d1 = its top
+; (a0 kept)
+RunBox:
+	moveq	#0,d0
+	move.w	ru_X(a0),d0
+	ext.l	d0
+	move.l	ru_Y(a0),d1
+	rts
+
+;--------------------------------------------------------------------
+; GuiPaintImage - image a0 (an ImageInfo) was loaded: paint it where it
+; is shown (every copy), and nothing around it
+;--------------------------------------------------------------------
+GuiPaintImage:
+	movem.l	d2-d6/a2-a3,-(sp)
+	move.l	a0,a3
+	jsr	RunCount
+	move.l	d0,d6			; d6 = runs, d5 = this one
+	moveq	#0,d5
+.l:	cmp.l	d6,d5
+	bhs.s	.x
+	move.l	d5,d0
+	jsr	RunPtr
+	addq.l	#1,d5
+	cmp.b	#RT_IMAGE,ru_Type(a0)
+	bne.s	.l
+	move.l	ru_Text(a0),a1
+	cmp.l	n_Data2(a1),a3
+	bne.s	.l
+	move.l	a0,a2
+	bsr	RunBox			; d0 = left, d1 = top
+	moveq	#0,d2
+	move.w	ru_W(a2),d2
+	add.l	d0,d2			; right
+	moveq	#0,d3
+	move.w	ru_H(a2),d3
+	add.l	d1,d3			; bottom
+	bsr	PaintRect
+	bra.s	.l
+.x:	bsr	BandsSync
+	movem.l	(sp)+,d2-d6/a2-a3
+	rts
+
+;--------------------------------------------------------------------
+; PaintRect - repaint the document rectangle d0/d1 - d2/d3 (left/top
+; inclusive, right/bottom exclusive): only the runs over it, clipped to
+; it, and only it copied to the window
+;--------------------------------------------------------------------
+PaintRect:
+	tst.l	d0			; (within the page's columns)
+	bpl.s	.l
+	moveq	#0,d0
+.l:	cmp.l	g_PageW(a4),d2
+	ble.s	.r
+	move.l	g_PageW(a4),d2
+.r:	cmp.l	d2,d0
+	bge.s	.x
+	move.l	d0,g_PaintX0(a4)
+	move.l	d2,g_PaintX1(a4)
+	moveq	#1,d0
+	move.l	d0,g_PaintRect(a4)
+	move.l	d1,d0
+	move.l	d3,d1
+	bsr	PaintRange
+	clr.l	g_PaintRect(a4)
+	clr.l	g_PaintX0(a4)
+	move.l	g_PageW(a4),g_PaintX1(a4)
+.x:	rts
+
+; StripClip - for a rectangle (g_PaintRect): the strip's layer (a3 is
+; its RastPort) draws only within its columns
+StripClip:
+	tst.l	g_PaintRect(a4)
+	beq.s	.x
+	movem.l	d2-d3/a2,-(sp)
+	lea	g_ClipRect(a4),a0
+	move.w	g_PaintX0+2(a4),ra_MinX(a0)
+	clr.w	ra_MinY(a0)
+	move.l	g_PaintX1(a4),d0
+	subq.l	#1,d0
+	move.w	d0,ra_MaxX(a0)
+	move.w	#STRIP_H-1,ra_MaxY(a0)
+	GFX	NewRegion
+	move.l	d0,g_StripRegion(a4)
+	beq.s	.n
+	move.l	d0,a0
+	lea	g_ClipRect(a4),a1
+	GFX	OrRectRegion
+	move.l	g_StripLayer(a4),a0
+	move.l	g_StripRegion(a4),a1
+	LAYERS	InstallClipRegion
+.n:	movem.l	(sp)+,d2-d3/a2
+.x:	rts
+
+; StripUnclip - and back (the region freed)
+StripUnclip:
+	move.l	g_StripRegion(a4),d0
+	beq.s	.x
+	move.l	g_StripLayer(a4),a0
+	suba.l	a1,a1
+	LAYERS	InstallClipRegion
+	move.l	g_StripRegion(a4),a0
+	clr.l	g_StripRegion(a4)
+	GFX	DisposeRegion
+.x:	rts
+
+; BandsSync - what is on the screen now is what the runs show: the
+; band hashes of the view (so that GuiRefresh does not paint it again)
+BandsSync:
+	tst.l	g_BandsOk(a4)
+	beq.s	.x
+	lea	g_Bands(a4),a0
+	bsr	ViewBands
+.x:	rts
 
 ; CollectRuns - note the runs over document lines [d6, d7) in g_Vis
 ; (g_VisN = -1 if there are more than VIS_MAX)
@@ -1227,6 +1369,16 @@ CollectRuns:
 	move.w	ru_H(a0),d1
 	add.l	d1,d0
 	cmp.l	d6,d0
+	ble.s	.n
+	moveq	#0,d0			; and the columns
+	move.w	ru_X(a0),d0
+	ext.l	d0
+	cmp.l	g_PaintX1(a4),d0
+	bge.s	.n
+	moveq	#0,d1
+	move.w	ru_W(a0),d1
+	add.l	d1,d0
+	cmp.l	g_PaintX0(a4),d0
 	ble.s	.n
 	cmp.l	#VIS_MAX,d4
 	bhs.s	.many
