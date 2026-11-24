@@ -53,6 +53,8 @@ jc_Td		rs.b	1		; Huffman tables (this scan)
 jc_Ta		rs.b	1
 jc_XS		rs.b	1		; Hmax/H, V/Vmax as shifts
 jc_YS		rs.b	1
+jc_Sh		rs.b	1		; its inverse DCT: 8 >> jc_Sh pixels
+		rs.b	3
 jc_Pred		rs.l	1		; DC predictor
 jc_BW		rs.l	1		; blocks per row (MCUs * H)
 jc_BH		rs.l	1		; block rows (MCUs * V)
@@ -62,7 +64,7 @@ jc_Coef		rs.l	1		; coefficients (BW x BH or V rows)
 jc_Plane	rs.l	1		; output samples of an MCU row
 jc_PW		rs.l	1		; its width
 JC_SIZEOF	rs.b	0
-	IFNE	JC_SIZEOF-40
+	IFNE	JC_SIZEOF-44
 	FAIL	"JC_SIZEOF changed: g_JComp in velox.i too"
 	ENDIF
 
@@ -559,16 +561,22 @@ ReadSOF:
 	dbf	d5,.c
 	move.l	d6,g_JHmax(a4)
 	move.l	d7,g_JVmax(a4)
-	; the scale: 1/8 (DC only) when that is still big enough
-	moveq	#0,d0
-	move.l	g_PicWant(a4),d1
-	beq.s	.sc
-	move.l	g_JW(a4),d2
-	addq.l	#7,d2
-	lsr.l	#3,d2
-	cmp.l	d1,d2
-	blo.s	.sc
+	; the scale: the smallest of 1/8, 1/4, 1/2 that is still as wide
+	; as the image is shown (g_PicWant)
 	moveq	#3,d0
+	move.l	g_PicWant(a4),d1
+	beq.s	.s1
+.s0:	moveq	#1,d2
+	lsl.l	d0,d2
+	subq.l	#1,d2
+	add.l	g_JW(a4),d2
+	lsr.l	d0,d2			; ceil(W >> shift)
+	cmp.l	d1,d2
+	bhs.s	.sc
+	subq.l	#1,d0
+	bne.s	.s0
+	bra.s	.sc
+.s1:	moveq	#0,d0
 .sc:	move.l	d0,g_JShift(a4)
 	moveq	#8,d1
 	lsr.l	d0,d1
@@ -627,6 +635,20 @@ ReadSOF:
 	divu.w	d3,d0
 	bsr	Log2
 	move.b	d0,jc_YS(a3)
+	; subsampled: a bigger inverse DCT instead of upsampling (by k =
+	; min(shift, XS, YS)), as libjpeg-turbo does
+	move.l	g_JShift(a4),d1
+	cmp.b	jc_XS(a3),d1
+	bls.s	.k1
+	move.b	jc_XS(a3),d1
+.k1:	cmp.b	jc_YS(a3),d1
+	bls.s	.k2
+	move.b	jc_YS(a3),d1
+.k2:	sub.b	d1,jc_XS(a3)
+	sub.b	d1,jc_YS(a3)
+	move.l	g_JShift(a4),d0
+	sub.l	d1,d0
+	move.b	d0,jc_Sh(a3)
 	move.l	g_JMcuX(a4),d0
 	mulu.w	d2,d0
 	move.l	d0,jc_BW(a3)
@@ -659,11 +681,15 @@ ReadSOF:
 	jsr	PicAlloc
 	move.l	d0,jc_Coef(a3)
 	beq	.no
-	move.l	jc_BW(a3),d0		; samples: an MCU row
-	mulu.l	g_JBs(a4),d0
+	moveq	#0,d1			; samples: an MCU row
+	move.b	jc_Sh(a3),d1
+	moveq	#8,d4
+	lsr.l	d1,d4			; d4 = the block side
+	move.l	jc_BW(a3),d0
+	mulu.l	d4,d0
 	move.l	d0,jc_PW(a3)
 	mulu.l	d3,d0
-	mulu.l	g_JBs(a4),d0
+	mulu.l	d4,d0
 	jsr	PicAlloc
 	move.l	d0,jc_Plane(a3)
 	beq	.no
@@ -1302,11 +1328,15 @@ OutputRow:
 	moveq	#0,d3			; block
 .b:	cmp.l	jc_BW(a5),d3
 	bhs.s	.vn
-	move.l	d4,d0			; to plane + v * bs * PW + b * bs
-	mulu.l	g_JBs(a4),d0
+	moveq	#0,d1			; to plane + v * bs * PW + b * bs
+	move.b	jc_Sh(a5),d1
+	moveq	#8,d2
+	lsr.l	d1,d2			; (the block side)
+	move.l	d4,d0
+	mulu.l	d2,d0
 	mulu.l	jc_PW(a5),d0
 	move.l	d3,d1
-	mulu.l	g_JBs(a4),d1
+	mulu.l	d2,d1
 	add.l	d1,d0
 	move.l	jc_Plane(a5),a2
 	add.l	d0,a2
@@ -1314,6 +1344,8 @@ OutputRow:
 	moveq	#0,d0
 	move.b	jc_Tq(a5),d0
 	move.l	jc_PW(a5),d1
+	moveq	#0,d2
+	move.b	jc_Sh(a5),d2
 	bsr	Idct
 	lea	128(a3),a3
 	addq.l	#1,d3
@@ -1550,22 +1582,319 @@ IsRGB:
 
 ;--------------------------------------------------------------------
 ; Idct - block a0 (coefficients) with quantization table d0 to samples
-; at a2 (d1 bytes per row): 8x8, or 1x1 (DC only) at 1/8 (a6 = work)
+; at a2 (d1 bytes per row), 8 >> d2 pixels square: 8x8, 4x4, 2x2 or
+; 1x1 (DC only) (a6 = work)
 ;--------------------------------------------------------------------
 Idct:
-	tst.l	g_JShift(a4)
-	bne.s	.dc
 	lsl.l	#7,d0
-	lea	jw_QA(a6,d0.l),a1
-	bra	IdctFull
-.dc:	lsl.l	#7,d0			; (DC * q + 4) >> 3, + 128
-	move.w	(a0),d1
+	subq.l	#1,d2
+	bmi.s	.full
+	beq	Idct4
+	subq.l	#1,d2
+	beq	Idct2
+	move.w	(a0),d1			; (DC * q + 4) >> 3, + 128
 	muls.w	jw_Q(a6,d0.l),d1
 	addq.l	#4,d1
 	asr.l	#3,d1
 	add.l	#512,d1
 	and.l	#1023,d1
 	move.b	jw_Range(a6,d1.l),(a2)
+	rts
+.full:	lea	jw_QA(a6,d0.l),a1
+	bra	IdctFull
+
+; Idct4, Idct2 - 4x4 and 2x2 inverse DCTs of the 8x8 block a0 (libjpeg's
+; jidctred: CONST_BITS 13, PASS1_BITS 2), for 1/2 and 1/4: d0 = the
+; quantization table's offset, a2 = output, d1 = bytes per row, a6 =
+; work.  Zero coefficients cost no multiplication.
+RED_P1	MACRO				; d5 += c * \2, d6 += c * \3; c =
+	move.w	\1(a0),d0		; coefficient \1 (bytes), dequantized
+	beq.s	.r\@
+	muls.w	\1(a1),d0
+	move.l	d0,d1
+	muls.l	#\2,d0
+	add.l	d0,d5
+	IFNC	"\3",""
+	muls.l	#\3,d1
+	add.l	d1,d6
+	ENDC
+.r\@:
+	ENDM
+RED_P2	MACRO				; the same for workspace long \1
+	move.l	\1(a5),d0
+	beq.s	.w\@
+	move.l	d0,d1
+	muls.l	#\2,d0
+	add.l	d0,d5
+	IFNC	"\3",""
+	muls.l	#\3,d1
+	add.l	d1,d6
+	ENDC
+.w\@:
+	ENDM
+; RED_OUT - byte \2 = range(\1 >> d1) (\1 rounded already)
+RED_OUT	MACRO
+	asr.l	d1,\1
+	add.l	#512,\1
+	and.l	#1023,\1
+	move.b	jw_Range(a6,\1.l),\2
+	ENDM
+Idct4:
+	movem.l	d2-d7/a2-a3/a5,-(sp)
+	lea	jw_Q(a6,d0.l),a1
+	move.l	d1,a3			; a3 = bytes per row
+	moveq	#4,d2
+	bsr	RedDC
+	bne	.x
+	lea	jw_WS(a6),a5
+	moveq	#0,d7			; column (4: not needed)
+.col:	cmp.w	#4,d7
+	beq	.cn
+	move.w	16(a0),d0		; rows 1-3, 5-7 empty: the DC
+	or.w	32(a0),d0
+	or.w	48(a0),d0
+	or.w	80(a0),d0
+	or.w	96(a0),d0
+	or.w	112(a0),d0
+	bne.s	.cf
+	move.w	(a0),d0
+	muls.w	(a1),d0
+	lsl.l	#2,d0
+	move.l	d0,(a5)
+	move.l	d0,32(a5)
+	move.l	d0,64(a5)
+	move.l	d0,96(a5)
+	bra	.cn
+.cf:	moveq	#0,d5			; even: tmp0 << 14 +- tmp2
+	moveq	#0,d6
+	RED_P1	32,15137
+	RED_P1	96,-6270
+	move.w	(a0),d2
+	muls.w	(a1),d2
+	moveq	#14,d0
+	asl.l	d0,d2
+	add.l	#1<<11,d2		; (rounding)
+	move.l	d2,d4
+	add.l	d5,d4			; d4 = tmp10
+	sub.l	d5,d2			; d2 = tmp12
+	moveq	#0,d5			; odd: d5 = tmp0, d6 = tmp2
+	RED_P1	112,-1730,-4176
+	RED_P1	80,11893,-4926
+	RED_P1	48,-17799,7373
+	RED_P1	16,8697,20995
+	moveq	#12,d1
+	move.l	d4,d0
+	add.l	d6,d0
+	asr.l	d1,d0
+	move.l	d0,(a5)
+	sub.l	d6,d4
+	asr.l	d1,d4
+	move.l	d4,96(a5)
+	move.l	d2,d0
+	add.l	d5,d0
+	asr.l	d1,d0
+	move.l	d0,32(a5)
+	sub.l	d5,d2
+	asr.l	d1,d2
+	move.l	d2,64(a5)
+.cn:	addq.l	#2,a0
+	addq.l	#2,a1
+	addq.l	#4,a5
+	addq.l	#1,d7
+	cmp.w	#8,d7
+	blo	.col
+	lea	jw_WS(a6),a5		; the 4 rows
+	moveq	#4-1,d7
+.row:	move.l	4(a5),d0
+	or.l	8(a5),d0
+	or.l	12(a5),d0
+	or.l	20(a5),d0
+	or.l	24(a5),d0
+	or.l	28(a5),d0
+	bne.s	.rf
+	move.l	(a5),d0			; (v + 16) >> 5
+	add.l	#16,d0
+	moveq	#5,d1
+	RED_OUT	d0,d0
+	move.b	d0,(a2)
+	move.b	d0,1(a2)
+	move.b	d0,2(a2)
+	move.b	d0,3(a2)
+	bra	.rn
+.rf:	moveq	#0,d5
+	moveq	#0,d6
+	RED_P2	8,15137
+	RED_P2	24,-6270
+	move.l	(a5),d2
+	moveq	#14,d0
+	asl.l	d0,d2
+	add.l	#1<<18,d2
+	move.l	d2,d4
+	add.l	d5,d4			; tmp10
+	sub.l	d5,d2			; tmp12
+	moveq	#0,d5
+	RED_P2	28,-1730,-4176
+	RED_P2	20,11893,-4926
+	RED_P2	12,-17799,7373
+	RED_P2	4,8697,20995
+	moveq	#19,d1
+	move.l	d4,d0
+	add.l	d6,d0
+	RED_OUT	d0,(a2)
+	sub.l	d6,d4
+	RED_OUT	d4,3(a2)
+	move.l	d2,d0
+	add.l	d5,d0
+	RED_OUT	d0,1(a2)
+	sub.l	d5,d2
+	RED_OUT	d2,2(a2)
+.rn:	add.l	a3,a2
+	lea	32(a5),a5
+	dbf	d7,.row
+.x:	movem.l	(sp)+,d2-d7/a2-a3/a5
+	rts
+
+Idct2:
+	movem.l	d2-d7/a2-a3/a5,-(sp)
+	lea	jw_Q(a6,d0.l),a1
+	move.l	d1,a3
+	moveq	#2,d2
+	bsr	RedDC
+	bne	.x
+	lea	jw_WS(a6),a5
+	moveq	#0,d7			; columns 0, 1, 3, 5, 7
+.col:	moveq	#%01010100,d0
+	btst	d7,d0
+	bne	.cn
+	move.w	16(a0),d0		; rows 1, 3, 5, 7 empty: the DC
+	or.w	48(a0),d0
+	or.w	80(a0),d0
+	or.w	112(a0),d0
+	bne.s	.cf
+	move.w	(a0),d0
+	muls.w	(a1),d0
+	lsl.l	#2,d0
+	move.l	d0,(a5)
+	move.l	d0,32(a5)
+	bra.s	.cn
+.cf:	moveq	#0,d5			; tmp0
+	RED_P1	112,-5906
+	RED_P1	80,6967
+	RED_P1	48,-10426
+	RED_P1	16,29692
+	move.w	(a0),d2
+	muls.w	(a1),d2
+	moveq	#15,d0
+	asl.l	d0,d2
+	add.l	#1<<12,d2		; tmp10 (rounded)
+	moveq	#13,d1
+	move.l	d2,d0
+	add.l	d5,d0
+	asr.l	d1,d0
+	move.l	d0,(a5)
+	sub.l	d5,d2
+	asr.l	d1,d2
+	move.l	d2,32(a5)
+.cn:	addq.l	#2,a0
+	addq.l	#2,a1
+	addq.l	#4,a5
+	addq.l	#1,d7
+	cmp.w	#8,d7
+	blo.s	.col
+	lea	jw_WS(a6),a5		; the 2 rows
+	moveq	#2-1,d7
+.row:	move.l	4(a5),d0
+	or.l	12(a5),d0
+	or.l	20(a5),d0
+	or.l	28(a5),d0
+	bne.s	.rf
+	move.l	(a5),d0
+	add.l	#16,d0
+	moveq	#5,d1
+	RED_OUT	d0,d0
+	move.b	d0,(a2)
+	move.b	d0,1(a2)
+	bra.s	.rn
+.rf:	moveq	#0,d5
+	RED_P2	28,-5906
+	RED_P2	20,6967
+	RED_P2	12,-10426
+	RED_P2	4,29692
+	move.l	(a5),d2
+	moveq	#15,d0
+	asl.l	d0,d2
+	add.l	#1<<19,d2
+	moveq	#20,d1
+	move.l	d2,d0
+	add.l	d5,d0
+	RED_OUT	d0,(a2)
+	sub.l	d5,d2
+	RED_OUT	d2,1(a2)
+.rn:	add.l	a3,a2
+	lea	32(a5),a5
+	dbf	d7,.row
+.x:	movem.l	(sp)+,d2-d7/a2-a3/a5
+	rts
+
+; RedDC - a block a0 without AC coefficients (often): its d2 x d2
+; samples at a2 (a3 bytes per row) are all the DC (a1 = quantization)
+; Out: d0 = 1 if so (CCR set; d2, a6 kept)
+RedDC:
+	move.w	2(a0),d0
+	or.l	4(a0),d0
+	or.l	8(a0),d0
+	or.l	12(a0),d0
+	or.l	16(a0),d0
+	or.l	20(a0),d0
+	or.l	24(a0),d0
+	or.l	28(a0),d0
+	or.l	32(a0),d0
+	or.l	36(a0),d0
+	or.l	40(a0),d0
+	or.l	44(a0),d0
+	or.l	48(a0),d0
+	or.l	52(a0),d0
+	or.l	56(a0),d0
+	or.l	60(a0),d0
+	or.l	64(a0),d0
+	or.l	68(a0),d0
+	or.l	72(a0),d0
+	or.l	76(a0),d0
+	or.l	80(a0),d0
+	or.l	84(a0),d0
+	or.l	88(a0),d0
+	or.l	92(a0),d0
+	or.l	96(a0),d0
+	or.l	100(a0),d0
+	or.l	104(a0),d0
+	or.l	108(a0),d0
+	or.l	112(a0),d0
+	or.l	116(a0),d0
+	or.l	120(a0),d0
+	or.l	124(a0),d0
+	bne.s	.no
+	move.w	(a0),d0
+	muls.w	(a1),d0
+	lsl.l	#2,d0			; (v << PASS1_BITS + 16) >> 5
+	add.l	#16,d0
+	asr.l	#5,d0
+	add.l	#512,d0
+	and.l	#1023,d0
+	move.b	jw_Range(a6,d0.l),d0
+	move.l	a2,a0
+	move.l	d2,d1
+	subq.l	#1,d1
+.r:	move.b	d0,(a0)
+	move.b	d0,1(a0)
+	cmp.w	#2,d2
+	beq.s	.n
+	move.b	d0,2(a0)
+	move.b	d0,3(a0)
+.n:	add.l	a3,a0
+	dbf	d1,.r
+	moveq	#1,d0
+	rts
+.no:	moveq	#0,d0
 	rts
 
 ; IdctFull - 8x8 inverse DCT (libjpeg's jidctfst): a0 = coefficients,

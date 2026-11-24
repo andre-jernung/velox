@@ -167,8 +167,15 @@ decoder process. They never read past their input or write past what
 they allocated, whatever the file contains (the headless tests feed
 them cut and damaged files).
 
-- JPEG uses libjpeg's fast integer inverse DCT. When an image is shown at
-  1/8 of its size or less, only the DC coefficients are used.
+- JPEG uses libjpeg's fast integer inverse DCT. When an image is shown
+  at half its size or less, it is decoded at 1/2, 1/4 or 1/8: the
+  largest of these that is still as big as the image is shown (width and
+  height). The reduced inverse DCTs are libjpeg's 4x4 and 2x2
+  (jidctred), and 1/8 uses only the DC coefficients. Subsampled chroma
+  takes a larger inverse DCT instead of being upsampled, as in
+  libjpeg-turbo. At these scales the output matches `djpeg -scale`
+  exactly, except 4:2:0 chroma at 1/2, which uses the fast 8x8 inverse
+  DCT.
 - WebP follows libwebp step by step, including its "fancy" chroma
   upsampling. The headless tests check that lossy WebP comes out with
   exactly libwebp's pixels, and that PNG, GIF and lossless WebP come out
@@ -182,6 +189,15 @@ matrix through tables, and pixels less than half opaque go into a mask
 plane. Other formats (ILBM, BMP ...) still go through datatypes.library.
 Images that cannot be decoded keep their placeholder box (with
 width/height) or show their alt text.
+
+Copies of an image share it. When an `<img>` is decoded, the queued
+`<img>`s with the same `src`, `width` and `height` attributes get the
+same ImageInfo (img.s `ShareImage`), so they appear at once. The picture
+is fetched, decoded and held in chip memory only once, however many
+icons, bullets or spacers repeat it. Painting a copy is one blit from
+the shared bitmap. Bitmaps are allocated as friends of the screen's, so
+on an interleaved screen (Workbench is one) all planes go in one
+blitter operation.
 
 Background images (`background="..."`, CSS `url()`) get one record per
 URL (img.s `BgFind`), so a tile used by many cells is fetched once. A
@@ -201,6 +217,11 @@ versions in brackets):
 | PNG              | 9.2 (17.4)   | 1.4 (2.8)  |
 | WebP (lossy)     | 19.2 (35.9)  | 1.4 (2.8)  |
 | GIF              | 3.2          | 1.4 (2.7)  |
+
+The same baseline JPEG shown at 320 is decoded at 1/2 in 4.4 s (bitmap
+0.9 s), and at 160 it is decoded at 1/4 in 2.6 s (bitmap 0.24 s). The
+progressive one at 160 takes 6.9 s, because all its scans must still be
+decoded.
 
 `PROFILE=1` with the same command times each stage. What is left, for a
 640x480 image:

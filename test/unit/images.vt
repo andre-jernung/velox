@@ -422,5 +422,30 @@ decode build/img/wy-q95.webp build/img/wy-q95.webp.argb
 decode build/img/wy-sharp.webp build/img/wy-sharp.webp.argb
 decode build/img/wy-simbig.webp build/img/wy-simbig.webp.argb
 decode build/img/wy-simple.webp build/img/wy-simple.webp.argb
-decode build/img/jbig.jpg build/img/jbig.jpg.small.argb 40
-decode build/img/jbigp.jpg build/img/jbigp.jpg.small.argb 40
+decode build/img/jbig.jpg build/img/jbig.jpg.s2.argb 160
+decode build/img/jbig.jpg build/img/jbig.jpg.s4.argb 80
+decode build/img/jbig.jpg build/img/jbig.jpg.s8.argb 40
+decode build/img/jbigp.jpg build/img/jbigp.jpg.s2.argb 160
+decode build/img/jbigp.jpg build/img/jbigp.jpg.s4.argb 80
+decode build/img/jbigp.jpg build/img/jbigp.jpg.s8.argb 40
+decode build/img/j420.jpg build/img/j420.jpg.s2.argb 42
+decode build/img/j420.jpg build/img/j420.jpg.s4.argb 21
+decode build/img/j420.jpg build/img/j420.jpg.s8.argb 11
+decode build/img/j422.jpg build/img/j422.jpg.s2.argb 42
+decode build/img/j422.jpg build/img/j422.jpg.s4.argb 21
+decode build/img/j422.jpg build/img/j422.jpg.s8.argb 11
+decode build/img/j411.jpg build/img/j411.jpg.s2.argb 42
+decode build/img/j411.jpg build/img/j411.jpg.s4.argb 21
+decode build/img/j411.jpg build/img/j411.jpg.s8.argb 11
+decode build/img/j440.jpg build/img/j440.jpg.s2.argb 42
+decode build/img/j440.jpg build/img/j440.jpg.s4.argb 21
+decode build/img/j440.jpg build/img/j440.jpg.s8.argb 11
+decode build/img/jgrey.jpg build/img/jgrey.jpg.s2.argb 42
+decode build/img/jgrey.jpg build/img/jgrey.jpg.s4.argb 21
+decode build/img/jgrey.jpg build/img/jgrey.jpg.s8.argb 11
+decode build/img/jrgb.jpg build/img/jrgb.jpg.s2.argb 42
+decode build/img/jrgb.jpg build/img/jrgb.jpg.s4.argb 21
+decode build/img/jrgb.jpg build/img/jrgb.jpg.s8.argb 11
+decode build/img/jq30.jpg build/img/jq30.jpg.s2.argb 42
+decode build/img/jq30.jpg build/img/jq30.jpg.s4.argb 21
+decode build/img/jq30.jpg build/img/jq30.jpg.s8.argb 11

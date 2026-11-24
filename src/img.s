@@ -333,6 +333,7 @@ DecodeBg:
 	jsr	PalInit
 	move.l	d4,g_DecW(a4)
 	move.l	d5,g_DecH(a4)
+	clr.l	g_DecWant(a4)		; (tiles: the natural size)
 	moveq	#1,d0
 	move.l	d0,g_DecTile(a4)
 	lea	PicWork(pc),a0
@@ -373,6 +374,13 @@ ImagesStep:
 	addq.l	#1,g_ImgNext(a4)
 	move.l	g_ImgQueue(a4),a0
 	move.l	(a0,d0.l*4),a5		; a5 = <img>
+	tst.l	n_Data2(a5)		; has the image of an earlier copy
+	beq.s	.new
+	move.l	g_ImgNext(a4),d0
+	cmp.l	g_ImgCount(a4),d0
+	blo.s	.img
+	bra	.done			; (the last: lay out again)
+.new:
 	; status "Image 3 of 12"
 	lea	g_StatusBuf(a4),a1
 	lea	MsgImage(pc),a0
@@ -439,6 +447,7 @@ ImagesStep:
 	lea	g_Resp+r_Body(a4),a0
 	jsr	BufFree
 	addq.l	#1,g_ImgLoaded(a4)
+	bsr	ShareImage
 	bra	.done
 .dt:	; to a temporary file for the datatype
 	lea	TmpName(pc),a0
@@ -464,6 +473,7 @@ ImagesStep:
 	tst.l	d0
 	beq.s	.del
 	addq.l	#1,g_ImgLoaded(a4)
+	bsr	ShareImage
 .del:	lea	TmpName(pc),a0
 	move.l	a0,d1
 	DOS	DeleteFile
@@ -493,6 +503,64 @@ ImagesStep:
 	lea	g_TitleText(a4),a0
 	jsr	GuiStatus
 .x:	movem.l	(sp)+,d2-d7/a2-a3/a5
+	rts
+
+; ShareImage - give the <img>s still queued that show the same picture
+; as <img> a5 (the same src, width and height attributes: the same
+; URL and size) a5's ImageInfo: fetched, decoded and in chip memory
+; once, and all shown at once
+ShareImage:
+	movem.l	d2/a2-a3,-(sp)
+	move.l	n_Data2(a5),a3		; a3 = the ImageInfo
+	move.l	g_ImgNext(a4),d2
+.l:	cmp.l	g_ImgCount(a4),d2
+	bhs.s	.x
+	move.l	g_ImgQueue(a4),a0
+	move.l	(a0,d2.l*4),a2		; a2 = a queued <img>
+	addq.l	#1,d2
+	tst.l	n_Data2(a2)
+	bne.s	.l
+	lea	AnSrc(pc),a1
+	bsr.s	SameAttr
+	beq.s	.l
+	lea	AnWidth(pc),a1
+	bsr.s	SameAttr
+	beq.s	.l
+	lea	AnHeight(pc),a1
+	bsr.s	SameAttr
+	beq.s	.l
+	move.l	a3,n_Data2(a2)
+	addq.l	#1,g_ImgLoaded(a4)
+	bra.s	.l
+.x:	movem.l	(sp)+,d2/a2-a3
+	rts
+
+; SameAttr - do <img> a5 and a2 have the same attribute a1 (or neither)?
+; Out: d0 = 1 if so (CCR set)
+SameAttr:
+	move.l	a1,-(sp)
+	move.l	a5,a0
+	jsr	DomGetAttr
+	move.l	(sp),a1
+	move.l	d0,(sp)
+	move.l	a2,a0
+	jsr	DomGetAttr
+	move.l	(sp)+,a1		; a1 = a5's, a0 = a2's
+	move.l	d0,a0
+	move.l	a1,d1
+	beq.s	.n1
+	tst.l	d0
+	beq.s	.no
+.c:	move.b	(a0)+,d1
+	cmp.b	(a1)+,d1
+	bne.s	.no
+	tst.b	d1
+	bne.s	.c
+.yes:	moveq	#1,d0
+	rts
+.n1:	tst.l	d0
+	beq.s	.yes
+.no:	moveq	#0,d0
 	rts
 
 TmpName:	dc.b	"T:velox-image",0
@@ -605,6 +673,16 @@ DecodeOwn:
 	jsr	PalInit
 	move.l	d4,g_DecW(a4)
 	move.l	d5,g_DecH(a4)
+	move.l	d4,d1			; decode at least this wide, and wide
+	tst.l	d3			; enough for the height (h * w0 / h0)
+	beq.s	.ww
+	move.l	d5,d0
+	mulu.l	d2,d0
+	divu.l	d3,d0
+	cmp.l	d1,d0
+	bls.s	.ww
+	move.l	d0,d1
+.ww:	move.l	d1,g_DecWant(a4)
 	bsr	Ticks			; (the time it takes: logged for tests)
 	move.l	d0,g_DecT0(a4)
 	lea	PicWork(pc),a0
@@ -640,7 +718,7 @@ PicWork:
 	clr.l	g_DecObj(a4)
 	move.l	g_Resp+r_Body+buf_Data(a4),a0
 	move.l	g_Resp+r_Body+buf_Len(a4),d0
-	move.l	g_DecW(a4),d1
+	move.l	g_DecWant(a4),d1
 	jsr	PicDecode
 	beq.s	.x
 	tst.l	g_DecTile(a4)		; a background: tiled

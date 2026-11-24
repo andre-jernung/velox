@@ -13,7 +13,8 @@ out = open(os.path.join(r, "speed.driver"), "w")
 try:
     a = Amiga()
     lines = wait_log(log, "images ", timeout=1800)
-    names = ["baseline JPEG", "progressive JPEG", "PNG", "WebP (lossy)", "GIF"]
+    names = ["baseline JPEG", "progressive JPEG", "PNG", "WebP (lossy)", "GIF",
+             "JPEG at 320 (1/2)", "JPEG at 160 (1/4)", "progressive at 160"]
     times = [int(l.split()[1]) for l in lines if l.startswith("imgtime ")]
     conv = [int(l.split()[1]) for l in lines if l.startswith("imgconv ")]
     out.write("%-18s %8s %8s\n" % ("640x480 at 400", "decode", "bitmap"))

@@ -662,7 +662,7 @@ g_JCur		rs.l	1		; component of the block
 g_JAcTab	rs.l	1		; its AC table
 g_JLine		rs.l	1		; output: first line of the MCU row,
 g_JLy		rs.l	1		; line in it
-g_JComp		rs.b	4*40		; components (jpeg.s: JC_SIZEOF)
+g_JComp		rs.b	4*44		; components (jpeg.s: JC_SIZEOF)
 g_8Off		rs.b	0		; vp8.s: the working memory:
 g_8Proba	rs.l	1		; token probabilities [4][8][3][11]
 g_8Coef		rs.l	1		; coefficients of a macroblock
@@ -749,6 +749,7 @@ g_DecTask	rs.l	1		; ... to this task
 g_DecObj	rs.l	1		; ... with this result
 g_DecJob	rs.l	1		; ... of this job
 g_DecW		rs.l	1		; the size it is wanted at
+g_DecWant	rs.l	1		; the width to decode at least (0: all)
 g_DecH		rs.l	1
 g_DecT0		rs.l	1		; (the time it began,
 g_DecT1		rs.l	1		; was decoded)

@@ -1,0 +1,7 @@
+; icons: copies of the same image (the same src, width and height) are
+; fetched and decoded once and share one bitmap (test/amiga/icons.host)
+Echo >VELOX:r/icons.txt "icons"
+Echo >VELOX:r/icons.start ""
+VELOX:velox http://127.0.0.1:8080/icons.html LOG=VELOX:r/icons.log
+Echo >>VELOX:r/icons.txt "exit rc=$RC"
+Echo >>VELOX:r/icons.txt "done"
