@@ -4,4 +4,10 @@ d=$(dirname "$1"); fail=0
 sed 's/^/driver: /' "$d/browse.driver"
 grep -q '^ok$' "$d/browse.driver" || fail=1
 grep -q '^exit rc=0' "$1" || { echo "velox exit code: $(grep exit "$1")"; fail=1; }
+before=$(sed -n 's/^mem_before *//p' "$1" | tr -dc 0-9)
+after=$(sed -n 's/^mem_after *//p' "$1" | tr -dc 0-9)
+echo "memory: before=$before after=$after"
+# a whole session (pages, history, cache, find, reload): nothing may be
+# lost (32 bytes of system noise are tolerated, as in the window test)
+[ -n "$before" ] && [ -n "$after" ] && [ $((before - after)) -le 32 ] || { echo "memory lost"; fail=1; }
 exit $fail

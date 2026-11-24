@@ -1,6 +1,20 @@
-; browse: Velox driven by keyboard from the host (test/amiga/browse.host)
+; browse: Velox driven by keyboard from the host (test/amiga/browse.host);
+; no memory may be lost over the whole session
 Echo >VELOX:r/browse.txt "browse"
+; warm-up run (one-time OS allocations: fonts, CLI, ...)
+Run >NIL: VELOX:velox http://127.0.0.1:8080/second.html
+Wait 4
+Status >ENV:vpid COMMAND=VELOX:velox
+Break $vpid C
+Wait 2
+Delete >NIL: ENV:vpid
+Avail >NIL: FLUSH
+Echo >>VELOX:r/browse.txt "mem_before " NOLINE
+Avail >>VELOX:r/browse.txt TOTAL
 Echo >VELOX:r/browse.start ""
 VELOX:velox http://127.0.0.1:8080/index.html LOG=VELOX:r/browse.log
 Echo >>VELOX:r/browse.txt "exit rc=$RC"
+Avail >NIL: FLUSH
+Echo >>VELOX:r/browse.txt "mem_after " NOLINE
+Avail >>VELOX:r/browse.txt TOTAL
 Echo >>VELOX:r/browse.txt "done"

@@ -10,4 +10,8 @@ grep -q "^images $want\$" "$d/images.driver" || { echo "expected $want images"; 
 grep -q "^typed during image loading: in time" "$d/images.driver" || fail=1
 grep -q '^ok$' "$d/images.driver" || fail=1
 grep -q '^exit rc=0' "$1" || { echo "velox exit code: $(grep exit "$1")"; fail=1; }
+before=$(sed -n 's/^mem_before *//p' "$1" | tr -dc 0-9)
+after=$(sed -n 's/^mem_after *//p' "$1" | tr -dc 0-9)
+echo "memory: before=$before after=$after"
+[ -n "$before" ] && [ -n "$after" ] && [ $((before - after)) -le 32 ] || { echo "memory lost"; fail=1; }
 exit $fail
