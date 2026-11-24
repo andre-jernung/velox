@@ -626,7 +626,10 @@ ReadBody:
 	move.l	r_Body+buf_Len(a3),d0
 	move.l	r_Length(a3),d1
 	jsr	(a0)
-	bra.s	.l
+	tst.l	d0			; (1: stop)
+	beq.s	.l
+	SETERR	ERR_ABORT
+	bra.s	.err
 .ok:	moveq	#0,d0
 .x:	movem.l	(sp)+,d2-d3
 	rts

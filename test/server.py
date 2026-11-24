@@ -62,6 +62,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # requests for /slow/ images whose names start with this
             n = p[len("/slowcount/"):]
             self.send(200, b"%d" % sum(v for k, v in SLOW_HITS.items() if k.startswith(n)))
+        elif p == "/trickle":
+            # a page in three parts, 5 s apart (chunked): shown as it
+            # comes; its style sheet is fetched in the middle of it
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Transfer-Encoding", "chunked")
+            self.end_headers()
+            para = "".join("<p>Paragraph %d of the page that trickles in, with a few words.</p>\n" % i for i in range(60))
+            parts = ['<html><head><title>Trickle</title><link rel="stylesheet" href="css/trickle.css"></head>'
+                     '<body><p><a href="#late">To the late part</a></p>\n' + para,
+                     "<h2>Second part</h2>\n" + para,
+                     '<h2 id="late">The late part</h2>\n' + para + "</body></html>"]
+            for i, part in enumerate(parts):
+                if i:
+                    time.sleep(5)
+                data = part.encode()
+                self.wfile.write(b"%x\r\n%s\r\n" % (len(data), data))
+                self.wfile.flush()
+            self.wfile.write(b"0\r\n\r\n")
         elif p == "/slowpage":
             time.sleep(12)
             self.send(200, b"<title>Slow</title><p>A slow page.", "text/html")

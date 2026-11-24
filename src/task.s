@@ -22,7 +22,7 @@
 	include	"velox.i"
 
 	xdef	TaskInit,TaskExit,TaskStart,TaskResume,TaskAbort,TaskBusy
-	xdef	TaskYield,TaskPoll,TaskWaitSock,TaskWaitSig,TaskLoopWait
+	xdef	TaskYield,TaskPoll,TaskWaitSock,TaskWaitSig,TaskLoopWait,TaskNow
 
 TASK_STACK	equ	65536		; (layout recurses over the DOM)
 
@@ -173,7 +173,7 @@ TaskWaitSock:
 	bne.s	.stop
 	move.l	d0,g_TkSock(a4)
 	move.l	d1,g_TkDir(a4)
-	bsr	TkNow
+	bsr	TaskNow
 	move.l	d0,g_TkSince(a4)
 	moveq	#LS_SOCK,d0
 	move.l	d0,g_TkState(a4)
@@ -230,7 +230,7 @@ TaskLoopWait:
 	beq.s	.x
 	move.l	d0,g_TkGot(a4)
 	bra.s	.run
-.sock:	bsr	TkNow			; time left: NET_TIMEOUT from the
+.sock:	bsr	TaskNow			; time left: NET_TIMEOUT from the
 	sub.l	g_TkSince(a4),d0	; start of the wait
 	bpl.s	.pos
 	add.l	#24*60*3000,d0		; (past midnight)
@@ -288,8 +288,8 @@ TaskLoopWait:
 	movem.l	(sp)+,d2-d4/a2-a3
 	rts
 
-; TkNow - Out: d0 = the time of day in ticks (1/50 s)
-TkNow:
+; TaskNow - Out: d0 = the time of day in ticks (1/50 s)
+TaskNow:
 	lea	-12(sp),sp
 	move.l	sp,d1
 	DOS	DateStamp

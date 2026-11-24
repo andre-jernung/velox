@@ -1,0 +1,8 @@
+; trickle: a page is shown while it comes; the window works meanwhile; a
+; link to an anchor not there yet scrolls when it comes
+; (test/amiga/trickle.host)
+Echo >VELOX:r/trickle.txt "trickle"
+Echo >VELOX:r/trickle.start ""
+VELOX:velox http://127.0.0.1:8080/index.html LOG=VELOX:r/trickle.log
+Echo >>VELOX:r/trickle.txt "exit rc=$RC"
+Echo >>VELOX:r/trickle.txt "done"

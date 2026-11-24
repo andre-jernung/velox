@@ -25,7 +25,7 @@
 	xref	DomGetAttr,LogEvent,FormStateOf,FormIsControl,FormActivate
 	xref	FormEditKey,FormLeave,SaveDownload,BookmarkAdd,BookmarksShow
 	xref	PalFree,ImagesStop,ImagesPending,ImagesStep,ImagesFree,ImagePaint
-	xref	TaskResume,TaskLoopWait,TaskBusy,TaskAbort,NavStop,ImagesReap,ImagesReapNow,ImagesQuit,FragCheck
+	xref	TaskResume,TaskLoopWait,TaskBusy,TaskAbort,NavStop,ImagesReap,ImagesReapNow,ImagesQuit,FragCheck,TaskNow
 
 PROP_FONT	equ	0
 SCROLL_W	equ	18
@@ -2358,10 +2358,17 @@ HandleMessages:
 ; d5/d6 = mouse position
 HandleEvent:
 	cmp.l	#IDCMP_RAWKEY,d2	; the user scrolls or types: a pending
-	beq.s	.user			; jump to a #fragment is off
-	cmp.l	#IDCMP_GADGETDOWN,d2
+	bne.s	.ngd0			; jump to a #fragment is off
+	cmp.w	#$80,d3			; (presses: not releases)
+	blo.s	.user
+	bra.s	.nu
+.ngd0:	cmp.l	#IDCMP_GADGETDOWN,d2
 	bne.s	.nu
 .user:	clr.l	g_FragPend(a4)
+	movem.l	d0-d1/a0-a1,-(sp)	; (when: layout waits while the user
+	jsr	TaskNow			;  scrolls)
+	move.l	d0,g_UserTick(a4)
+	movem.l	(sp)+,d0-d1/a0-a1
 .nu:	cmp.l	#IDCMP_CLOSEWINDOW,d2
 	bne.s	.nc
 	moveq	#1,d0

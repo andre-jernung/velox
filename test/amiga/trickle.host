@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+"""Host side of trickle.script: /trickle comes in three parts, 5 s
+apart.  The first part is shown before the rest comes, the page scrolls
+while it loads, and its link to #late (in the last part) scrolls there
+once that part has come."""
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from xdrive import Amiga, wait_log  # noqa: E402
+
+r = sys.argv[1]
+log = os.path.join(r, "trickle.log")
+out = open(os.path.join(r, "trickle.driver"), "w")
+U = "http://127.0.0.1:8080/"
+
+
+def step(msg):
+    out.write(msg + "\n")
+    out.flush()
+
+
+def done():
+    return any(l.startswith("page " + U + "trickle ") for l in open(log).read().split("\n"))
+
+
+try:
+    a = Amiga()
+    wait_log(log, "page " + U + "index.html")
+    time.sleep(1)
+    a.key("ctrl+l")
+    a.type("127.0.0.1:8080/trickle")
+    a.key("Return")
+    wait_log(log, "shown " + U + "trickle", timeout=4)
+    if done():
+        raise AssertionError("not shown before it had all come")
+    step("shown while it comes")
+    n = open(log).read().count("\nscroll ")
+    a.key("Down", 3)
+    time.sleep(1)
+    if open(log).read().count("\nscroll ") <= n or done():
+        raise AssertionError("did not scroll while loading")
+    step("scrolls while it loads")
+    a.key("Tab")                    # the link to #late, not there yet
+    wait_log(log, "focus #late")
+    a.key("Return")
+    lines = wait_log(log, "page " + U + "trickle", timeout=30)
+    time.sleep(1)
+    lines = open(log).read().split("\n")
+    last = [int(l.split()[1]) for l in lines if l.startswith("scroll ")][-1]
+    if last < 1000:
+        raise AssertionError("not at #late: scroll %d" % last)
+    step("jumped to #late when it came (y %d)" % last)
+    a.key("ctrl+q")
+    step("ok")
+except Exception as e:
+    step("FAIL " + repr(e))
+    try:
+        Amiga().key("ctrl+q")
+    except Exception:
+        pass

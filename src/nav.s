@@ -17,7 +17,8 @@
 	xref	ClipCopy
 	xref	GuiStatus,GuiSetUrl,GuiSetTitle,GuiRefresh,GuiBusy,GuiNetHook
 	xref	GuiPageWidth,GuiScrollTo,LogEvent,CssLoad,BufFree,ImagesStart
-	xref	GuiProgress,TaskAbort,TaskStart,ImagesLoad,TaskBusy
+	xref	GuiProgress,TaskAbort,TaskStart,ImagesLoad,TaskBusy,TaskNow
+	xref	HtmlBegin,HtmlMore,IsValidUtf8,GuiRelayout
 
 HIST_MAX	equ	HIST_ENTRIES
 NAV_HISTORY	equ	1
@@ -104,6 +105,8 @@ NavGo:
 NavStop:
 	jsr	TaskBusy
 	beq.s	.x
+	moveq	#1,d0
+	move.l	d0,g_NavStopped(a4)
 	jsr	TaskAbort
 	moveq	#1,d0
 .x:	rts
@@ -159,6 +162,313 @@ FragCheck:
 	jmp	GuiScrollTo
 .x:	rts
 
+;--------------------------------------------------------------------
+; Pages shown while they come.  PageHook runs after each piece of the
+; body (ReadBody): an HTML page (status 200) gets a new DOM at once
+; (IncBegin); each piece is decoded and parsed (IncFeed); once the body
+; begins, the style sheets are fetched and the page is shown (IncShow);
+; then it is laid out again now and then as more comes (IncRelayout),
+; not while the user scrolls.  NavLoad finishes it.
+;--------------------------------------------------------------------
+
+; PageHook - g_ProgressHook of a page load
+; In:  d0 = bytes received, d1 = length or -1
+; Out: d0 = 1 to stop reading (the load stops)
+PageHook:
+	jsr	GuiProgress		; "Received 12 of 40 KB"
+	move.l	g_IncState(a4),d0
+	bmi.s	.x
+	bne.s	.feed
+	move.l	g_Resp+r_Status(a4),d0	; a redirect's body: not yet
+	cmp.l	#300,d0
+	blo.s	.nr
+	cmp.l	#399,d0
+	bls.s	.x
+.nr:	bsr	IncWanted
+	beq.s	.not
+	bsr	IncBegin
+	beq.s	.not
+.feed:	moveq	#0,d0
+	bsr	IncFeed
+	bra.s	.x
+.not:	moveq	#-1,d0
+	move.l	d0,g_IncState(a4)
+.x:	move.l	g_TkAbort(a4),d0
+	rts
+
+; IncWanted - is g_Resp an HTML page to show as it comes?
+; Out: d0 = 1 if so (CCR set)
+IncWanted:
+	move.l	a2,-(sp)
+	cmp.l	#200,g_Resp+r_Status(a4)
+	bne.s	.no
+	lea	g_Resp+r_CType(a4),a2
+	tst.b	(a2)
+	beq.s	.yes
+	move.l	a2,a0
+	lea	CtHtml(pc),a1
+	jsr	StrIPrefix
+	bne.s	.yes
+	move.l	a2,a0
+	lea	CtXhtml(pc),a1
+	jsr	StrIPrefix
+	bne.s	.yes
+.no:	moveq	#0,d0
+	bra.s	.x
+.yes:	moveq	#1,d0
+.x:	move.l	(sp)+,a2
+	rts
+
+; IncBegin - a new page, to be filled as the body comes
+; Out: d0 = 0 if out of memory (CCR set)
+IncBegin:
+	jsr	PageNew			; (the old page goes)
+	beq.s	.x
+	lea	g_Resp+r_Url(a4),a0
+	lea	g_PageUrl(a4),a1
+	move.l	#URL_MAX-1,d0
+	jsr	StrCopyN
+	clr.l	g_IncRaw(a4)
+	moveq	#-1,d0
+	move.l	d0,g_IncCs(a4)
+	clr.l	g_IncShown(a4)
+	jsr	HtmlBegin
+	beq.s	.x
+	moveq	#1,d0
+	move.l	d0,g_IncState(a4)
+.x:	rts
+
+;--------------------------------------------------------------------
+; IncFeed - decode and parse what came since the last call; show the
+; page once its body begins, lay it out again now and then
+; In: d0 = 1 at the end (then NavLoad lays it out)
+;--------------------------------------------------------------------
+IncFeed:
+	movem.l	d2-d5/a2,-(sp)
+	move.l	d0,d5			; d5 = the end
+	move.l	g_Resp+r_Body+buf_Data(a4),a2
+	move.l	g_Resp+r_Body+buf_Len(a4),d2
+	move.l	a2,d0
+	beq	.x
+	move.l	g_IncCs(a4),d0		; the character set: once 1 KB is
+	bpl.s	.cs			; there (or all)
+	cmp.l	#1024,d2
+	bhs.s	.det
+	tst.l	d5
+	beq	.x
+.det:	lea	g_Resp+r_CType(a4),a0
+	tst.b	(a0)
+	bne.s	.ct
+	suba.l	a0,a0
+.ct:	move.l	a2,a1
+	jsr	CharsetDetect
+	tst.l	d0			; CS_AUTO: UTF-8 if what came is
+	bne.s	.csok
+	move.l	a2,a0
+	move.l	d2,d0
+	bsr	Utf8Cut
+	move.l	a2,a0
+	jsr	IsValidUtf8
+	tst.l	d0
+	moveq	#CS_UTF8,d0
+	bne.s	.csok
+	moveq	#CS_LATIN1,d0
+.csok:	move.l	d0,g_IncCs(a4)
+.cs:	move.l	d2,d3			; d3 = up to a whole UTF-8 character
+	tst.l	d5
+	bne.s	.all
+	cmp.l	#CS_UTF8,g_IncCs(a4)
+	bne.s	.all
+	move.l	a2,a0
+	move.l	d2,d0
+	bsr	Utf8Cut
+	move.l	d0,d3
+.all:	move.l	d3,d4
+	sub.l	g_IncRaw(a4),d4		; d4 = new bytes
+	ble.s	.parse
+	lea	g_PageSrc(a4),a0
+	moveq	#1,d0			; (and the NUL)
+	add.l	d4,d0
+	jsr	BufReserve
+	beq	.x
+	move.l	g_PageSrc+buf_Data(a4),a0	; to the end of the text,
+	add.l	g_PageSrc+buf_Len(a4),a0	; decoded there
+	move.l	a0,a1
+	move.l	a2,a0
+	add.l	g_IncRaw(a4),a0
+	move.l	d4,d0
+	bra.s	.ce
+.c:	move.b	(a0)+,(a1)+
+.ce:	subq.l	#1,d0
+	bpl.s	.c
+	move.l	g_PageSrc+buf_Data(a4),a0
+	add.l	g_PageSrc+buf_Len(a4),a0
+	move.l	d4,d0
+	move.l	g_IncCs(a4),d1
+	jsr	DecodeCharset
+	add.l	d0,g_PageSrc+buf_Len(a4)
+	move.l	d3,g_IncRaw(a4)
+.parse:	move.l	g_PageSrc+buf_Data(a4),a0
+	move.l	a0,d0
+	beq.s	.x
+	move.l	d5,d0
+	jsr	HtmlMore
+	tst.l	g_TkAbort(a4)
+	bne.s	.x
+	tst.l	d5
+	bne.s	.x
+	tst.l	g_IncShown(a4)
+	bne.s	.re
+	tst.l	g_ParseBody(a4)		; the body begins: show it
+	beq.s	.x
+	bsr	IncShow
+	bra.s	.x
+.re:	bsr	IncRelayout
+.x:	movem.l	(sp)+,d2-d5/a2
+	rts
+
+; Utf8Cut - In: a0 = UTF-8, d0 = length; Out: d0 = the length without
+; a character cut at the end
+Utf8Cut:
+	movem.l	d2-d3,-(sp)
+	move.l	d0,d2
+	moveq	#1,d3			; back 1..3
+.l:	cmp.l	d2,d3
+	bhi.s	.all
+	move.l	d2,d1
+	sub.l	d3,d1
+	move.b	(a0,d1.l),d1
+	move.b	d1,d0
+	and.b	#$c0,d0
+	cmp.b	#$80,d0			; a continuation byte: further back
+	bne.s	.lead
+	addq.l	#1,d3
+	cmp.l	#3,d3
+	bls.s	.l
+	bra.s	.all
+.lead:	cmp.b	#$c0,d1			; ASCII (or not UTF-8): whole
+	blo.s	.all
+	moveq	#2,d0			; the sequence's length
+	cmp.b	#$e0,d1
+	blo.s	.n
+	moveq	#3,d0
+	cmp.b	#$f0,d1
+	blo.s	.n
+	moveq	#4,d0
+.n:	cmp.l	d3,d0			; more than there: cut before it
+	bls.s	.all
+	sub.l	d3,d2
+.all:	move.l	d2,d0
+	movem.l	(sp)+,d2-d3
+	rts
+
+; IncShow - the body begins: the style sheets, then the page is shown
+IncShow:
+	bsr	IncCss
+	tst.l	g_TkAbort(a4)
+	bne.s	.x
+	moveq	#1,d0
+	move.l	d0,g_IncShown(a4)
+	moveq	#2,d0			; (the page shown)
+	move.l	d0,g_LoadPhase(a4)
+	bsr	ShowPage
+	bsr	IncTime
+	lea	LogShown(pc),a0		; (for tests)
+	lea	g_PageUrl(a4),a1
+	move.l	#$80000000,d0
+	jsr	LogEvent
+.x:	rts
+
+LogShown:	dc.b	"shown",0
+	even
+
+; IncRelayout - lay out again what has come, if enough time went by
+; since the last layout and the user is not scrolling right now
+IncRelayout:
+	jsr	TaskNow
+	move.l	d0,d1
+	sub.l	g_IncLast(a4),d1
+	bmi.s	.go			; (past midnight)
+	cmp.l	g_IncEvery(a4),d1
+	blo.s	.x
+	sub.l	g_UserTick(a4),d0	; the user scrolled just now: later
+	bmi.s	.go
+	cmp.l	#USER_QUIET,d0
+	blo.s	.x
+.go:	jsr	GuiRelayout
+	bra.s	IncTime
+.x:	rts
+
+; IncTime - after a layout: the next one in 4 times as long as it took
+; (at least INC_EVERY), so that layout stays a small part of the time
+IncTime:
+	jsr	TaskNow
+	move.l	d0,d1
+	sub.l	g_IncT0(a4),d1		; (g_IncT0: TaskNow before it)
+	bpl.s	.p
+	moveq	#0,d1
+.p:	lsl.l	#2,d1
+	cmp.l	#INC_EVERY,d1
+	bhs.s	.s
+	move.l	#INC_EVERY,d1
+.s:	move.l	d1,g_IncEvery(a4)
+	move.l	d0,g_IncLast(a4)
+	rts
+
+; IncCss - fetch the style sheets (CssLoad) in the middle of the page's
+; body: its response is put aside meanwhile (the connection waits)
+IncCss:
+	lea	g_Resp(a4),a0
+	lea	g_RespSave(a4),a1
+	move.l	#RESP_SIZEOF/4-1,d0
+.s:	move.l	(a0)+,(a1)+
+	dbf	d0,.s
+	clr.l	g_Resp+r_Body+buf_Data(a4)	; (its body is the page's)
+	clr.l	g_Resp+r_Body+buf_Len(a4)
+	clr.l	g_Resp+r_Body+buf_Cap(a4)
+	move.l	g_ProgressHook(a4),-(sp)
+	clr.l	g_ProgressHook(a4)
+	jsr	TaskNow
+	move.l	d0,g_IncT0(a4)
+	jsr	CssLoad
+	move.l	(sp)+,g_ProgressHook(a4)
+	lea	g_Resp+r_Body(a4),a0
+	jsr	BufFree
+	lea	g_RespSave(a4),a0
+	lea	g_Resp(a4),a1
+	move.l	#RESP_SIZEOF/4-1,d0
+.r:	move.l	(a0)+,(a1)+
+	dbf	d0,.r
+	bsr	SheetCount
+	move.l	d0,g_IncSheets(a4)
+	rts
+
+; SheetCount - Out: d0 = <style> and <link> elements in the page
+SheetCount:
+	moveq	#0,d0
+	move.l	g_Doc(a4),d1
+	beq.s	.x
+	move.l	d1,a0
+.walk:	move.l	n_First(a0),d1		; document order
+	bne.s	.go
+.up:	move.l	n_Next(a0),d1
+	bne.s	.go
+	move.l	n_Parent(a0),d1
+	beq.s	.x
+	move.l	d1,a0
+	bra.s	.up
+.go:	move.l	d1,a0
+	cmp.b	#DN_ELEMENT,n_Type(a0)
+	bne.s	.walk
+	move.w	n_Tag(a0),d1
+	cmp.w	#TAG_STYLE,d1
+	beq.s	.n
+	cmp.w	#TAG_LINK,d1
+	bne.s	.walk
+.n:	addq.l	#1,d0
+	bra.s	.walk
+.x:	rts
+
 ; NavHistory - add g_PageUrl to the history as flags d3 say
 NavHistory:
 	btst	#0,d3
@@ -185,10 +495,13 @@ NavLoad:
 	move.l	d0,g_AbortMask(a4)
 	lea	GuiNetHook,a0
 	move.l	a0,g_NetSigHook(a4)
-	lea	GuiProgress,a0		; "Received 12 of 40 KB"
-	move.l	a0,g_ProgressHook(a4)
+	lea	PageHook(pc),a0		; "Received 12 of 40 KB", and a page
+	move.l	a0,g_ProgressHook(a4)	; shown while it comes
 	moveq	#-1,d0
 	move.l	d0,g_ProgKB(a4)
+	clr.l	g_IncState(a4)
+	clr.l	g_IncShown(a4)
+	clr.l	g_NavStopped(a4)
 	lea	LogGo(pc),a0
 	lea	g_NavUrl(a4),a1
 	move.l	#$80000000,d0
@@ -215,6 +528,8 @@ NavLoad:
 	lea	ViewSrc(pc),a1		; view-source:URL: its text, as text
 	jsr	StrIPrefix
 	beq.s	.nvs
+	moveq	#-1,d0			; (its text: not in pieces; a0 = the
+	move.l	d0,g_IncState(a4)	;  URL after "view-source:")
 	jsr	HttpGetCached
 	beq.s	.got
 	lea	g_Resp+r_CType(a4),a1
@@ -237,7 +552,11 @@ NavLoad:
 	bne.s	.stop			; stays
 	tst.l	g_AbortReq(a4)
 	beq.s	.err
-.stop:	tst.l	g_ViewLive(a4)
+.stop:	tst.l	g_NavStopped(a4)	; (a new page: no error page meanwhile)
+	bne.s	.st1
+	tst.l	g_ViewLive(a4)
+	beq	.x
+.st1:	tst.l	g_ViewLive(a4)
 	beq.s	.err
 	clr.l	g_NetSigHook(a4)
 	clr.l	g_ProgressHook(a4)
@@ -249,7 +568,11 @@ NavLoad:
 	jsr	GuiStatus
 	moveq	#2,d0
 	move.l	d0,g_AbortReq(a4)
-	move.l	g_NavUndo(a4),d0	; Back/Forward stopped: the history
+	tst.l	g_IncShown(a4)		; a page partly shown: it stays, and
+	beq.s	.sth			; is in the history
+	bsr	NavHistory
+	bra.s	.nohist
+.sth:	move.l	g_NavUndo(a4),d0	; Back/Forward stopped: the history
 	bmi.s	.nohist			; stays where it was
 	move.l	d0,g_HistPos(a4)
 	bra.s	.nohist
@@ -257,6 +580,8 @@ NavLoad:
 	lea	g_NavUrl(a4),a0
 	bra.s	.built
 .ok:	move.l	d0,g_PageStatus(a4)	; (401: see below)
+	cmp.l	#1,g_IncState(a4)	; shown while it came: the rest
+	beq	.inc
 	bsr	TakeResponse
 	lea	g_Resp+r_Url(a4),a0
 .built:	lea	g_PageUrl(a4),a1
@@ -269,7 +594,7 @@ NavLoad:
 	tst.l	g_Quit(a4)
 	bne	.x
 	bsr	ShowPage
-	cmp.l	#401,g_PageStatus(a4)	; a password is needed
+.shown:	cmp.l	#401,g_PageStatus(a4)	; a password is needed
 	bne.s	.hist
 	lea	MsgAuth(pc),a0
 	jsr	GuiStatus
@@ -290,8 +615,32 @@ NavLoad:
 	jsr	GuiBusy
 .x:	clr.l	g_NoCache(a4)
 	clr.l	g_LoadPhase(a4)
+	clr.l	g_ProgressHook(a4)
 	movem.l	(sp)+,d2-d3/a2
 	rts
+.inc:	moveq	#1,d0			; the end of a page shown as it came
+	bsr	IncFeed
+	clr.l	g_IncState(a4)		; (complete now: ShowPage logs it)
+	lea	g_Resp+r_Body(a4),a0	; (the raw text: not needed now)
+	jsr	BufFree
+	tst.l	g_TkAbort(a4)
+	bne	.stop
+	clr.l	g_ProgressHook(a4)
+	bsr	PageFixups
+	tst.l	g_IncShown(a4)
+	bne.s	.inc2
+	bsr	IncCss			; (never shown: a short page)
+	tst.l	g_Quit(a4)
+	bne	.x
+	bsr	ShowPage
+	bra	.shown
+.inc2:	bsr	SheetCount		; style sheets in the body: again
+	cmp.l	g_IncSheets(a4),d0
+	beq.s	.inc3
+	bsr	IncCss
+.inc3:	jsr	GuiRelayout		; all of it
+	bsr	ShowDone
+	bra	.shown
 
 AboutPrefix:	dc.b	"about:",0
 AboutSave:	dc.b	"about:save",0
@@ -1161,6 +1510,8 @@ ShowPage:
 	move.l	d0,a0
 	jsr	FindAnchor
 	bpl.s	.scr
+	moveq	#1,d0			; not there (yet)
+	move.l	d0,g_FragPend(a4)
 .top:	moveq	#0,d0
 .scr:	moveq	#-1,d1
 	move.l	d1,g_WantScroll(a4)
@@ -1203,6 +1554,14 @@ ShowPage:
 	jsr	StrCopyN
 	addq.l	#1,g_PageGen(a4)	; paint what differs from the old page
 	jsr	GuiRefresh
+	tst.l	g_IncState(a4)		; shown before it has all come
+	bgt.s	.inc
+	bsr.s	ShowDone
+.inc:	movem.l	(sp)+,a2
+	rts
+
+; ShowDone - the page is all there: log it (tests), queue its images
+ShowDone:
 	lea	LogPage(pc),a0
 	lea	g_PageUrl(a4),a1
 	move.l	g_DocHeight(a4),d0
@@ -1215,9 +1574,7 @@ ShowPage:
 	suba.l	a1,a1
 	move.l	g_ScrollY(a4),d0
 	jsr	LogEvent
-	jsr	ImagesStart		; then the images, from the event loop
-	movem.l	(sp)+,a2
-	rts
+	jmp	ImagesStart		; then the images
 
 ;--------------------------------------------------------------------
 ; NavPost - submit data with POST and show the result

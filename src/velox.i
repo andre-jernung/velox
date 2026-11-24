@@ -50,6 +50,8 @@ LS_IDLE		equ	0		; the loader (task.s): no job
 LS_RUN		equ	1		; ready to run
 LS_SOCK		equ	2		; waiting for a socket
 LS_SIG		equ	3		; waiting for signals
+INC_EVERY	equ	50		; a page coming in: layouts 1 s apart (at least)
+USER_QUIET	equ	15		; and not until 0.3 s after scrolling
 MAX_REDIRECTS	equ	8
 STATUS_MAX	equ	160		; status line / title buffers
 PEN_CACHE	equ	64		; colours with an allocated pen
@@ -411,6 +413,16 @@ g_ParseFinal	rs.l	1		; 1: the end of the document
 g_ParseBody	rs.l	1		; the body's content has begun
 g_TokStart	rs.l	1		; the token being parsed
 g_TokEnd	rs.l	1		; after a complete start tag
+g_IncState	rs.l	1		; nav.s: 1 page shown as it comes, -1 not
+g_IncShown	rs.l	1		; it is shown
+g_IncRaw	rs.l	1		; body bytes decoded so far
+g_IncCs		rs.l	1		; its character set (-1: not yet)
+g_IncSheets	rs.l	1		; <style>/<link> when the CSS was loaded
+g_IncLast	rs.l	1		; the last layout (ticks)
+g_IncEvery	rs.l	1		; ticks between layouts
+g_IncT0		rs.l	1		; when the last layout started
+g_UserTick	rs.l	1		; the user's last key or scroller use
+g_NavStopped	rs.l	1		; the user stopped the load (NavStop)
 g_LoadPhase	rs.l	1		; 1: a new page loads, 2: the shown one
 g_LayWidth	rs.l	1		; width laid out for
 g_DocHeight	rs.l	1
@@ -839,6 +851,7 @@ g_DitTab	rs.b	3*4*4*256	; dither tables (picbm.s)
 g_C2pLo		rs.l	256		; c2p: a pen's bits, planes 0-3,
 g_C2pHi		rs.l	256		; ... 4-7 (just after)
 g_PngAbs	rs.b	1022		; |v| of -510..510, 255 at most
+g_RespSave	rs.b	RESP_SIZEOF	; the page's response (IncCss)
 g_SIZEOF	rs.b	0
 
 ;--------------------------------------------------------------------
