@@ -48,6 +48,9 @@ and a single event dispatch point.
   lists the time of each decoding stage. The 68020's instruction cache
   holds 256 bytes, and a stock A1200 has only Chip RAM, so hot loops
   that fit in 256 bytes run much faster.
+- `SPEED=real PROFILE=1 test/emu.sh --auto pagespeed` (manual) lists the
+  stage times of big.html: fetched, from the disk cache (its page file),
+  coming in 4 parts, and Back to it kept.
 - `OS=3.2 test/emu.sh --auto` runs the same tests on AmigaOS 3.2 (Kickstart
   3.2 and Workbench/Classes/Fonts disks from the user's 3.2 CD in
   `~/amiga/os32/cd`). Run both before calling GUI or image work done.
@@ -93,3 +96,12 @@ and a single event dispatch point.
   `g_StatusBuf`, `g_Line`) across such a call, because window handlers
   use them meanwhile (this bug happened). Never yield inside a layout:
   the view must always match the runs.
+- A page is its arena (`PageAlloc`), its buffers and the globals listed
+  in `KeepTab` (keep.s): pages are kept for Back by copying those, and
+  saved to disk as page files (pagefile.s). A new per-page global goes
+  into `KeepTab`. A new pointer field in page memory goes into
+  `PfWalk` (pagefile.s); a pointer it does not know fails the save
+  (safe, but the page is then never saved: `make test` runs
+  `test/unit/pagefile.vt`, which checks that pages save and come back
+  the same). Pointers out of the page are only allowed into
+  `AttrNames` (html.s).

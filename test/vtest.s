@@ -29,7 +29,7 @@
 	xref	PageNew,BufAppend,BufReserve,BufClear,CharsetDetect,DecodeCharset
 	xref	HtmlParse,HtmlBegin,HtmlMore,TagNameOf,LayoutDocument,RunCount,RunPtr,ParseDec,CssLoad
 	xref	Inflate,PicInfo,PicDecode,PicFree,PicAlloc,PicFreeMem
-	xref	CookieSet,CookieHeader,UrlParse,BufFree,PageFixups
+	xref	CookieSet,CookieHeader,UrlParse,BufFree,PageFixups,PfBuild,PfApply
 
 T_LINEMAX	equ	2048
 T_MAXWORDS	equ	4
@@ -180,6 +180,7 @@ Commands:
 	dc.w	CnCookies-Commands,CmdCookies-Commands
 	dc.w	CnDecode-Commands,CmdDecode-Commands
 	dc.w	CnInflate-Commands,CmdInflate-Commands
+	dc.w	CnPagefile-Commands,CmdPagefile-Commands
 	dc.w	0
 
 CnParse:	dc.b	"parse",0
@@ -194,6 +195,7 @@ CnSetCookie:	dc.b	"setcookie",0
 CnCookies:	dc.b	"cookies",0
 CnDecode:	dc.b	"decode",0
 CnInflate:	dc.b	"inflate",0
+CnPagefile:	dc.b	"pagefile",0
 Empty:		dc.b	0
 ResultSep:	dc.b	" => ",0
 MsgUnknown:	dc.b	"unknown command",0
@@ -886,6 +888,263 @@ CmdLayout:
 .x:	movem.l	(sp)+,d2-d3/a2
 	rts
 
+;--------------------------------------------------------------------
+; pagefile FILE WIDTH - lay out a page, save it as a page file in memory
+; (PfBuild), spoil the page's memory, read the file back (PfApply): the
+; same DOM, runs and anchors (PageSum); and again after laying it out
+; with all styles computed anew
+;--------------------------------------------------------------------
+CmdPagefile:
+	movem.l	d2-d4/a2,-(sp)
+	bsr	TestMetrics
+	move.l	T_Words+8,a0
+	jsr	ParseDec
+	move.l	d0,d3			; d3 = width
+	move.l	T_Words+4,a0
+	bsr	LoadPage
+	beq	.err
+	move.l	T_Words+4,a0		; (its URL: the file's name)
+	lea	g_PageUrl(a4),a1
+.u:	move.b	(a0)+,(a1)+
+	bne.s	.u
+	move.l	g_PageSrc+buf_Data(a4),a0
+	jsr	HtmlParse
+	tst.l	d0
+	beq	.err
+	jsr	PageFixups
+	jsr	CssLoad
+	move.l	d3,d0
+	jsr	LayoutDocument
+	beq	.err
+	bsr	PageSum
+	move.l	d0,d4			; d4 = what the page is
+	move.l	T_Sums+4,T_Sums+16
+	move.l	T_Sums+8,T_Sums+20
+	jsr	PfBuild
+	beq.s	.nosave
+	move.l	d0,a2			; a2 = the page file
+	lea	MsgPfSaved(pc),a0
+	jsr	PutStr
+	bsr	Spoil
+	move.l	a2,a0
+	jsr	PfApply
+	beq.s	.noload
+	bsr	PageSum
+	bsr	.same
+	addq.l	#1,g_StyleGen(a4)	; all styles anew
+	move.l	d3,d0
+	jsr	LayoutDocument
+	lea	MsgPfRelay(pc),a0
+	jsr	PutStr
+	bsr	PageSum
+	bsr	.same
+.free:	move.l	a2,a1
+	EXEC	FreeVec
+	bra.s	.x
+.noload:
+	lea	MsgPfNoLoad(pc),a0
+	jsr	PutStr
+	bra.s	.free
+.nosave:
+	lea	MsgPfNoSave(pc),a0
+	jsr	PutStr
+	bra	.x
+.err:	bsr	PutError
+.x:	movem.l	(sp)+,d2-d4/a2
+	rts
+.same:	lea	MsgPfSame(pc),a0
+	cmp.l	d4,d0
+	beq.s	.s
+	lea	MsgPfDiff(pc),a0
+	jsr	PutStr
+	moveq	#' ',d0			; (where: DOM, runs, anchors before
+	jsr	PutChar			;  and now)
+	moveq	#0,d0
+	move.l	T_Sums+4,d1
+	cmp.l	T_Sums+16,d1
+	beq.s	.d1
+	addq.l	#1,d0
+.d1:	move.l	T_Sums+8,d1
+	cmp.l	T_Sums+20,d1
+	beq.s	.d2
+	addq.l	#2,d0
+.d2:	jmp	PutNum
+.s:	jmp	PutStr
+
+MsgPfSaved:	dc.b	"saved",0
+MsgPfNoSave:	dc.b	"not saved",0
+MsgPfNoLoad:	dc.b	" not loaded",0
+MsgPfSame:	dc.b	" same",0
+MsgPfDiff:	dc.b	" DIFFERENT",0
+MsgPfRelay:	dc.b	", laid out again:",0
+	even
+
+; Spoil - fill the page's memory (arena, source, runs, anchors) with
+; $a5: what still points into it after PfApply shows
+Spoil:
+	move.l	g_PagePool(a4),d0
+.b:	beq.s	.bufs
+	move.l	d0,a1
+	lea	AB_SIZEOF(a1),a0
+	move.l	ab_Size(a1),d0
+	bsr.s	.fill
+	move.l	ab_Next(a1),d0
+	bra.s	.b
+.bufs:	lea	g_PageSrc(a4),a1
+	bsr.s	.buf
+	lea	g_Runs(a4),a1
+	bsr.s	.buf
+	lea	g_Anchors(a4),a1
+.buf:	move.l	buf_Data(a1),a0
+	move.l	buf_Cap(a1),d0
+.fill:	move.l	a0,d1
+	beq.s	.fx
+.fl:	subq.l	#1,d0
+	bmi.s	.fx
+	move.b	#$a5,(a0)+
+	bra.s	.fl
+.fx:	rts
+
+; PageSum - a sum of what the page is: its DOM (types, tags,
+; attributes, text, form values, kept styles' colours), its runs (what
+; they show and where), its anchors, its height
+; Out: d0 = it
+PageSum:
+	movem.l	d2-d3/a2-a3,-(sp)
+	moveq	#0,d2
+	move.l	g_DocHeight(a4),d0
+	bsr	.mix
+	move.l	g_Doc(a4),d0
+	beq	.runs
+.node:	move.l	d0,a2
+	move.l	n_Type(a2),d0		; (type, flags, tag)
+	bsr	.mix
+	cmp.b	#DN_TEXT,n_Type(a2)
+	bne.s	.el
+	move.l	n_Data(a2),a0
+	move.l	n_Data2(a2),d1
+	bsr	.str
+	bra.s	.next
+.el:	cmp.b	#DN_ELEMENT,n_Type(a2)
+	bne.s	.next
+	move.l	a2,a0
+	bsr	.attrs
+	move.l	n_Style(a2),d0
+	beq.s	.nst
+	move.l	d0,a3
+	move.l	SK_STYLE+st_Color(a3),d0
+	bsr	.mix
+	move.l	SK_STYLE(a3),d0
+	bsr	.mix
+.nst:	cmp.w	#TAG_IMG,n_Tag(a2)
+	beq.s	.next
+	move.l	n_Data2(a2),d0
+	beq.s	.next
+	move.l	d0,a3
+	move.l	fs_Value(a3),d0
+	beq.s	.nv
+	move.l	d0,a0
+	bsr	.cstr
+.nv:	move.l	fs_Label(a3),d0
+	beq.s	.next
+	move.l	d0,a0
+	bsr	.cstr
+.next:	move.l	n_First(a2),d0
+	bne.s	.node
+.up:	move.l	n_Next(a2),d0
+	bne.s	.node
+	move.l	n_Parent(a2),d0
+	beq.s	.runs
+	move.l	d0,a2
+	bra.s	.up
+.runs:	move.l	d2,T_Sums+4
+	move.l	g_Runs+buf_Data(a4),a2
+	move.l	g_Runs+buf_Len(a4),d3
+	lsr.l	#5,d3
+	bra	.re
+.r:	move.l	ru_Y(a2),d0
+	bsr	.mix
+	move.l	ru_X(a2),d0		; (x, w)
+	bsr	.mix
+	move.l	ru_H(a2),d0		; (h, baseline)
+	bsr	.mix
+	move.l	ru_Type(a2),d0		; (type, font, soft, flags)
+	bsr	.mix
+	move.l	ru_Color(a2),d0
+	bsr	.mix
+	move.l	ru_Len(a2),d0
+	bsr	.mix
+	move.b	ru_Type(a2),d0
+	cmp.b	#RT_TEXT,d0
+	bne.s	.rn
+	move.l	ru_Text(a2),a0
+	move.l	ru_Len(a2),d1
+	bsr	.str
+	bra.s	.rl
+.rn:	cmp.b	#RT_IMAGE,d0
+	beq.s	.rnode
+	cmp.b	#RT_WIDGET,d0
+	beq.s	.rnode
+	cmp.b	#RT_RECT,d0
+	bne.s	.rl
+	move.l	ru_Text(a2),d0		; a background image: its URL
+	beq.s	.rl
+	move.l	d0,a0
+	lea	bg_Url(a0),a0
+	bsr	.cstr
+	bra.s	.rl
+.rnode:	move.l	ru_Text(a2),a0
+	bsr	.attrs
+.rl:	move.l	ru_Link(a2),d0
+	beq.s	.rx
+	move.l	d0,a0
+	bsr	.attrs
+.rx:	lea	RUN_SIZEOF(a2),a2
+.re:	dbf	d3,.r
+	move.l	d2,T_Sums+8
+	move.l	g_Anchors+buf_Data(a4),a2
+	move.l	g_Anchors+buf_Len(a4),d3
+	lsr.l	#3,d3
+	bra.s	.ae
+.a:	move.l	(a2)+,a0
+	bsr.s	.cstr
+	move.l	(a2)+,d0
+	bsr.s	.mix
+.ae:	dbf	d3,.a
+	move.l	d2,d0
+	movem.l	(sp)+,d2-d3/a2-a3
+	rts
+; (a0 = element: its tag and attributes)
+.attrs:	move.l	a3,-(sp)
+	moveq	#0,d0
+	move.w	n_Tag(a0),d0
+	bsr.s	.mix
+	move.l	n_Data(a0),d0
+.al:	beq.s	.ax
+	move.l	d0,a3
+	move.l	at_Name(a3),a0
+	bsr.s	.cstr
+	move.l	at_Value(a3),a0
+	bsr.s	.cstr
+	move.l	at_Next(a3),d0
+	bra.s	.al
+.ax:	move.l	(sp)+,a3
+	rts
+.cstr:	moveq	#0,d0
+.cl:	move.b	(a0)+,d0
+	beq.s	.mix
+	bsr.s	.mix
+	bra.s	.cl
+.str:	moveq	#0,d0			; (a0, d1 bytes)
+.sl:	subq.l	#1,d1
+	bmi.s	.mix
+	move.b	(a0)+,d0
+	bsr.s	.mix
+	bra.s	.sl
+.mix:	rol.l	#5,d2
+	add.l	d0,d2
+	rts
+
 CmdSetCookie:
 	move.l	T_Words+4,a0
 	lea	g_Parts(a4),a1
@@ -965,6 +1224,7 @@ Hex:		dc.b	"0123456789abcdef"
 G:		ds.b	g_SIZEOF
 T_Conn:		ds.l	1
 T_Buf:		ds.b	BUF_SIZEOF
+T_Sums:		ds.l	8		; PageSum: its parts (DOM, runs), before and now
 T_NoBody:	ds.b	2
 T_Words:	ds.l	T_MAXWORDS
 T_Line:		ds.b	T_LINEMAX

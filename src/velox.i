@@ -60,6 +60,9 @@ MAX_REDIRECTS	equ	8
 STATUS_MAX	equ	160		; status line / title buffers
 PEN_CACHE	equ	64		; colours with an allocated pen
 HIST_ENTRIES	equ	32
+PROF_SLOTS	equ	18		; profiling: 0-11 images, 12 page shown,
+				; 13 parse, 14 CSS, 15 layout, 16 page file
+				; read, 17 built (to save)
 KEEP_PAGES	equ	4		; pages kept for Back/Forward
 KEEP_FREE	equ	384*1024	; memory left free when keeping one
 
@@ -243,6 +246,10 @@ st_Width	rs.w	1		; px; negative = percent; 0 = auto
 st_Height	rs.w	1
 st_BgImg	rs.l	1		; background image (record) or 0
 STYLE_SIZEOF	rs.b	0
+SK_GEN		equ	0		; n_Style (style.s): g_StyleGen,
+SK_PARENT	equ	4		; the parent's style,
+SK_STYLE	equ	4+STYLE_SIZEOF	; the element's
+SK_SIZEOF	equ	4+2*STYLE_SIZEOF
 
 ;--------------------------------------------------------------------
 ; CSS (css.s).  Everything lives in the page pool.
@@ -294,6 +301,16 @@ CSS_CLBUCKETS	equ	128
 CSS_MAXMATCH	equ	64		; matched rules kept per element
 
 ;--------------------------------------------------------------------
+; a block of the page's memory (mem.s), the data after it
+;--------------------------------------------------------------------
+	RSRESET
+ab_Next		rs.l	1		; the next (older) block or 0
+ab_Size		rs.l	1		; bytes of data
+ab_Used		rs.l	1		; bytes handed out
+ab_Pad		rs.l	1		; (the data 8-byte aligned)
+AB_SIZEOF	rs.b	0
+
+;--------------------------------------------------------------------
 ; a page kept for its history entry (keep.s): the globals that make
 ; the page shown, copied (KeepTab lists them)
 ;--------------------------------------------------------------------
@@ -310,7 +327,8 @@ kp_Charset	rs.l	1
 kp_Status	rs.l	1
 kp_StyleGen	rs.l	1
 kp_ScrollY	rs.l	1
-kp_Done		rs.b	12		; g_PageDone, g_PageHist, g_ImgCut
+kp_Done		rs.b	20		; g_PageDone .. g_PfFresh
+kp_Touched	rs.l	1		; g_FormTouched
 kp_Url		rs.b	URL_MAX
 kp_Title	rs.b	STATUS_MAX
 KP_SIZEOF	rs.b	0
@@ -675,8 +693,8 @@ g_SelBOff	rs.l	1
 g_SelFrom	rs.l	1		; scratch
 g_PaintIdx	rs.l	1		; index of the run being painted
 g_PageGen	rs.l	1		; counts the pages shown
-g_Prof		rs.l	16		; profiling: ticks of each slot,
-g_ProfT		rs.l	16		; ... when it began,
+g_Prof		rs.l	PROF_SLOTS		; profiling: ticks of each slot,
+g_ProfT		rs.l	PROF_SLOTS		; ... when it began,
 g_ProfIO	rs.b	IOTV_SIZE	; ... timer.device
 g_ProfEC	rs.l	2		; ... an EClockVal
 g_ProfHz	rs.l	1		; ... ticks a second
@@ -920,6 +938,20 @@ g_KeepMax	rs.l	1		; pages kept at most (Velox/KeepPages)
 g_PageDone	rs.l	1		; the page is all there (-1: never kept)
 g_PageHist	rs.l	1		; its history entry, or -1
 g_ImgCut	rs.l	1		; images of the page were left unloaded
+g_PageHash	rs.l	1		; hash of its source as it came (0: none)
+g_PfFresh	rs.l	1		; shown from its page file (pagefile.s)
+g_RespHash	rs.l	1		; (nav.s: hash of the response's body)
+g_PfFail	rs.l	1		; pagefile.s: the page cannot be saved
+g_PfData	rs.l	1		; ... the copy of its memory
+g_PfBits	rs.l	1		; ... which longs of it are pointers
+g_PfSize	rs.l	1		; ... its bytes (all parts)
+g_PfRegN	rs.l	1		; ... parts in g_PfReg
+g_PfHit		rs.l	1		; ... the part found last (PfWhere)
+g_PfHit2	rs.l	1		; ... and before
+g_PfFH		rs.l	1		; ... reading from this file,
+g_PfGen		rs.l	1		; ... g_LayGen when it began
+g_LayGen	rs.l	1		; layout.s: counts the layouts
+g_PfPtr		rs.l	1		; ... or from here
 g_PageUrl	rs.b	URL_MAX		; URL of the page shown
 g_NavUrl	rs.b	URL_MAX		; URL being loaded
 g_LinkUrl	rs.b	URL_MAX
@@ -939,6 +971,8 @@ g_RespSave	rs.b	RESP_SIZEOF	; the page's response (IncCss)
 g_DcStr		rs.b	DCSTR_MAX	; diskcache.s: an entry's strings
 g_ImgUrl	rs.b	URL_MAX		; img.s: the image's URL (the loader's)
 g_ImgKey	rs.b	URL_MAX+80	; its disk cache key
+PF_REGMAX	equ	160		; parts of a page saved (blocks, buffers)
+g_PfReg		rs.l	3*PF_REGMAX	; pagefile.s: start, end, offset
 g_SIZEOF	rs.b	0
 
 ;--------------------------------------------------------------------

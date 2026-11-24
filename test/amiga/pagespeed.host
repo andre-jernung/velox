@@ -12,7 +12,8 @@ r = sys.argv[1]
 log = os.path.join(r, "pagespeed.log")
 out = open(os.path.join(r, "pagespeed.driver"), "w")
 U = "http://127.0.0.1:8080/"
-names = {"l": "relayout", "m": "page shown", "n": "parse", "o": "CSS", "p": "layout"}
+names = {"l": "relayout", "m": "page shown", "n": "parse", "o": "CSS", "p": "layout",
+         "q": "page file read", "r": "page file built"}
 
 
 def go(a, path):
@@ -53,7 +54,7 @@ try:
     text = open(log).read().split("\n")
     i = [k for k, l in enumerate(text) if l.startswith("restored ")][-1]
     out.write("bigslow kept, Back:\n")
-    for l in text[i - 4:i]:
+    for l in text[i - 4:i + 6]:
         if l.startswith("prof"):
             out.write("  %-18s %6s ms\n" % (names.get(l[4], l[4]), l.split()[1]))
     time.sleep(2)

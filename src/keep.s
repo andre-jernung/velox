@@ -16,8 +16,8 @@
 
 	include	"velox.i"
 
-	xdef	PageLeave,PageRestore,KeepEvict,KeepDrop,KeepFreeAll
-	xref	PageFree,Alloc,Free,BufFree,ImgListFree,LogEvent
+	xdef	PageLeave,PageRestore,KeepEvict,KeepDrop,KeepFreeAll,KeepCopy
+	xref	PageFree,Alloc,Free,BufFree,ImgListFree,LogEvent,ArenaFree
 
 	section	code,code
 
@@ -55,8 +55,8 @@ KPOFF	set	KPOFF+\3
 	IFNE	g_LinkColor+4-g_LayWidth-20
 	FAIL	"g_LayWidth .. g_LinkColor must stay together (KeepTab)"
 	ENDC
-	IFNE	g_ImgCut+4-g_PageDone-12
-	FAIL	"g_PageDone .. g_ImgCut must stay together (KeepTab)"
+	IFNE	g_PfFresh+4-g_PageDone-20
+	FAIL	"g_PageDone .. g_PfFresh must stay together (KeepTab)"
 	ENDC
 
 KeepTab:
@@ -72,7 +72,8 @@ KeepTab:
 	KEEPG	g_PageStatus,kp_Status,4,0
 	KEEPG	g_StyleGen,kp_StyleGen,4,0
 	KEEPG	g_ScrollY,kp_ScrollY,4,0
-	KEEPG	g_PageDone,kp_Done,12,0
+	KEEPG	g_PageDone,kp_Done,20,0
+	KEEPG	g_FormTouched,kp_Touched,4,0
 	KEEPG	g_PageUrl,kp_Url,URL_MAX,0
 	KEEPG	g_TitleText,kp_Title,STATUS_MAX,0
 	dc.w	0
@@ -322,11 +323,9 @@ KeepFree:
 	jsr	BufFree
 	lea	kp_Runs+BUF_SIZEOF(a2),a0
 	jsr	BufFree
-	move.l	kp_Pool(a2),d0
-	beq.s	.np
-	move.l	d0,a0
-	EXEC	DeletePool
-.np:	move.l	a2,a1
+	move.l	kp_Pool(a2),a0
+	jsr	ArenaFree
+	move.l	a2,a1
 	jsr	Free
 	move.l	(sp)+,a2
 	rts

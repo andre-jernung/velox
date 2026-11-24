@@ -95,10 +95,43 @@ default 4096, 0 for none; the oldest files go).
   and are checked like pages. For an image without validators the file
   is fetched again, but decoded only if its hash changed.
 
-Caching the parsed DOM instead of the page's HTML was measured and
-rejected: showing a 53 KB page from the cache takes 1.0 s to parse but
-4.0 s to lay out on a stock A1200, so a saved DOM would save a sixth
-while tying the cache to the program's data layout.
+- **Laid-out pages** (pagefile.s). Showing a 53 KB page from its HTML
+  takes 1.0 s to parse and 4.0 s to lay out on a stock A1200, so a page
+  that has been shown (with its images) is also saved as it is in
+  memory: its arena blocks (DOM, attributes, styles, CSS rules, form
+  state), source, runs, anchors and globals. The next time it comes
+  from the disk cache, that is read back instead: for big.html on a
+  stock A1200, 0.34 s to read and relocate it and 0.11 s to paint,
+  instead of 5.7 s (plus the disk: about 0.2 s for its 350 KB on IDE).
+  A saved DOM alone (without the layout) would save only the sixth that
+  is parsing. Building the file takes 0.4 s after the page and its
+  images are there, in slices that yield to the window; if the page is
+  laid out again or typed into meanwhile, it is not saved.
+
+  Page memory is Velox's own arena of blocks (mem.s), so its parts can
+  be written as they are. Pointers are the hard part: `PfBuild` copies
+  the parts one after the other, walks the page's structures as the rest
+  of Velox does, and for each pointer field writes the offset of its
+  target into the copy and marks the field in a bitmap (a bit a long).
+  Loading needs no walk: the parts go to new memory and each marked long
+  becomes an address again. A pointer out of the page fails the save
+  (never a wrong file); known attribute names point into html.s's table
+  on purpose, which counts as a part (its offsets hold within a build).
+  Images are not saved: they come back from the image cache as shown.
+  CSS match caches are dropped.
+
+  A page file is used only with the HTML entry it was made from (a hash
+  of the source as it came), the same build (`BUILD_ID`, a hash of the
+  sources made by the Makefile) and the same fonts; at another window
+  width it is laid out again with its kept styles. Pages the user typed
+  into are not saved. The `pagefile` unit test saves pages, spoils their
+  memory, loads them and compares DOM, runs and anchors, also after a
+  relayout with all styles computed anew.
+
+  Checking a page shown from the cache no longer shows the new version
+  as it comes: it is read whole, and if its hash is the one shown (a
+  server without validators sends the same page again), nothing is
+  done; otherwise it replaces the copy.
 
 ### Kept pages (Back and Forward)
 
@@ -208,13 +241,14 @@ JS is not on the roadmap yet, but it must stay possible to add. That means:
 | Module      | Job                                                            |
 |-------------|----------------------------------------------------------------|
 | main.s      | startup (CLI/Workbench, tool types), settings, CLI fetch        |
-| mem.s       | application and page pools, growable buffers                    |
+| mem.s       | application pool, the page's arena, growable buffers            |
 | util.s      | strings, numbers, output, event log (`LOG=`), error texts       |
 | url.s       | parsing, resolving (RFC 3986), fixing typed addresses           |
 | conn.s      | sockets (non-blocking), AmiSSL, DNS cache, I/O through `WaitSelect` |
 | http.s      | requests, responses, redirects, keep-alive                      |
 | task.s      | the loader: a coroutine of the event loop                       |
 | keep.s      | pages kept for Back/Forward                                     |
+| pagefile.s  | laid-out pages in the disk cache                                 |
 | cache.s     | memory cache of recent responses                                |
 | diskcache.s | disk cache: pages and style sheets, images as shown             |
 | cookies.s   | cookie store, persistent cookies in ENVARC:                     |

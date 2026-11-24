@@ -44,10 +44,6 @@ StyleRoot:
 	IFNE	STYLE_SIZEOF&3
 	FAIL	"StyleOf copies longs: STYLE_SIZEOF must be a multiple of 4"
 	ENDC
-SK_GEN		equ	0			; n_Style: g_StyleGen,
-SK_PARENT	equ	4			; the parent's style,
-SK_STYLE	equ	4+STYLE_SIZEOF		; the element's
-SK_SIZEOF	equ	4+2*STYLE_SIZEOF
 StyleOf:
 	movem.l	d2/a2-a3/a5,-(sp)
 	move.l	a0,a5			; a5 = element, a3 = parent's style,

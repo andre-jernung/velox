@@ -1159,7 +1159,7 @@ ProfLog:
 	suba.l	a1,a1
 	jsr	LogEvent
 .n:	addq.l	#1,d2
-	cmp.l	#16,d2
+	cmp.l	#PROF_SLOTS,d2
 	blo.s	.l
 	movem.l	(sp)+,d2
 	rts

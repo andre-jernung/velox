@@ -18,6 +18,8 @@
 
 	include	"velox.i"
 
+	xdef	AttrNames,AttrNamesEnd	; (pagefile.s: attributes point there)
+
 	xdef	HtmlParse,HtmlBegin,HtmlMore
 	xref	TaskPoll
 	IFD	PROFILE
@@ -1052,4 +1054,5 @@ AttrNames:
 	dc.b	"aria-label",0,"aria-hidden",0,"data-src",0,"srcset",0
 	dc.b	"loading",0,"enctype",0,"accept-charset",0,"autocomplete",0
 	dc.b	0
+AttrNamesEnd:
 	even

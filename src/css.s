@@ -1322,6 +1322,10 @@ ParseSelector:
 	bra.s	.pseen
 .aps:	; :checked -> [checked] (the state as the page set it)
 	move.l	a0,a2
+	move.l	d2,a0			; (the name in the page: no pointers
+	bsr	CopyStr			;  out of it, pagefile.s)
+	beq	.bad
+	move.l	d0,d2
 	moveq	#AS_SIZEOF,d0
 	jsr	PageAlloc
 	beq	.bad

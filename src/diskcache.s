@@ -18,6 +18,7 @@
 	include	"velox.i"
 
 	xdef	DcInit,DcLoad,DcStore,DcFresh,DcLoadImg,DcStoreImg,DcImgFree,DcCond,DcHash
+	xdef	DcPathOf,DcAdded
 	xref	StrCopyN,StrLen,StrIPrefix,BufClear,BufReserve,ParseDec
 
 DC_MAGIC	equ	'VXC1'
@@ -186,7 +187,8 @@ DcTrimOld:
 
 ;--------------------------------------------------------------------
 ; DcPathOf - g_DcPath = the file of key a0: the cache directory and the
-; key's hash (FNV-1a) in hex, ".i" after it for images (d0 = 1)
+; key's hash (FNV-1a) in hex, ".i" after it for images (d0 = 1), ".p"
+; for laid-out pages (d0 = 2, pagefile.s)
 ;--------------------------------------------------------------------
 DcPathOf:
 	movem.l	d2-d4,-(sp)
@@ -209,6 +211,9 @@ DcPathOf:
 	beq.s	.nx
 	move.b	#'.',(a1)+
 	move.b	#'i',(a1)+
+	cmp.l	#2,d4
+	bne.s	.nx
+	move.b	#'p',-1(a1)
 .nx:	clr.b	(a1)
 	lea	g_DcDir(a4),a0
 	lea	g_DcPath(a4),a1
@@ -487,13 +492,19 @@ DcWrite:
 	add.l	g_DcHdr+dh_StrLen(a4),d0
 	add.l	d7,d0
 	add.l	g_DcHdr+dh_Mask(a4),d0
+	bsr.s	DcAdded
+.x:	movem.l	(sp)+,d2-d7/a2-a3
+	rts
+
+; DcAdded - a file of d0 bytes was written: the oldest go if the cache
+; is full now
+DcAdded:
 	add.l	d0,g_DcUsed(a4)
 	move.l	g_DcUsed(a4),d0
 	cmp.l	g_DcMax(a4),d0
 	bls.s	.x
-	bsr	DcTrimOld
-.x:	movem.l	(sp)+,d2-d7/a2-a3
-	rts
+	bra	DcTrimOld
+.x:	rts
 
 ; DcStrA1 - copy string a0 with its NUL to g_DcStr at a1, room permitting
 ; Out: a1 = after it (a2 changed)

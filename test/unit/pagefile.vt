@@ -1,0 +1,20 @@
+# pages saved as page files and read back (pagefile.s): the same DOM,
+# runs and anchors, also after laying them out with styles anew
+pagefile test/unit/layout/text.html 200
+pagefile test/unit/layout/table.html 300
+pagefile test/unit/layout/squeeze.html 200
+pagefile test/unit/layout/frames.html 400
+pagefile test/unit/layout/imgalt.html 300
+pagefile test/unit/layout/align.html 300
+pagefile test/unit/layout/indent.html 400
+pagefile test/unit/layout/floats.html 300
+pagefile test/unit/layout/rowspan.html 300
+pagefile test/unit/layout/css.html 300
+pagefile test/unit/layout/selectors.html 300
+pagefile test/unit/layout/mq4.html 300
+pagefile test/unit/layout/mediaattr.html 300
+pagefile test/unit/layout/example.html 400
+pagefile test/www/form.html 400
+pagefile test/www/third.html 400
+pagefile test/www/big.html 400
+pagefile test/www/busy.html 400

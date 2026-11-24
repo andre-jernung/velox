@@ -42,6 +42,7 @@ LayoutDocument:
 	movem.l	d2/a2,-(sp)
 	PROFB	15
 	move.l	d0,g_LayWidth(a4)
+	addq.l	#1,g_LayGen(a4)
 	clr.l	g_ViewLive(a4)		; the runs change
 	clr.l	g_PageBgRec(a4)		; (the page background image: <body>)
 	clr.l	g_FindRun(a4)

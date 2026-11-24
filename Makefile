@@ -13,7 +13,7 @@ VLINK   := $(TOOLS)/vlink
 # -x: undefined symbols are errors (catches typos instead of silently
 #     creating external references)
 # -opt-allbra: also resize branches written with an explicit .s/.w size
-ASFLAGS := -Fhunk -m68020 -quiet -x -opt-allbra -I src -I $(NDK)
+ASFLAGS := -Fhunk -m68020 -quiet -x -opt-allbra -I src -I build -I $(NDK)
 # PROFILE=1: time the stages of the image decoders (prof log events)
 ifeq ($(PROFILE),1)
 ASFLAGS += -DPROFILE=1
@@ -40,6 +40,13 @@ $(VTEST): build/vtest.o $(CORE)
 
 build/%.o: src/%.s $(INCS) build/flags | build
 	$(VASM) $(ASFLAGS) -o $@ $<
+
+# BUILD_ID: a hash of the sources; page files (pagefile.s) of another
+# build are not used.  Rewritten only when it changes.
+build/buildid.i: $(wildcard src/*.s) $(INCS) | build
+	@echo "BUILD_ID equ \$$$$(cat src/*.s src/*.i | cksum | cut -d' ' -f1 | xargs printf '%08x')" | cmp -s - $@ || \
+	 echo "BUILD_ID equ \$$$$(cat src/*.s src/*.i | cksum | cut -d' ' -f1 | xargs printf '%08x')" >$@
+build/pagefile.o: build/buildid.i
 
 # the assembler flags (PROFILE=1 or not): everything again when they change
 build/flags: FORCE | build

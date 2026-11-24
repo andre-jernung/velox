@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Host side of cache.script: /cached has an ETag.  Visited again, it is
-shown from the disk cache and checked (304); once it changed, the copy
-is shown and then the newer version; a new Velox finds it on disk, and
-the images of a page as they were shown (no decoding)."""
+"""Host side of cache.script: /cached has an ETag.  Shown, it is saved
+laid out (a page file).  Visited again, it is shown from that, and
+checked (304); once it changed, the copy is shown and then the newer
+version; a new Velox finds it on disk, and the images of a page as they
+were shown (no decoding)."""
 import os
 import sys
 import time
@@ -26,6 +27,11 @@ def server(path):
     return urllib.request.urlopen(U + path).read().decode()
 
 
+def from_file(lines, url):
+    """Shown from its page file (laid out), not parsed."""
+    return any(l.startswith("pfshown " + url + " ") for l in lines)
+
+
 def go(a, path):
     a.key("ctrl+l")
     a.type("127.0.0.1:8080/" + path)
@@ -38,16 +44,18 @@ try:
     time.sleep(1)
     go(a, "cached")
     wait_log(log, "title Cached v1")
+    wait_log(log, "pfsaved " + U + "cached")
+    step("saved laid out")
     go(a, "index.html")
     wait_log(log, "page " + U + "index.html", 2)
     go(a, "cached")
     lines = wait_log(log, "page " + U + "cached", 2)
     time.sleep(1)
-    if "diskcache " + U + "cached" not in open(log).read().split("\n"):
-        raise AssertionError("not from the disk cache")
+    if not from_file(open(log).read().split("\n"), U + "cached"):
+        raise AssertionError("not from its page file")
     if server("cached-count") != "200:1 304:1":
         raise AssertionError("server saw " + server("cached-count"))
-    step("shown from the disk cache, checked: 304")
+    step("shown from its page file, checked: 304")
     server("cached-bump")
     go(a, "index.html")
     wait_log(log, "page " + U + "index.html", 3)
@@ -58,12 +66,35 @@ try:
     if "title Cached v1" not in text[:i][-8:]:
         raise AssertionError("the cached copy was not shown first")
     step("changed: the copy first, then the newer version")
+    # no validators (a static file): fetched again, but the same, so the
+    # page shown stays (not parsed and laid out again)
+    go(a, "second.html")              # (its page file: made now, or by
+    end = time.time() + 60            #  an earlier test)
+    while time.time() < end:
+        seg = open(log).read().split("\n")
+        seg = seg[len(seg) - 1 - seg[::-1].index("go " + U + "second.html"):]
+        if any(l.startswith(("pfsaved " + U + "second.html", "pfshown " + U + "second.html"))
+               for l in seg):
+            break
+        time.sleep(0.5)
+    else:
+        raise AssertionError("second.html has no page file")
+    go(a, "index.html")
+    wait_log(log, "page " + U + "index.html", 4)
+    go(a, "second.html")
+    lines = wait_log(log, "unchanged " + U + "second.html")
+    seg = lines[len(lines) - 1 - lines[::-1].index("go " + U + "second.html"):]
+    if not from_file(seg, U + "second.html"):
+        raise AssertionError("second.html not from its page file: %r" % seg)
+    if len([l for l in seg if l.startswith("page ")]) != 1:
+        raise AssertionError("shown twice: %r" % seg)
+    step("the same again (no validators): shown once")
     go(a, "cacheimg.html")
     wait_log(log, "images 2")
     a.key("ctrl+q")
     log2 = os.path.join(r, "cache2.log")
     lines = wait_log(log2, "page " + U + "cached", timeout=60)
-    if "diskcache " + U + "cached" not in lines:
+    if not from_file(lines, U + "cached"):
         raise AssertionError("a new Velox did not find it on disk")
     step("a new Velox finds it on disk")
     time.sleep(1)

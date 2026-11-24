@@ -23,7 +23,7 @@
 	xref	GuiPageWidth,GuiScrollTo,LogEvent,CssLoad,BufFree,ImagesStart
 	xref	GuiProgress,TaskAbort,TaskStart,ImagesLoad,TaskBusy,TaskNow
 	xref	HtmlBegin,HtmlMore,IsValidUtf8,GuiRelayout
-	xref	PageRestore,KeepDrop,ImagesAgain
+	xref	PageRestore,KeepDrop,ImagesAgain,PfLoad,PfSave,DcHash
 
 HIST_MAX	equ	HIST_ENTRIES
 NAV_HISTORY	equ	1
@@ -74,7 +74,6 @@ NavGo:
 	bra.s	.x0
 .other:	jsr	TaskAbort		; what is loading stops
 	clr.l	g_FindOn(a4)		; a new page ends finding
-	clr.l	g_PageStatus(a4)
 	clr.l	g_RefreshTicks(a4)	; and a pending meta refresh
 	moveq	#NAV_RELOAD,d1
 	and.l	d3,d1
@@ -201,18 +200,15 @@ PageHook:
 .x:	move.l	g_TkAbort(a4),d0
 	rts
 
-; IncWanted - is g_Resp an HTML page to show as it comes?  (Not a newer
-; version of a cached page the user has typed into meanwhile.)
+; IncWanted - is g_Resp an HTML page to show as it comes?  (Not when
+; checking a page shown from the disk cache: it may be the same.)
 ; Out: d0 = 1 if so (CCR set)
 IncWanted:
 	move.l	a2,-(sp)
 	cmp.l	#200,g_Resp+r_Status(a4)
 	bne.s	.no
-	tst.l	g_Revalid(a4)
-	beq.s	.nr
-	tst.l	g_FormTouched(a4)
+	tst.l	g_Revalid(a4)		; (a newer one: whole, if it differs)
 	bne.s	.no
-.nr:
 	lea	g_Resp+r_CType(a4),a2
 	tst.b	(a2)
 	beq.s	.yes
@@ -495,6 +491,7 @@ ShowCached:
 	jsr	LogEvent
 	bsr	IncBegin
 	beq.s	.x
+	move.l	g_RespHash(a4),g_PageHash(a4)
 	moveq	#1,d0
 	bsr	IncFeed
 	lea	g_Resp+r_Body(a4),a0
@@ -600,10 +597,22 @@ NavLoad:
 	bne.s	.fetch
 	lea	g_NavUrl(a4),a0
 	jsr	DcLoad
-	beq.s	.fetch0
-	bsr	ShowCached
-	beq.s	.fetch0
-	bclr	#0,d3			; (in the history now)
+	beq	.fetch0
+	move.l	g_Resp+r_Body+buf_Data(a4),a0	; (its hash: the page laid
+	move.l	g_Resp+r_Body+buf_Len(a4),d0	;  out on disk is for it)
+	jsr	DcHash
+	move.l	d0,g_RespHash(a4)
+	lea	g_NavUrl(a4),a0		; laid out on disk: that, at once
+	jsr	PfLoad
+	beq.s	.nopf
+	lea	g_Resp+r_Body(a4),a0
+	jsr	BufFree
+	move.l	g_RespHash(a4),g_PageHash(a4)
+	bsr	ShowFile
+	bra.s	.shc
+.nopf:	bsr	ShowCached		; else from its HTML
+	beq	.fetch0
+.shc:	bclr	#0,d3			; (in the history now)
 	tst.l	g_Quit(a4)
 	bne	.x
 	jsr	DcFresh
@@ -628,12 +637,27 @@ NavLoad:
 	lea	MsgOffline(pc),a0
 	jsr	GuiStatus
 	bra	.img
-.reok:	cmp.l	#1,g_IncState(a4)	; the newer one is being shown
-	beq	.ok
-	cmp.l	#200,d0			; not shown (the user typed into the
-	bne	.img			; page): just say so
-	lea	MsgNewer(pc),a0
+.reok:	cmp.l	#200,d0			; (anything else: the copy stays)
+	bne	.img
+	move.l	g_Resp+r_Body+buf_Data(a4),a0	; the same again (no
+	move.l	g_Resp+r_Body+buf_Len(a4),d0	;  validators): it stays
+	jsr	DcHash
+	cmp.l	g_PageHash(a4),d0
+	beq.s	.same0
+	tst.l	g_FormTouched(a4)	; the user typed into it: just say so
+	bne.s	.newer
+	move.l	g_ScrollY(a4),g_WantScroll(a4)	; the newer one, where the
+	move.l	#200,d0				; user is now
+	bra	.ok
+.newer:	lea	MsgNewer(pc),a0
 	jsr	GuiStatus
+	bra.s	.same
+.same0:	lea	LogSame(pc),a0		; (for tests)
+	lea	g_NavUrl(a4),a1
+	move.l	#$80000000,d0
+	jsr	LogEvent
+.same:	lea	g_Resp+r_Body(a4),a0
+	jsr	BufFree
 	bra	.img
 .fetch0:
 	lea	g_NavUrl(a4),a0
@@ -674,10 +698,18 @@ NavLoad:
 .err:	bsr	ErrorPage
 	lea	g_NavUrl(a4),a0
 	bra.s	.built
-.ok:	move.l	d0,g_PageStatus(a4)	; (401: see below)
-	cmp.l	#1,g_IncState(a4)	; shown while it came: the rest
-	beq	.inc
+.ok:	cmp.l	#1,g_IncState(a4)	; shown while it came: the rest
+	bne.s	.whole
+	move.l	d0,g_PageStatus(a4)	; (401: see below)
+	bra	.inc
+.whole:	move.l	d0,-(sp)
+	move.l	g_Resp+r_Body+buf_Data(a4),a0	; (its hash: page files)
+	move.l	g_Resp+r_Body+buf_Len(a4),d0
+	jsr	DcHash
+	move.l	d0,g_RespHash(a4)
 	bsr	TakeResponse
+	move.l	(sp)+,g_PageStatus(a4)
+	move.l	g_RespHash(a4),g_PageHash(a4)
 	lea	g_Resp+r_Url(a4),a0
 .built:	lea	g_PageUrl(a4),a1
 	move.l	#URL_MAX-1,d0
@@ -702,6 +734,9 @@ NavLoad:
 	moveq	#2,d0			; then its images
 	move.l	d0,g_LoadPhase(a4)
 	jsr	ImagesLoad
+	tst.l	g_TkAbort(a4)		; then laid out on disk
+	bne.s	.x
+	jsr	PfSave
 	bra.s	.x
 .nohist:
 	moveq	#-1,d0
@@ -716,6 +751,10 @@ NavLoad:
 .inc:	moveq	#1,d0			; the end of a page shown as it came
 	bsr	IncFeed
 	clr.l	g_IncState(a4)		; (complete now: ShowPage logs it)
+	move.l	g_Resp+r_Body+buf_Data(a4),a0	; (its hash: page files)
+	move.l	g_Resp+r_Body+buf_Len(a4),d0
+	jsr	DcHash
+	move.l	d0,g_PageHash(a4)
 	lea	g_Resp+r_Body(a4),a0	; (the raw text: not needed now)
 	jsr	BufFree
 	tst.l	g_TkAbort(a4)
@@ -751,6 +790,7 @@ MsgAuth:	dc.b	"Login needed: put user:password@ before the host name",0
 MsgOffline:	dc.b	"Not reachable: the copy from the cache is shown",0
 MsgNewer:	dc.b	"A newer version of this page is there: Reload shows it",0
 LogDisk:	dc.b	"diskcache",0
+LogSame:	dc.b	"unchanged",0
 	even
 
 ; StatusWithUrl - status line "<a0>g_NavUrl"
@@ -1119,8 +1159,12 @@ FrameLink:
 	jsr	DomNewNode
 	beq.s	.x
 	move.l	d0,a3
+	moveq	#5,d0			; "href" in the page (no pointers out
+	jsr	PageAlloc		; of it: pagefile.s)
+	beq.s	.x
+	move.l	d0,a1
+	move.l	#'href',(a1)
 	move.l	a3,a0
-	lea	AnHref(pc),a1
 	move.l	d2,d0
 	jsr	DomAddAttr
 	move.l	a2,a0
@@ -1980,6 +2024,26 @@ NavKept:
 	moveq	#-1,d0
 	move.l	d0,g_NavUndo(a4)
 	move.l	d0,g_WantScroll(a4)
+	lea	LogRestored(pc),a0
+	bsr	ShowKept
+	PROFE	12
+	IFD	PROFILE
+	jsr	ProfLog
+	ENDC
+	jsr	ImagesAgain		; images left unloaded: now
+	beq.s	.x
+	lea	KeptImages(pc),a0
+	jsr	TaskStart
+.x:	move.l	(sp)+,d2
+	rts
+
+;--------------------------------------------------------------------
+; ShowKept - show the page in G as it is (kept for Back, or read from
+; its page file): painted, laid out again only if the width changed
+; In: a0 = what to log (tests): it, the URL, the history entry
+;--------------------------------------------------------------------
+ShowKept:
+	move.l	a0,-(sp)
 	clr.l	g_FindOn(a4)		; what belonged to the page left
 	clr.l	g_FindRun(a4)
 	clr.l	g_SelOn(a4)
@@ -2015,28 +2079,59 @@ NavKept:
 .s:	jsr	GuiRefresh
 	bra.s	.log
 .lay:	jsr	GuiRelayout		; another width
-.log:	PROFE	12
-	IFD	PROFILE
-	jsr	ProfLog
-	ENDC
-	lea	LogRestored(pc),a0	; (for tests)
+.log:	move.l	(sp)+,a0		; (for tests)
 	lea	g_PageUrl(a4),a1
-	move.l	d2,d0
+	move.l	g_PageHist(a4),d0
 	jsr	LogEvent
 	lea	LogPage(pc),a0
 	lea	g_PageUrl(a4),a1
 	move.l	g_DocHeight(a4),d0
 	jsr	LogEvent
+	lea	LogTitle(pc),a0
+	lea	g_TitleText(a4),a1
+	move.l	#$80000000,d0
+	jsr	LogEvent
 	lea	LogTop(pc),a0
 	suba.l	a1,a1
 	move.l	g_ScrollY(a4),d0
-	jsr	LogEvent
-	jsr	ImagesAgain		; images left unloaded: now
-	beq.s	.x
-	lea	KeptImages(pc),a0
-	jsr	TaskStart
-.x:	move.l	(sp)+,d2
-	rts
+	jmp	LogEvent
+
+;--------------------------------------------------------------------
+; ShowFile - (the loader) show the page PfLoad read: where Back/Forward
+; was, or at its #fragment; into the history (flags d3); its images
+; are loaded after (ImagesLoad)
+;--------------------------------------------------------------------
+ShowFile:
+	PROFB	12
+	moveq	#2,d0			; (shown: it stays if stopped)
+	move.l	d0,g_LoadPhase(a4)
+	move.l	d0,g_IncShown(a4)
+	clr.l	g_IncState(a4)
+	move.l	#200,g_PageStatus(a4)
+	bsr	FragSet
+	move.l	g_WantScroll(a4),d0	; back/forward: where it was
+	bpl.s	.s
+	moveq	#0,d0
+	move.l	g_FragName(a4),d1	; else its #fragment
+	beq.s	.s
+	move.l	d1,a0
+	jsr	FindAnchor
+	bpl.s	.s
+	moveq	#0,d0
+.s:	move.l	d0,g_ScrollY(a4)
+	moveq	#-1,d0
+	move.l	d0,g_WantScroll(a4)
+	bsr	NavHistory
+	lea	LogFile(pc),a0
+	bsr	ShowKept
+	PROFE	12
+	IFD	PROFILE
+	jsr	ProfLog
+	ENDC
+	jmp	ImagesAgain		; (they load after)
+
+LogFile:	dc.b	"pfshown",0
+	even
 
 ; KeptImages - (the loader's job) a kept page's images left unloaded
 KeptImages:
