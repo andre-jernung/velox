@@ -152,6 +152,8 @@ CssLoad:
 	beq	.next
 	cmp.l	#MAX_SHEETS,d3
 	bhs	.next
+	tst.l	g_AbortReq(a4)		; the user stopped the load
+	bne	.next
 	move.l	a3,a0
 	lea	AnHref(pc),a1
 	jsr	DomGetAttr

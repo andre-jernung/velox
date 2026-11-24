@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+"""Host side of busy.script: the window responds at once while images
+load (without fetching them again) and while another page loads; Esc
+stops a page load and the page shown stays."""
+import os
+import sys
+import time
+import urllib.request
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from xdrive import Amiga, wait_log  # noqa: E402
+
+r = sys.argv[1]
+log = os.path.join(r, "busy.log")
+out = open(os.path.join(r, "busy.driver"), "w")
+U = "http://127.0.0.1:8080/"
+
+
+def step(msg):
+    out.write(msg + "\n")
+    out.flush()
+
+
+def count(lines, prefix):
+    return len([l for l in lines if l.startswith(prefix)])
+
+
+def scroll_now(a, key, lines):
+    """Press key; the page must scroll within a second and a half."""
+    n = count(lines, "scroll ")
+    t0 = time.time()
+    a.key(key)
+    lines = wait_log(log, "scroll ", n + 1, timeout=10)
+    dt = time.time() - t0
+    if dt > 1.5:
+        raise AssertionError("%s scrolled after %.1f s" % (key, dt))
+    return lines
+
+
+try:
+    a = Amiga()
+    lines = wait_log(log, "page " + U + "busy.html")
+    time.sleep(1)
+    for key in ("Down", "Down", "shift+Down"):
+        lines = scroll_now(a, key, lines)
+    if count(lines, "images "):
+        raise AssertionError("the images were loaded already")
+    step("scrolling works at once while images load")
+    lines = wait_log(log, "images ", timeout=90)
+    hits = int(urllib.request.urlopen(U + "slowcount/b").read())
+    if hits != 3:
+        raise AssertionError("3 images fetched %d times" % hits)
+    step("the images were not fetched again")
+
+    a.key("ctrl+l")
+    a.type("127.0.0.1:8080/slowpage")
+    a.key("Return")
+    wait_log(log, "go " + U + "slowpage")
+    time.sleep(1)
+    lines = scroll_now(a, "Up", wait_log(log, "go "))
+    step("the page shown scrolls while another loads")
+    t0 = time.time()
+    a.key("Escape")
+    wait_log(log, "stopped " + U + "slowpage", timeout=10)
+    dt = time.time() - t0
+    if dt > 1.5:
+        raise AssertionError("Esc stopped the load after %.1f s" % dt)
+    time.sleep(1)
+    lines = scroll_now(a, "Down", wait_log(log, "stopped "))
+    if count(lines, "page " + U + "slowpage"):
+        raise AssertionError("the slow page was shown")
+    step("Esc stops a page load, the page shown stays")
+    a.key("ctrl+q")
+    step("ok")
+except Exception as e:
+    step("FAIL " + repr(e))
+    try:
+        Amiga().key("ctrl+q")
+    except Exception:
+        pass

@@ -23,6 +23,10 @@ AF_INET		equ	2
 SOCK_STREAM	equ	1
 INADDR_NONE	equ	-1
 
+FIONBIO		equ	$8004667e
+SOL_SOCKET	equ	$ffff
+SO_ERROR	equ	$1007
+
 	section	code,code
 
 ;--------------------------------------------------------------------
@@ -91,7 +95,11 @@ ConnOpen:
 	move.l	d0,d3
 	cmp.l	#INADDR_NONE,d3
 	bne.s	.addr
-	move.l	a2,a0
+	move.l	a2,a0			; looked up before?
+	bsr	DnsCached
+	move.l	d0,d3
+	bne.s	.addr
+	move.l	a2,a0			; (this blocks: hence the cache)
 	SOCK	gethostbyname
 	tst.l	d0
 	beq.s	.noresolve
@@ -101,6 +109,9 @@ ConnOpen:
 	beq.s	.noresolve
 	move.l	d0,a0
 	move.l	(a0),d3
+	move.l	a2,a0
+	move.l	d3,d0
+	bsr	DnsKeep
 .addr:
 	lea	g_SockAddr(a4),a0	; struct sockaddr_in
 	clr.l	8(a0)
@@ -122,15 +133,40 @@ ConnOpen:
 	moveq	#0,d2
 	SOCK	socket
 	move.l	d0,c_Sock(a3)
-	bmi.s	.noconnect
-
+	bmi	.noconnect
+	; non-blocking: connecting, the TLS handshake and reading wait in
+	; WaitSocket, where the window keeps being served
+	moveq	#1,d1
+	move.l	d1,-(sp)
+	move.l	sp,a0
+	move.l	#FIONBIO,d1
+	SOCK	IoctlSocket
+	addq.l	#4,sp
 	lea	g_SockAddr(a4),a0
 	move.l	c_Sock(a3),d0
 	moveq	#16,d1
 	SOCK	connect
 	tst.l	d0
+	bpl.s	.conn			; at once (EINPROGRESS otherwise)
+	move.l	c_Sock(a3),d0		; writable: connected or failed
+	moveq	#1,d1
+	bsr	WaitSocket
+	beq.s	.failclose		; (aborted, timed out)
+	clr.l	-(sp)			; SO_ERROR says which
+	pea	4.w
+	move.l	c_Sock(a3),d0
+	move.l	#SOL_SOCKET,d1
+	move.l	#SO_ERROR,d2
+	lea	4(sp),a0
+	move.l	sp,a1
+	SOCK	getsockopt
+	addq.l	#4,sp
+	move.l	(sp)+,d1
+	tst.l	d0
 	bmi.s	.noconnect
-	tst.l	(sp)
+	tst.l	d1
+	bne.s	.noconnect
+.conn:	tst.l	(sp)
 	beq.s	.ok
 	move.l	a2,g_TlsHost(a4)
 	move.l	a3,a0
@@ -279,6 +315,9 @@ TlsHandshake:
 	SSL	SSL_connect
 	cmp.l	#1,d0
 	beq.s	.ok
+	bsr	TlsWait			; waiting for the server?
+	bgt.s	.conn
+	beq.s	.x0			; (aborted, timed out)
 	move.l	c_SSL(a2),a0		; failed: was it the certificate?
 	SSL	SSL_get_verify_result
 	tst.l	d0
@@ -291,6 +330,74 @@ TlsHandshake:
 .ok:	moveq	#1,d0
 .x:	movem.l	(sp)+,d2/a2
 	rts
+
+;--------------------------------------------------------------------
+; TlsWait - after an AmiSSL call on Conn a2 returned d0 (<= 0): if it
+; only has to wait for the socket (non-blocking), wait for it
+; Out: d0 = 1 to try again, 0 if the wait failed (g_Error set), -1 on
+;      any other error (CCR set)
+;--------------------------------------------------------------------
+TlsWait:
+	move.l	c_SSL(a2),a0
+	SSL	SSL_get_error
+	moveq	#0,d1			; readable
+	cmp.l	#2,d0			; SSL_ERROR_WANT_READ
+	beq.s	.w
+	moveq	#1,d1			; writable
+	cmp.l	#3,d0			; SSL_ERROR_WANT_WRITE
+	beq.s	.w
+	moveq	#-1,d0
+	rts
+.w:	move.l	c_Sock(a2),d0
+	bra	WaitSocket
+
+;--------------------------------------------------------------------
+; DnsCached - the address of host name a0 if it was looked up before
+; Out: d0 = address or 0
+;--------------------------------------------------------------------
+DnsCached:
+	movem.l	d2/a2-a3,-(sp)
+	move.l	a0,a3
+	lea	g_DnsCache(a4),a2
+	moveq	#DNS_ENTRIES-1,d2
+.e:	tst.l	(a2)
+	beq.s	.n
+	move.l	a3,a0
+	lea	4(a2),a1
+.c:	move.b	(a0)+,d0
+	cmp.b	(a1)+,d0
+	bne.s	.n
+	tst.b	d0
+	bne.s	.c
+	move.l	(a2),d0
+	bra.s	.x
+.n:	lea	DNS_SIZEOF(a2),a2
+	dbf	d2,.e
+	moveq	#0,d0
+.x:	movem.l	(sp)+,d2/a2-a3
+	rts
+
+; DnsKeep - remember address d0 for host name a0 (oldest entry goes)
+DnsKeep:
+	move.l	g_DnsNext(a4),d1
+	addq.l	#1,g_DnsNext(a4)
+	and.l	#DNS_ENTRIES-1,d1
+	mulu.w	#DNS_SIZEOF,d1
+	lea	g_DnsCache(a4),a1
+	add.l	d1,a1
+	clr.l	(a1)
+	move.l	a0,-(sp)		; (names too long are not kept)
+	moveq	#-1,d1
+.l:	addq.l	#1,d1
+	tst.b	(a0)+
+	bne.s	.l
+	move.l	(sp)+,a0
+	cmp.l	#DNS_NAME-1,d1
+	bhi.s	.x
+	move.l	d0,(a1)+
+.c:	move.b	(a0)+,(a1)+
+	bne.s	.c
+.x:	rts
 
 ; IsDottedQuad - is a1 a numeric IPv4 address?
 ; Out: Z clear if yes (a0/a1 kept)
@@ -447,12 +554,15 @@ ConnWrite:
 	beq.s	.ok
 	move.l	c_SSL(a2),d0
 	beq.s	.plain
-	move.l	d0,a0			; TLS: AmiSSL writes it all
+	move.l	d0,a0			; TLS
 	move.l	a3,a1
 	move.l	d3,d0
 	SSL	SSL_write
 	tst.l	d0
 	bgt.s	.sent
+	bsr	TlsWait			; (the same again when it can go)
+	bgt.s	.l
+	beq.s	.fail
 	bra.s	.err			; (EPIPE here: the server gave up
 					;  waiting for a slow handshake)
 .plain:	move.l	c_Sock(a2),d0
@@ -514,16 +624,19 @@ ConnFill:
 	SSL	SSL_read
 	tst.l	d0
 	bgt.s	.got
-	move.l	d0,d1			; why not?  closed = end of stream
+	move.l	d0,-(sp)		; why not?  closed = end of stream
 	move.l	c_SSL(a2),a0
 	SSL	SSL_get_error
 	cmp.l	#6,d0			; SSL_ERROR_ZERO_RETURN
-	beq.s	.eos
+	beq.s	.eos1
 	cmp.l	#5,d0			; SSL_ERROR_SYSCALL (closed without
-	beq.s	.eos			;   close_notify, as many servers do)
-	cmp.l	#2,d0			; SSL_ERROR_WANT_READ: try again
-	beq.s	.wait
+	beq.s	.eos1			;   close_notify, as many servers do)
+	movem.l	(sp)+,d0
+	bsr	TlsWait			; a record not complete yet: wait
+	bgt.s	.tls
+	beq.s	.fail
 	bra.s	.err
+.eos1:	addq.l	#4,sp
 .eos:	moveq	#0,d0
 	bra.s	.got
 .recv:	move.l	c_Sock(a2),d0

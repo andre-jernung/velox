@@ -37,7 +37,8 @@ MAX_LAYDEPTH	equ	200
 LayoutDocument:
 	movem.l	d2/a2,-(sp)
 	move.l	d0,g_LayWidth(a4)
-	clr.l	g_FindRun(a4)		; the runs change
+	clr.l	g_ViewLive(a4)		; the runs change
+	clr.l	g_FindRun(a4)
 	clr.l	g_SelShown(a4)
 	clr.l	g_SelOn(a4)
 	tst.l	g_CssHasMq(a4)		; media queries: matches depend on
@@ -87,6 +88,7 @@ LayoutDocument:
 	add.l	g_PendMargin(a4),d0
 	move.l	d0,g_DocHeight(a4)
 	moveq	#1,d0
+	move.l	d0,g_ViewLive(a4)	; the runs can be painted
 	movem.l	(sp)+,d2/a2
 	rts
 

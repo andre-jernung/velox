@@ -31,6 +31,29 @@ URL --> fetch (http / https via AmiSSL / proxy)
 Each stage is a separate module (`src/<stage>.s`) with a narrow
 interface, so stages can be unit-tested in isolation.
 
+### Staying responsive
+
+The window is served while anything loads. Sockets are non-blocking,
+so connecting, the TLS handshake and reading all wait in `WaitSocket`
+(`WaitSelect` on the socket and the window). A window message calls the
+network hook, and the hook calls `BusyEvents`. Messages that only change
+the view, such as scrolling, the scroller, hovering, selecting, resizing
+and window refreshes, are handled there and then (`IsViewEvent`). Other
+messages are kept in a queue (`Defer`) that the event loop replays
+first:
+- **While images load,** the first kept message stops the image fetch.
+  The image is fetched again later.
+- **While a page loads,** keys are kept for after the load. Gadgets,
+  menus and links of the page shown stop the load, and that page stays
+  (as with Esc and Reload).
+- **Image decoding** (`NewDTObject` and the remapping) runs in a process
+  of its own at a lower priority. Velox serves the window while it
+  waits.
+
+Host names that were already looked up are cached, because
+`gethostbyname` blocks. What still blocks: DNS for a new host, the
+crypto of the TLS handshake, and parsing and layout.
+
 ### Painting
 
 Painting never shows a half-drawn page. `PaintRange` draws the runs into
@@ -106,7 +129,7 @@ JS is not on the roadmap yet, but it must stay possible to add. That means:
 | mem.s       | application and page pools, growable buffers                    |
 | util.s      | strings, numbers, output, event log (`LOG=`), error texts       |
 | url.s       | parsing, resolving (RFC 3986), fixing typed addresses           |
-| conn.s      | sockets, AmiSSL, abortable I/O through `WaitSelect`              |
+| conn.s      | sockets (non-blocking), AmiSSL, DNS cache, I/O through `WaitSelect` |
 | http.s      | requests, responses, redirects, keep-alive                      |
 | cache.s     | memory cache of recent responses                                |
 | cookies.s   | cookie store, persistent cookies in ENVARC:                     |

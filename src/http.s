@@ -427,9 +427,13 @@ HttpReadResponse:
 	clr.l	r_Chunked(a3)
 	clr.b	r_CType(a3)
 	clr.b	r_Location(a3)
+	clr.l	g_Error(a4)
 .sl:	bsr	ReadHdrLine
-	bmi	.proto
-	beq.s	.sl			; tolerate blank lines before it
+	bpl.s	.sl1
+	tst.l	g_Error(a4)		; aborted, timed out...: say so (an
+	bne	.fail			; abort must not be retried)
+	bra	.proto			; (closed: no response)
+.sl1:	beq.s	.sl			; tolerate blank lines before it
 	lea	g_Line(a4),a0
 	lea	HHttp(pc),a1
 	jsr	StrIPrefix

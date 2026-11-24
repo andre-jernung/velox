@@ -63,7 +63,8 @@ NavGo:
 	move.l	d0,g_WantScroll(a4)
 	bsr	ShowPage
 	bra	.hist
-.load:	move.l	g_WinSigMask(a4),d0	; window events and Ctrl-C can stop
+.load:	clr.l	g_AbortReq(a4)
+	move.l	g_WinSigMask(a4),d0	; window events and Ctrl-C can stop
 	or.l	#SIGBREAKF_CTRL_C,d0	; the page and its style sheets
 	move.l	d0,g_AbortMask(a4)
 	lea	GuiNetHook,a0
@@ -116,7 +117,22 @@ NavGo:
 	bne.s	.ok
 	tst.l	g_Quit(a4)		; window closed while loading
 	bne	.x
-	bsr	ErrorPage
+	tst.l	g_AbortReq(a4)		; stopped by the user: the page shown
+	beq.s	.err			; stays
+	tst.l	g_ViewLive(a4)
+	beq.s	.err
+	clr.l	g_NetSigHook(a4)
+	clr.l	g_ProgressHook(a4)
+	lea	LogStop(pc),a0
+	lea	g_NavUrl(a4),a1
+	move.l	#$80000000,d0
+	jsr	LogEvent
+	lea	MsgStopped(pc),a0
+	jsr	GuiStatus
+	moveq	#2,d0			; (for NavStep)
+	move.l	d0,g_AbortReq(a4)
+	bra.s	.nohist
+.err:	bsr	ErrorPage
 	lea	g_NavUrl(a4),a0
 	bra.s	.built
 .ok:	move.l	d0,g_PageStatus(a4)	; (401: see below)
@@ -155,6 +171,8 @@ AboutPrefix:	dc.b	"about:",0
 AboutSave:	dc.b	"about:save",0
 FilePrefix:	dc.b	"file:",0
 LogGo:		dc.b	"go",0
+LogStop:	dc.b	"stopped",0
+MsgStopped:	dc.b	"Stopped",0
 LogPage:	dc.b	"page",0
 LogTitle:	dc.b	"title",0
 LogTop:		dc.b	"top",0
@@ -1327,6 +1345,7 @@ NavStep:
 	bmi.s	.x
 	cmp.l	g_HistCount(a4),d0
 	bge.s	.x
+	move.l	g_HistPos(a4),-(sp)	; (where it was)
 	move.l	d0,-(sp)
 	bsr	SaveScroll
 	movem.l	(sp)+,d0
@@ -1335,7 +1354,11 @@ NavStep:
 	move.l	4(a0,d0.l*8),g_WantScroll(a4)
 	move.l	(a0,d0.l*8),a0
 	moveq	#NAV_CACHE,d0
-	bra	NavGo
+	bsr	NavGo
+	movem.l	(sp)+,d0
+	cmp.l	#2,g_AbortReq(a4)	; stopped, the page stayed: so did
+	bne.s	.x			; the history
+	move.l	d0,g_HistPos(a4)
 .x:	rts
 
 NavReload:

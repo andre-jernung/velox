@@ -1,0 +1,20 @@
+; busy: the window responds while images and pages load
+; (test/amiga/busy.host); no memory may be lost (decoder processes)
+Echo >VELOX:r/busy.txt "busy"
+; warm-up run (one-time OS allocations: fonts, CLI, ...)
+Run >NIL: VELOX:velox http://127.0.0.1:8080/images.html
+Wait 8
+Status >ENV:vpid COMMAND=VELOX:velox
+Break $vpid C
+Wait 2
+Delete >NIL: ENV:vpid
+Avail >NIL: FLUSH
+Echo >>VELOX:r/busy.txt "mem_before " NOLINE
+Avail >>VELOX:r/busy.txt TOTAL
+Echo >VELOX:r/busy.start ""
+VELOX:velox http://127.0.0.1:8080/busy.html LOG=VELOX:r/busy.log
+Echo >>VELOX:r/busy.txt "exit rc=$RC"
+Avail >NIL: FLUSH
+Echo >>VELOX:r/busy.txt "mem_after " NOLINE
+Avail >>VELOX:r/busy.txt TOTAL
+Echo >>VELOX:r/busy.txt "done"

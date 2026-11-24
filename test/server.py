@@ -12,6 +12,7 @@ import time
 
 BIG = bytes((i * 7 + 13) % 251 for i in range(100000))
 HELLO = b"Hello from the Velox test server\n"
+SLOW_HITS = {}                  # requests for each /slow/ image
 DOCROOT = sys.argv[2] if len(sys.argv) > 2 else "test/www"
 
 
@@ -57,11 +58,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             else:
                 self.send(401, b"<title>Login</title><p>Who are you?",
                           "text/html", headers=[("WWW-Authenticate", 'Basic realm="test"')])
+        elif p.startswith("/slowcount/"):
+            # requests for /slow/ images whose names start with this
+            n = p[len("/slowcount/"):]
+            self.send(200, b"%d" % sum(v for k, v in SLOW_HITS.items() if k.startswith(n)))
         elif p == "/slowpage":
             time.sleep(12)
             self.send(200, b"<title>Slow</title><p>A slow page.", "text/html")
         elif p.startswith("/slow/"):
             # a slow image: the browser must stay usable meanwhile
+            SLOW_HITS[p[6:]] = SLOW_HITS.get(p[6:], 0) + 1
             time.sleep(8)
             with open(os.path.join(DOCROOT, "test.iff"), "rb") as f:
                 self.send(200, f.read(), "image/x-ilbm")

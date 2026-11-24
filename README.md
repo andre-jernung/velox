@@ -35,6 +35,8 @@ A small, fast web browser for classic AmigaOS 3.x, written entirely in
 - Frames and iframes as links to their pages; `<meta>` refresh redirects
 - Keyboard navigation for everything; keys typed while a page loads
   are not lost
+- Stays responsive while loading: the page scrolls, and links,
+  gadgets and menus work, while images and pages load
 - Transfer progress in the status line
 - Select text with the mouse: it is copied to the clipboard
 
@@ -76,6 +78,7 @@ saved in `ENVARC:Velox/Cookies`; delete that file to forget them.
 | Backspace, Ctrl-B    | back                                    |
 | Ctrl-F               | forward                                 |
 | Ctrl-R               | reload                                  |
+| Esc                  | stop loading (the page or its images)   |
 | Ctrl-H               | home                                    |
 | /                    | find in the page (Return next, Esc end)  |
 | Ctrl-D               | add a bookmark                          |

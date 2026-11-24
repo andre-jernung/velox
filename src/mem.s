@@ -103,6 +103,7 @@ PageFree:
 .nohook:
 	lea	g_PageSrc(a4),a0
 	bsr	BufFree
+	clr.l	g_ViewLive(a4)		; (the runs point into the page)
 	clr.l	g_Doc(a4)
 	clr.l	g_Title(a4)
 	clr.l	g_BaseHref(a4)

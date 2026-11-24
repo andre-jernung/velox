@@ -17,14 +17,14 @@
 
 	xdef	GuiOpen,GuiClose,GuiEventLoop,GuiPaintAll,GuiStatus
 	xdef	GuiSetUrl,GuiSetTitle,GuiScrollTo,GuiNetHook,GuiBusy
-	xdef	GuiRelayout,GuiRefresh,GuiPageWidth,GuiAbout,DrawStatus,ImgNetHook,GuiProgress
+	xdef	BusyEvents,GuiRelayout,GuiRefresh,GuiPageWidth,GuiAbout,DrawStatus,ImgNetHook,GuiProgress
 	xref	FindStart,FindKey,FindHighlight,KeyToChars,NavRefresh
 	xref	CopyAddress,ViewSource,SelPress,SelMove,SelRelease,SelHighlight,ParseDec,FmtDec,StrCopy
 	xref	LayoutDocument,RunCount,RunPtr,StrLen,StrCopyN
 	xref	NavGo,NavBack,NavForward,NavReload,NavHome,NavLink,UrlFixup
 	xref	DomGetAttr,LogEvent,FormStateOf,FormIsControl,FormActivate
 	xref	FormEditKey,FormLeave,SaveDownload,BookmarkAdd,BookmarksShow
-	xref	ImagesPending,ImagesStep,ImagesFree,ImagePaint
+	xref	ImagesStop,ImagesPending,ImagesStep,ImagesFree,ImagePaint
 
 PROP_FONT	equ	0
 SCROLL_W	equ	18
@@ -45,6 +45,7 @@ RAW_WHEELDOWN	equ	$7b
 RAW_TAB		equ	$42
 RAW_ENTER	equ	$43
 RAW_RETURN	equ	$44
+RAW_ESC		equ	$45
 RAW_Q		equ	$10
 RAW_R		equ	$13
 RAW_F		equ	$23
@@ -2049,12 +2050,21 @@ GuiEventLoop:
 ; HandleMessages - process all pending window messages
 HandleMessages:
 	movem.l	d2-d7/a2,-(sp)
-.ta:	bsr	TypeAheadKey		; keys typed while a page loaded
+.ta:	tst.l	g_TaCount(a4)		; events kept while loading first
 	beq.s	.next
-	move.l	#IDCMP_RAWKEY,d2
-	move.l	d0,d3
-	move.l	d1,d4
-	suba.l	a2,a2
+	lea	g_TaKeys(a4),a0
+	move.l	(a0)+,d2
+	moveq	#0,d3
+	move.w	(a0)+,d3
+	moveq	#0,d4
+	move.w	(a0)+,d4
+	move.l	(a0)+,a2
+	move.w	(a0)+,d5
+	ext.l	d5
+	move.w	(a0)+,d6
+	ext.l	d6
+	move.l	(a0),g_PrevKeys(a4)
+	bsr	DropDeferred
 	bsr	HandleEvent
 	tst.l	g_Quit(a4)
 	bne.s	.x
@@ -2213,7 +2223,9 @@ OnKey:
 	bne.s	.plain
 	move.l	g_DocHeight(a4),d0	; bottom
 	bra	GuiScrollTo
-.plain:	cmp.w	#RAW_TAB,d3
+.plain:	cmp.w	#RAW_ESC,d3		; Esc: no more images
+	beq	ToImagesStop
+	cmp.w	#RAW_TAB,d3
 	bne.s	.ntab
 	moveq	#1,d0
 	move.w	d4,d1
@@ -2286,6 +2298,7 @@ ToNavBack:	jmp	NavBack
 ToNavForward:	jmp	NavForward
 ToNavReload:	jmp	NavReload
 ToNavHome:	jmp	NavHome
+ToImagesStop:	jmp	ImagesStop
 ToNavLink:	jmp	NavLink
 ToFormActivate:	jmp	FormActivate
 
@@ -2641,70 +2654,200 @@ OnResize:
 
 ;--------------------------------------------------------------------
 ; GuiNetHook - called by the network code when a window message or
-; Ctrl-C arrives during a transfer
+; Ctrl-C arrives while a page loads (BusyEvents)
 ; In:  d0 = signals received
 ; Out: d0 = 1 to abort the transfer
 ;--------------------------------------------------------------------
 GuiNetHook:
-	movem.l	d2-d7/a2,-(sp)
 	btst	#SIGBREAKB_CTRL_C,d0
 	bne.s	.abort
-	clr.l	g_AbortReq(a4)
+	moveq	#1,d0
+	bsr	BusyEvents
+	move.l	g_AbortReq(a4),d0	; (stopped: it stays stopped)
+	rts
+.abort:	moveq	#1,d0
+	rts
+
+;--------------------------------------------------------------------
+; BusyEvents - serve the window while loading.  Messages that only
+; change the view (IsViewEvent) are handled at once; the others are kept
+; for the event loop (Defer).
+; In:  d0 = 0 while images load: the first event kept stops the image
+;      (it is loaded again later), and the rest stay in the port;
+;      d0 = 1 while a page loads: keys and new sizes are kept for after
+;      it; gadgets, menus and links of the shown page are kept and stop
+;      the load (g_AbortReq), "Reload" just stops it, closing the window
+;      quits; other messages belong to the old page and are dropped
+; Out: d0 = 1 if the image should stop (CCR set)
+;--------------------------------------------------------------------
+BusyEvents:
+	movem.l	d2-d7/a2,-(sp)
+	move.l	d0,d7			; d7 = mode
 .next:	move.l	g_Window(a4),a0
 	move.l	wd_UserPort(a0),a0
 	GT	GT_GetIMsg
 	tst.l	d0
-	beq.s	.done
+	beq	.done
 	move.l	d0,a1
 	move.l	im_Class(a1),d2
+	moveq	#0,d3
 	move.w	im_Code(a1),d3
+	moveq	#0,d4
 	move.w	im_Qualifier(a1),d4
 	move.l	im_IAddress(a1),a2
 	cmp.l	#IDCMP_RAWKEY,d2	; (IAddress is only valid until
-	bne.s	.rp			; the reply)
-	lea	g_InputEvent(a4),a0
-	move.l	(a2),(a0)
-	move.l	a0,a2
-.rp:	GT	GT_ReplyIMsg
-	cmp.l	#IDCMP_CLOSEWINDOW,d2
-	bne.s	.nc
-	moveq	#1,d0
-	move.l	d0,g_Quit(a4)
-	bra.s	.req
-.nc:	cmp.l	#IDCMP_REFRESHWINDOW,d2
+	bne.s	.nk			; the reply)
+	move.l	(a2),g_PrevKeys(a4)
+	suba.l	a2,a2
+.nk:	move.w	im_MouseX(a1),d5
+	ext.l	d5
+	move.w	im_MouseY(a1),d6
+	ext.l	d6
+	GT	GT_ReplyIMsg
+	cmp.l	#IDCMP_INTUITICKS,d2	; (a meta refresh waits)
+	beq.s	.next
+	cmp.l	#IDCMP_REFRESHWINDOW,d2
 	bne.s	.nr
 	move.l	g_Window(a4),a0
 	GT	GT_BeginRefresh
 	move.l	g_Window(a4),a0
 	moveq	#-1,d0
 	GT	GT_EndRefresh
-	clr.l	g_BandsOk(a4)		; (not repaired: paint it all later)
+	clr.l	g_BandsOk(a4)		; (painted now, or after the load)
+	tst.l	g_ViewLive(a4)
+	beq.s	.next
+	bsr	GuiPaintAll
 	bra.s	.next
-.nr:	cmp.l	#IDCMP_RAWKEY,d2	; keys: kept for after the load
-	bne.s	.ng
-	cmp.w	#$80,d3
-	bhs.s	.next
+.nr:	bsr	IsViewEvent
+	beq.s	.other
+	bsr	HandleEvent
+	bra.s	.next
+.other:	tst.l	d7
+	bne.s	.page
+	bsr	Defer			; images: the event loop does it now
+	moveq	#1,d0
+	bra.s	.x
+.page:	cmp.l	#IDCMP_RAWKEY,d2
+	beq.s	.key
+	cmp.l	#IDCMP_NEWSIZE,d2
+	beq.s	.keep
+	cmp.l	#IDCMP_CLOSEWINDOW,d2
+	beq.s	.close
+	cmp.l	#IDCMP_MENUPICK,d2
+	beq.s	.go
+	cmp.l	#IDCMP_GADGETUP,d2
+	beq.s	.gad
+	cmp.l	#IDCMP_MOUSEBUTTONS,d2	; (a link released on)
+	bne	.next
+	tst.l	g_ViewLive(a4)
+	beq	.next
+	bra.s	.go
+.gad:	cmp.w	#GID_RELOAD,gg_GadgetID(a2)	; "Reload" stops a load
+	beq.s	.stop
+.go:	bsr	Defer
+.stop:	moveq	#1,d0
+	move.l	d0,g_AbortReq(a4)
+	bra	.next
+.close:	moveq	#1,d0
+	move.l	d0,g_Quit(a4)
+	bra.s	.stop
+.key:	cmp.w	#$80,d3			; (releases are not needed)
+	bhs	.next
+	cmp.w	#RAW_ESC,d3		; Esc stops the load
+	beq.s	.stop
+.keep:	bsr	Defer
+	bra	.next
+.done:	moveq	#0,d0
+.x:	movem.l	(sp)+,d2-d7/a2
+	rts
+
+;--------------------------------------------------------------------
+; IsViewEvent - does event d2 (class), d3 (code), d4 (qualifier), a2
+; (IAddress) only change the view, so that it can be handled while
+; something loads?  Never while the runs are not those of the page.
+; Out: d0 = 1 if yes (CCR set)
+;--------------------------------------------------------------------
+IsViewEvent:
+	tst.l	g_ViewLive(a4)
+	beq.s	.no
+	cmp.l	#IDCMP_MOUSEMOVE,d2	; hovering, dragging the scroller
+	beq.s	.yes
+	cmp.l	#IDCMP_NEWSIZE,d2
+	beq.s	.yes
+	cmp.l	#IDCMP_GADGETDOWN,d2	; the scroller
+	beq.s	.gad
+	cmp.l	#IDCMP_GADGETUP,d2
+	beq.s	.gad
+	cmp.l	#IDCMP_MOUSEBUTTONS,d2
+	beq.s	.but
+	cmp.l	#IDCMP_RAWKEY,d2
+	bne.s	.no
+	cmp.w	#$80,d3			; releases
+	bhs.s	.yes
+	cmp.w	#$60,d3			; Shift, Ctrl, Alt, Amiga alone
+	blo.s	.k
+	cmp.w	#$67,d3
+	bls.s	.yes
+.k:	tst.l	g_EditField(a4)		; typing into a field, keys kept:
+	bne.s	.no			; in order
+	tst.l	g_TaCount(a4)
+	bne.s	.no
+	cmp.w	#RAW_UP,d3		; scrolling keys
+	beq.s	.yes
+	cmp.w	#RAW_DOWN,d3
+	beq.s	.yes
+	move.w	d4,d0
+	and.w	#QUAL_COMMAND,d0
+	bne.s	.no
+	cmp.w	#RAW_SPACE,d3
+	beq.s	.yes
+	cmp.w	#RAW_WHEELUP,d3
+	beq.s	.yes
+	cmp.w	#RAW_WHEELDOWN,d3
+	beq.s	.yes
+	bra.s	.no
+.gad:	cmp.l	g_GadScroll(a4),a2
+	beq.s	.yes
+	bra.s	.no
+.but:	cmp.w	#IECODE_LBUTTON,d3	; pressing: on a link nothing happens
+	beq.s	.yes			; yet
+	cmp.w	#IECODE_LBUTTON|IECODE_UP_PREFIX,d3
+	bne.s	.no
+	tst.l	g_PressLink(a4)		; releasing on a link follows it
+	beq.s	.yes
+.no:	moveq	#0,d0
+	rts
+.yes:	moveq	#1,d0
+	rts
+
+; Defer - keep event d2-d6/a2 (and g_PrevKeys) for the event loop
+; (TYPEAHEAD at most)
+Defer:
 	move.l	g_TaCount(a4),d0
 	cmp.l	#TYPEAHEAD,d0
-	bhs.s	.next
+	bhs.s	.x
 	addq.l	#1,g_TaCount(a4)
+	mulu.w	#TA_SIZEOF,d0
 	lea	g_TaKeys(a4),a0
-	lea	(a0,d0.l*8),a0
+	add.l	d0,a0
+	move.l	d2,(a0)+
 	move.w	d3,(a0)+
 	move.w	d4,(a0)+
-	move.l	(a2),(a0)		; (IAddress: the dead keys)
-	bra.s	.next
-.ng:	cmp.l	#IDCMP_GADGETUP,d2
-	bne.s	.next
-	cmp.w	#GID_RELOAD,gg_GadgetID(a2)	; "Reload" stops a load
-	bne.s	.next
-.req:	moveq	#1,d0
-	move.l	d0,g_AbortReq(a4)
-	bra.s	.next
-.done:	move.l	g_AbortReq(a4),d0
-	bra.s	.x
-.abort:	moveq	#1,d0
-.x:	movem.l	(sp)+,d2-d7/a2
+	move.l	a2,(a0)+
+	move.w	d5,(a0)+
+	move.w	d6,(a0)+
+	move.l	g_PrevKeys(a4),(a0)
+.x:	rts
+
+; DropDeferred - remove the oldest kept event
+DropDeferred:
+	subq.l	#1,g_TaCount(a4)
+	move.l	g_TaCount(a4),d0
+	mulu.w	#TA_SIZEOF/4,d0
+	lea	g_TaKeys(a4),a0
+	bra.s	.e
+.m:	move.l	TA_SIZEOF(a0),(a0)+
+.e:	dbf	d0,.m
 	rts
 
 ;--------------------------------------------------------------------
@@ -2848,73 +2991,40 @@ MsgKB:		dc.b	" KB",0
 	even
 
 ;--------------------------------------------------------------------
-; TypeAheadKey - the oldest key kept by GuiNetHook
+; TypeAheadKey - the oldest event kept while loading, if it is a key
 ; Out: d0 = raw code, d1 = qualifier (g_PrevKeys set); Z set if none
 ;--------------------------------------------------------------------
 TypeAheadKey:
-	move.l	g_TaCount(a4),d0
-	beq.s	.x
+	tst.l	g_TaCount(a4)
+	beq.s	.no
 	lea	g_TaKeys(a4),a0
-	move.w	(a0),d0
-	move.w	2(a0),d1
-	move.l	4(a0),g_PrevKeys(a4)
+	cmp.l	#IDCMP_RAWKEY,(a0)	; (only keys: other events end it)
+	bne.s	.no
+	moveq	#0,d0
+	move.w	4(a0),d0
+	moveq	#0,d1
+	move.w	6(a0),d1
+	move.l	16(a0),g_PrevKeys(a4)
 	movem.l	d0-d1,-(sp)
-	move.l	g_TaCount(a4),d0	; move the rest down
-	subq.l	#1,d0
-	move.l	d0,g_TaCount(a4)
-	bra.s	.me
-.m:	move.l	8(a0),(a0)+
-	move.l	8(a0),(a0)+
-.me:	dbf	d0,.m
+	bsr	DropDeferred
 	movem.l	(sp)+,d0-d1
-	and.l	#$ffff,d0
-	and.l	#$ffff,d1
 	and.b	#$fb,ccr		; Z clear: a key
-.x:	rts
+	rts
+.no:	moveq	#0,d0
+	rts
 
 ;--------------------------------------------------------------------
-; ImgNetHook - the network hook while an image loads: anything the user
-; does (keys, clicks, menus, gadgets) stops the image, which is fetched
-; again later, and stays queued for the event loop; ticks, mouse moves
-; and refreshes are handled here
+; ImgNetHook - the network hook while an image loads: scrolling and the
+; like are handled at once; anything else (following a link, a menu...)
+; stops the image, which is fetched again later (BusyEvents)
 ; In: d0 = signals; Out: d0 = 1 to abort
 ;--------------------------------------------------------------------
 ImgNetHook:
-	movem.l	d2/a2,-(sp)
 	btst	#SIGBREAKB_CTRL_C,d0
 	bne.s	.abort
-.next:	move.l	g_Window(a4),a0
-	move.l	wd_UserPort(a0),a2
-	move.l	MP_MSGLIST+LH_HEAD(a2),a1	; peek at the first message
-	tst.l	LN_SUCC(a1)
-	beq.s	.none
-	move.l	im_Class(a1),d2
-	cmp.l	#IDCMP_INTUITICKS,d2
-	beq.s	.take
-	cmp.l	#IDCMP_MOUSEMOVE,d2
-	beq.s	.take
-	cmp.l	#IDCMP_REFRESHWINDOW,d2
-	bne.s	.abort
-.take:	move.l	a2,a0
-	GT	GT_GetIMsg
-	tst.l	d0
-	beq.s	.none
-	move.l	d0,a1
-	move.l	im_Class(a1),d2
-	GT	GT_ReplyIMsg
-	cmp.l	#IDCMP_REFRESHWINDOW,d2
-	bne.s	.next
-	move.l	g_Window(a4),a0
-	GT	GT_BeginRefresh
-	move.l	g_Window(a4),a0
-	moveq	#-1,d0
-	GT	GT_EndRefresh
-	clr.l	g_BandsOk(a4)		; (not repaired: paint it all later)
-	bra.s	.next
-.none:	moveq	#0,d0
-	bra.s	.x
+	moveq	#0,d0
+	bra	BusyEvents
 .abort:	moveq	#1,d0
-.x:	movem.l	(sp)+,d2/a2
 	rts
 
 ;====================================================================

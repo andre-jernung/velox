@@ -11,6 +11,7 @@
 
 	include	"velox.i"
 	include	"graphics/scale.i"
+	include	"dos/dostags.i"
 
 ; from datatypes/datatypesclass.i, datatypes.i and pictureclass.i (the
 ; first uses C-style 0x numbers that vasm does not take)
@@ -29,9 +30,9 @@ bmh_Width		equ	0
 bmh_Height		equ	2
 	include	"lvo/datatypes_lib.i"
 
-	xdef	ImagesStart,ImagesStep,ImagesPending,ImagesFree,ImagePaint
+	xdef	ImagesStop,ImagesStart,ImagesStep,ImagesPending,ImagesFree,ImagePaint
 	xref	PageAlloc,DomGetAttr,UrlResolve,HttpGetCached,ParseDec,BufFree
-	xref	BufAppend,BufClear,GuiStatus,GuiRelayout,GuiRefresh,GuiPageWidth
+	xref	G,BusyEvents,BufAppend,BufClear,GuiStatus,GuiRelayout,GuiRefresh,GuiPageWidth
 	xref	FmtDec,StrCopy,LogEvent,ImgNetHook
 
 MAX_IMAGES	equ	64
@@ -119,6 +120,25 @@ ImagesPending:
 	rts
 .yes:	moveq	#1,d0
 	rts
+
+;--------------------------------------------------------------------
+; ImagesStop - load no more images of this page (Esc)
+;--------------------------------------------------------------------
+ImagesStop:
+	move.l	g_ImgNext(a4),d0
+	cmp.l	g_ImgCount(a4),d0
+	bhs.s	.x
+	move.l	g_ImgCount(a4),g_ImgNext(a4)
+	lea	LogImgStop(pc),a0
+	suba.l	a1,a1
+	jsr	LogEvent
+	tst.l	g_ImgRelayout(a4)	; the sizes of those loaded
+	beq.s	.st
+	clr.l	g_ImgRelayout(a4)
+	jsr	GuiRelayout
+.st:	lea	MsgStopped(pc),a0
+	jmp	GuiStatus
+.x:	rts
 
 ;--------------------------------------------------------------------
 ; ImagesStep - load the next queued image
@@ -247,7 +267,90 @@ TmpName:	dc.b	"T:velox-image",0
 MsgImage:	dc.b	"Image ",0
 MsgOf:		dc.b	" of ",0
 LogImages:	dc.b	"images",0
+LogImgStop:	dc.b	"imgstop",0
+MsgStopped:	dc.b	"Stopped",0
 	even
+
+;--------------------------------------------------------------------
+; DecodeObject - the datatype object of TmpName, laid out (remapped)
+; for the screen.  That takes a while on a 68020, so a process of its
+; own (at a lower priority) does it, while this one keeps serving the
+; window (BusyEvents).  Without the process it is done here.
+; Out: d0 = object or 0
+;--------------------------------------------------------------------
+DecodeObject:
+	movem.l	d2,-(sp)
+	clr.l	g_DecObj(a4)
+	moveq	#-1,d0
+	EXEC	AllocSignal
+	move.l	d0,d2			; d2 = signal
+	bmi.s	.here
+	moveq	#0,d0
+	bset	d2,d0
+	move.l	d0,g_DecSig(a4)
+	suba.l	a1,a1
+	EXEC	FindTask
+	move.l	d0,g_DecTask(a4)
+	move.l	#DecTags,d1
+	DOS	CreateNewProc
+	tst.l	d0
+	beq.s	.noproc
+.wait:	move.l	g_DecSig(a4),d0
+	tst.l	g_TaCount(a4)		; events kept for the event loop:
+	bne.s	.w			; the window waits for them
+	or.l	g_WinSigMask(a4),d0
+.w:	EXEC	Wait
+	and.l	g_DecSig(a4),d0
+	bne.s	.done
+	moveq	#0,d0
+	jsr	BusyEvents
+	bra.s	.wait
+.noproc:
+	bsr.s	.free
+.here:	bsr	DecodeWork
+	bra.s	.x
+.done:	bsr.s	.free
+.x:	movem.l	(sp)+,d2
+	move.l	g_DecObj(a4),d0
+	rts
+.free:	move.l	d2,d0
+	EXEC	FreeSignal
+	rts
+
+; DecodeChild - the decoder process
+DecodeChild:
+	lea	G,a4
+	bsr.s	DecodeWork
+	EXEC	Forbid			; (gone before Velox can go on)
+	move.l	g_DecTask(a4),a1
+	move.l	g_DecSig(a4),d0
+	EXEC	Signal
+	moveq	#0,d0
+	rts
+
+; DecodeWork - NewDTObject, DTM_PROCLAYOUT; the object to g_DecObj
+DecodeWork:
+	movem.l	a2-a3,-(sp)
+	move.l	g_DataTypesBase(a4),a6
+	lea	TmpName(pc),a0		; NewDTObjectA(d0 = name, a0 = tags)
+	move.l	a0,d0
+	lea	DtTags,a0
+	jsr	_LVONewDTObjectA(a6)
+	tst.l	d0
+	beq.s	.x
+	move.l	d0,-(sp)
+	lea	g_DtMsg(a4),a3		; DTM_PROCLAYOUT: remap to the screen
+	move.l	#DTM_PROCLAYOUT,(a3)
+	clr.l	4(a3)
+	move.l	#1,8(a3)
+	move.l	d0,a0
+	suba.l	a1,a1
+	suba.l	a2,a2
+	move.l	g_DataTypesBase(a4),a6
+	jsr	_LVODoDTMethodA(a6)
+	move.l	(sp)+,g_DecObj(a4)
+.x:	movem.l	(sp)+,a2-a3
+	rts
 
 ;--------------------------------------------------------------------
 ; Decode - make the image of <img> a5 from TmpName
@@ -258,26 +361,10 @@ Decode:
 	move.l	g_DataTypesBase(a4),d0
 	beq	.fail
 	move.l	g_Screen(a4),DtTagScr+4
-	move.l	d0,a6
-	lea	TmpName(pc),a0		; NewDTObjectA(d0 = name, a0 = tags)
-	move.l	a0,d0
-	lea	DtTags,a0
-	jsr	_LVONewDTObjectA(a6)
+	bsr	DecodeObject
 	move.l	d0,a3			; a3 = datatype object
 	tst.l	d0
 	beq	.fail
-	lea	g_DtMsg(a4),a0		; DTM_PROCLAYOUT: remap to the screen
-	move.l	#DTM_PROCLAYOUT,(a0)
-	clr.l	4(a0)
-	move.l	#1,8(a0)
-	move.l	a3,a0
-	suba.l	a1,a1
-	suba.l	a2,a2
-	move.l	a3,-(sp)
-	lea	g_DtMsg(a4),a3
-	move.l	g_DataTypesBase(a4),a6
-	jsr	_LVODoDTMethodA(a6)
-	move.l	(sp)+,a3
 	; the bitmap and its size
 	clr.l	g_DtBmhd(a4)
 	clr.l	g_DtBitMap(a4)
@@ -530,6 +617,13 @@ ImagePaint:
 	rts
 
 	section	data,data
+DecTags:	dc.l	NP_Entry,DecodeChild
+	dc.l	NP_Name,DecName
+	dc.l	NP_StackSize,32768
+	dc.l	NP_Priority,-1
+	dc.l	TAG_DONE
+DecName:	dc.b	"Velox image decoder",0
+	even
 DtTags:
 	dc.l	DTA_GroupID,GID_PICTURE
 	dc.l	PDTA_Remap,1

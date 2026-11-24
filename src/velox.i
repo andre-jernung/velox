@@ -266,6 +266,9 @@ BAND_H		equ	1<<BAND_SHIFT
 BANDS_MAX	equ	320
 BAND_GAP	equ	6		; unchanged bands painted to join two
 STRIP_H		equ	32
+DNS_ENTRIES	equ	4		; (a power of two)
+DNS_NAME	equ	60
+DNS_SIZEOF	equ	4+DNS_NAME
 VIS_MAX		equ	1024
 
 RT_TEXT		equ	1
@@ -537,8 +540,11 @@ g_FlREdge	rs.l	1		; ... and its left edge
 g_LineL		rs.l	1		; the current line's bounds (floats
 g_LineR		rs.l	1		;  taken into account)
 TYPEAHEAD	equ	32
-g_TaCount	rs.l	1		; keys typed while loading
-g_TaKeys	rs.l	TYPEAHEAD*2	; code.w, qualifier.w, dead keys.l
+TA_SIZEOF	equ	20
+g_TaCount	rs.l	1		; events kept while loading
+g_TaKeys	rs.b	TYPEAHEAD*TA_SIZEOF	; window events kept while loading:
+				; class.l code.w qual.w IAddress.l x.w y.w
+				; dead keys.l
 g_CookieExp	rs.l	1		; cookies.s scratch
 g_CookieAge	rs.l	1
 g_TestNow	rs.l	1		; fixed clock for tests (0 = real)
@@ -554,6 +560,12 @@ g_SelBOff	rs.l	1
 g_SelFrom	rs.l	1		; scratch
 g_PaintIdx	rs.l	1		; index of the run being painted
 g_PageGen	rs.l	1		; counts the pages shown
+g_ViewLive	rs.l	1		; the runs are those of the page shown
+g_DnsNext	rs.l	1		; next g_DnsCache entry to replace
+g_DnsCache	rs.b	DNS_ENTRIES*DNS_SIZEOF	; address.l, host name
+g_DecSig	rs.l	1		; image decoder: signal when done,
+g_DecTask	rs.l	1		; ... to this task
+g_DecObj	rs.l	1		; ... with this datatype object
 g_BandsOk	rs.l	1		; g_Bands tells what is on the screen
 g_BandN		rs.l	1		; bands in the view
 g_BandView	rs.l	5		; ViewKey (gui.s) of g_Bands
