@@ -1382,23 +1382,10 @@ OutputRow:
 	cmp.l	#1,d4
 	bhi.s	.ycc
 	move.l	g_JOutW(a4),d7		; d7 = pixels left
+	moveq	#0,d5
 	tst.l	d4
 	beq	.q1
-.q2:	bsr	.uv			; two pixels a chroma sample
-	bsr	.px
-	subq.l	#1,d7
-	beq	.ln
-	bsr	.px
-	subq.l	#1,d7
-	bne.s	.q2
-	bra	.ln
-.q1:	bsr	.uv			; one
-	bsr	.px
-	subq.l	#1,d7
-	bne.s	.q1
-	bra	.ln
-; .uv - the next chroma sample: d2 = R term, d3 = G, d4 = B
-.uv:	moveq	#0,d0
+.q2:	moveq	#0,d0
 	move.b	(a1)+,d0		; Cb
 	moveq	#0,d1
 	move.b	(a2)+,d1		; Cr
@@ -1407,10 +1394,7 @@ OutputRow:
 	add.l	jw_CrG(a6,d1.w*4),d3
 	swap	d3
 	move.w	jw_CrR(a6,d1.w*2),d2
-	rts
-; .px - the next pixel: Y + the chroma terms, as $ffRRGGBB
-.px:	moveq	#0,d5
-	move.b	(a0)+,d5
+	move.b	(a0)+,d5		; (d5: the rest stays 0)
 	moveq	#-1,d1
 	move.w	d2,d0
 	add.w	d5,d0
@@ -1424,7 +1408,51 @@ OutputRow:
 	add.w	d5,d0
 	move.b	(a5,d0.w),d1
 	move.l	d1,(a3)+
-	rts
+	subq.l	#1,d7
+	beq	.ln
+	move.b	(a0)+,d5		; (d5: the rest stays 0)
+	moveq	#-1,d1
+	move.w	d2,d0
+	add.w	d5,d0
+	move.b	(a5,d0.w),d1
+	lsl.l	#8,d1
+	move.w	d3,d0
+	add.w	d5,d0
+	move.b	(a5,d0.w),d1
+	lsl.l	#8,d1
+	move.w	d4,d0
+	add.w	d5,d0
+	move.b	(a5,d0.w),d1
+	move.l	d1,(a3)+
+	subq.l	#1,d7
+	bne	.q2
+	bra	.ln
+.q1:	moveq	#0,d0
+	move.b	(a1)+,d0		; Cb
+	moveq	#0,d1
+	move.b	(a2)+,d1		; Cr
+	move.w	jw_CbB(a6,d0.w*2),d4
+	move.l	jw_CbG(a6,d0.w*4),d3
+	add.l	jw_CrG(a6,d1.w*4),d3
+	swap	d3
+	move.w	jw_CrR(a6,d1.w*2),d2
+	move.b	(a0)+,d5		; (d5: the rest stays 0)
+	moveq	#-1,d1
+	move.w	d2,d0
+	add.w	d5,d0
+	move.b	(a5,d0.w),d1
+	lsl.l	#8,d1
+	move.w	d3,d0
+	add.w	d5,d0
+	move.b	(a5,d0.w),d1
+	lsl.l	#8,d1
+	move.w	d4,d0
+	add.w	d5,d0
+	move.b	(a5,d0.w),d1
+	move.l	d1,(a3)+
+	subq.l	#1,d7
+	bne	.q1
+	bra	.ln
 .ycc:	move.l	d7,d0
 	lsr.l	d3,d0
 	moveq	#0,d1

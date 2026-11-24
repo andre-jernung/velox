@@ -256,8 +256,9 @@ PicToBitMap:
 	mulu.l	g_PbmH(a4),d0
 	move.l	g_PbmMask(a4),a0
 	lsr.l	#1,d0
+	moveq	#-1,d1		; all set: holes clear their bits
 	bra.s	.mce
-.mc:	clr.w	(a0)+
+.mc:	move.w	d1,(a0)+
 .mce:	subq.l	#1,d0
 	bpl.s	.mc
 	clr.l	g_PbmHoles(a4)
@@ -287,35 +288,77 @@ PicToBitMap:
 	move.l	g_PbmMask(a4),a6
 	add.l	d0,a6
 	PROFB	0
-	moveq	#7,d6			; d6 = mask bit
 	tst.l	g_CgxBase(a4)		; true colour: the pixels as they are
 	bne	.true
-	moveq	#0,d5			; d5 = column & 3, times 256
 	move.l	g_PbmW(a4),d2		; d2 = pixels left
-.px:	move.l	(a0)+,d0
-	move.l	(a1,d0.l),d0		; ARGB
-	bpl.s	.hole			; less than half opaque
-	bset	d6,(a6)
-	moveq	#0,d1			; blue
-	move.b	d0,d1
-	or.w	d5,d1
+	moveq	#0,d1			; (d1, d4: bytes, the rest stays 0)
 	moveq	#0,d4
-	move.b	2*DIT_CH(a5,d1.w),d4
-	lsr.l	#8,d0			; green
+.p0:	move.l	(a0)+,d0
+	move.l	(a1,d0.l),d0		; ARGB
+	bpl.s	.h0			; less than half opaque
 	move.b	d0,d1
-	add.b	DIT_CH(a5,d1.w),d4
-	lsr.l	#8,d0			; red
+	move.b	2*DIT_CH+0*256(a5,d1.w),d4	; blue
+	lsr.l	#8,d0
 	move.b	d0,d1
-	add.b	(a5,d1.w),d4
+	add.b	DIT_CH+0*256(a5,d1.w),d4	; green
+	lsr.l	#8,d0
+	move.b	d0,d1
+	add.b	0*256(a5,d1.w),d4		; red
 	move.b	(a3,d4.w),(a2)+
-.next:	add.w	#256,d5
-	and.w	#$300,d5
-	subq.l	#1,d6
-	bpl.s	.mb
-	moveq	#7,d6
-	addq.l	#1,a6
-.mb:	subq.l	#1,d2
-	bne.s	.px
+.n0:	subq.l	#1,d2
+	beq.s	.rowd
+.p1:	move.l	(a0)+,d0
+	move.l	(a1,d0.l),d0		; ARGB
+	bpl.s	.h1			; less than half opaque
+	move.b	d0,d1
+	move.b	2*DIT_CH+1*256(a5,d1.w),d4	; blue
+	lsr.l	#8,d0
+	move.b	d0,d1
+	add.b	DIT_CH+1*256(a5,d1.w),d4	; green
+	lsr.l	#8,d0
+	move.b	d0,d1
+	add.b	1*256(a5,d1.w),d4		; red
+	move.b	(a3,d4.w),(a2)+
+.n1:	subq.l	#1,d2
+	beq.s	.rowd
+.p2:	move.l	(a0)+,d0
+	move.l	(a1,d0.l),d0		; ARGB
+	bpl.s	.h2			; less than half opaque
+	move.b	d0,d1
+	move.b	2*DIT_CH+2*256(a5,d1.w),d4	; blue
+	lsr.l	#8,d0
+	move.b	d0,d1
+	add.b	DIT_CH+2*256(a5,d1.w),d4	; green
+	lsr.l	#8,d0
+	move.b	d0,d1
+	add.b	2*256(a5,d1.w),d4		; red
+	move.b	(a3,d4.w),(a2)+
+.n2:	subq.l	#1,d2
+	beq.s	.rowd
+.p3:	move.l	(a0)+,d0
+	move.l	(a1,d0.l),d0		; ARGB
+	bpl.s	.h3			; less than half opaque
+	move.b	d0,d1
+	move.b	2*DIT_CH+3*256(a5,d1.w),d4	; blue
+	lsr.l	#8,d0
+	move.b	d0,d1
+	add.b	DIT_CH+3*256(a5,d1.w),d4	; green
+	lsr.l	#8,d0
+	move.b	d0,d1
+	add.b	3*256(a5,d1.w),d4		; red
+	move.b	(a3,d4.w),(a2)+
+.n3:	subq.l	#1,d2
+	beq.s	.rowd
+	bra.s	.p0
+.h0:	bsr	PbmHole
+	bra.s	.n0
+.h1:	bsr	PbmHole
+	bra.s	.n1
+.h2:	bsr	PbmHole
+	bra.s	.n2
+.h3:	bsr	PbmHole
+	bra.s	.n3
+.rowd:
 	PROFE	0
 	PROFB	1
 	tst.l	g_PbmPlanar(a4)		; planes: Velox's own c2p
@@ -337,22 +380,14 @@ PicToBitMap:
 .wcd:	PROFE	1
 	addq.l	#1,d3
 	bra	.row
-.hole:	move.b	(a3),(a2)+		; (any pen: not drawn)
-	st	g_PbmHoles(a4)
-	bra.s	.next
 .true:	move.l	g_PbmW(a4),d2		; ARGB, and the mask
 .tp:	move.l	(a0)+,d0
 	move.l	(a1,d0.l),d0
-	bpl.s	.th
-	bset	d6,(a6)
-	bra.s	.tn
-.th:	st	g_PbmHoles(a4)
+	bmi.s	.tn
+	bsr	PbmHole
+	subq.l	#1,a2			; (the pixel itself after all)
 .tn:	move.l	d0,(a2)+
-	subq.l	#1,d6
-	bpl.s	.tb
-	moveq	#7,d6
-	addq.l	#1,a6
-.tb:	subq.l	#1,d2
+	subq.l	#1,d2
 	bne.s	.tp
 	movem.l	d2-d7/a2-a3,-(sp)	; WritePixelArray(buf, 0, 0, mod,
 	move.l	g_PbmBuf(a4),a0		; rp, 0, row, width, 1, ARGB)
@@ -386,6 +421,23 @@ PicToBitMap:
 	jsr	PicFreeMem
 .x:	move.l	d7,d0
 	movem.l	(sp)+,d2-d7/a2-a3/a5-a6
+	rts
+
+; PbmHole - a hole (less than half opaque) at the pixel d2 from the end
+; of the row (g_PbmW): clear its bit in the mask row a6, any pen to
+; (a2)+ (not drawn); Out: d1 = 0 (d0, d2 kept)
+PbmHole:
+	move.b	(a3),(a2)+
+	st	g_PbmHoles(a4)
+	move.l	d0,-(sp)
+	move.l	g_PbmW(a4),d0
+	sub.l	d2,d0			; x
+	move.l	d0,d1
+	lsr.l	#3,d0
+	not.b	d1			; bit 7 - x & 7
+	bclr	d1,(a6,d0.l)
+	movem.l	(sp)+,d0
+	moveq	#0,d1
 	rts
 
 ; C2PRow - the row of pens g_PbmBuf (g_PbmW of them) into row d0 of

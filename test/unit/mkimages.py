@@ -144,6 +144,12 @@ save(wy.convert("RGB"), "wy-m0.webp", quality=60, method=0)
 save(picture(320, 240).convert("RGB"), "wy-big.webp", quality=80)
 save(picture(83, 61, alpha=True), "wy-alpha.webp", quality=80)
 save(picture(83, 61, alpha=True), "wy-alpha2.webp", quality=50, alpha_quality=50, method=6)
+# the loop filters PIL does not choose: simple, and a strong sharp one
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import webpenc  # noqa: E402
+webpenc.encode(wy, os.path.join(d, "wy-simple.webp"), 0, 60)
+webpenc.encode(picture(320, 240), os.path.join(d, "wy-simbig.webp"), 0, 100, 4, 40)
+webpenc.encode(wy, os.path.join(d, "wy-sharp.webp"), 1, 100, 7, 30)
 
 # broken files: cut short, and with bytes overwritten; decoding them
 # must not crash (their output is not compared: ".bad")

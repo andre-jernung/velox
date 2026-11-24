@@ -40,7 +40,7 @@ TESTS=${*:-$(cd "$ROOT/test/amiga" && for f in *.script; do
 	head -1 "$f" | grep -q '(manual)' || basename "$f" .script; done)}
 TIMEOUT=${TIMEOUT:-300}
 
-make -s -C "$ROOT"
+make -s -C "$ROOT" ${PROFILE:+PROFILE=$PROFILE}	# (PROFILE=1: the profiling build)
 
 XDF="$ROOT/tools/venv/bin/xdftool"
 # unpack ADF $1 and copy its contents into directory $2

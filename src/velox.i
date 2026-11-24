@@ -626,6 +626,7 @@ g_PngFirst	rs.l	1		; the first chunk
 g_PngIdat	rs.l	1		; the IDATs joined
 g_PngRaw	rs.l	1		; the rows (after a row of zeros)
 g_PngGrey	rs.l	1		; g_GifPal holds the greys
+g_PngAbsOk	rs.l	1		; (first byte) g_PngAbs is ready
 g_PngZero	rs.l	1		; size of that row
 g_PngPW		rs.l	1		; pass: width,
 g_PngRB		rs.l	1		; bytes in a row
@@ -725,9 +726,7 @@ g_8FT		rs.l	1		; limit,
 g_8FI		rs.l	1		; interior limit,
 g_8FHev		rs.l	1		; high edge variance threshold,
 g_8FKind	rs.l	1		; 2: macroblock edge, 1: inner
-g_8FCnt		rs.l	1		; pixels left on the edge
 g_8FT2		rs.w	1		; 2 * limit + 1
-g_8FTmp		rs.w	1
 g_8FTabOk	rs.l	1		; g_8FTab is made
 g_WAlph		rs.l	1		; webp.s: the ALPH chunk,
 g_WAlphLen	rs.l	1		; its length
@@ -806,6 +805,7 @@ g_GifPal	rs.l	256		; colour table, as ARGB
 g_DitTab	rs.b	3*4*4*256	; dither tables (picbm.s)
 g_C2pLo		rs.l	256		; c2p: a pen's bits, planes 0-3,
 g_C2pHi		rs.l	256		; ... 4-7 (just after)
+g_PngAbs	rs.b	1022		; |v| of -510..510, 255 at most
 g_SIZEOF	rs.b	0
 
 ;--------------------------------------------------------------------

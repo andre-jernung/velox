@@ -1962,6 +1962,12 @@ TAB_C1		equ	(511+2041+225)*2+255*2	; clip 0..255 of -255..511
 TAB_27		equ	(511+2041+225+767)*2+128*2	; (27a + 63) >> 7
 TAB_18		equ	TAB_27+256*2		; (18a + 63) >> 7
 TAB_9		equ	TAB_18+256*2		; (9a + 63) >> 7
+R_SC1		equ	TAB_SC1-TAB_AB		; (from the |v| table)
+R_SC2		equ	TAB_SC2-TAB_AB
+R_C1		equ	TAB_C1-TAB_AB
+R_27		equ	TAB_27-TAB_AB
+R_18		equ	TAB_18-TAB_AB
+R_9		equ	TAB_9-TAB_AB
 
 
 ;--------------------------------------------------------------------
@@ -1970,96 +1976,123 @@ TAB_9		equ	TAB_18+256*2		; (9a + 63) >> 7
 ; g_8FI = interior limit, g_8FHev = high edge variance threshold,
 ; g_8FKind = 2 (6 taps on MB edges) or 1 (4 taps inside); the simple
 ; filter (2 taps) if g_8FType = 1.  libwebp's filters, with its tables
-; (FilterTabs); the taps are read where they are: p1 = (a0,-2s),
-; p0 = (a0,-s), q1 = (a0,s), q2 = (a0,2s), p2/p3 from a1 = a0 - 3s,
-; q3 = (a2) = a0 + 3s
+; (FilterTabs).  A small loop for each kind and direction: on vertical
+; edges (across: 1 byte) the taps are at -4..3(a0), a1 = I, a2 = 2I,
+; a5 = thresh2, d6 = count; on horizontal ones a1 = p3, p2 = (a1,s),
+; p1 = (a1,2s), a2 = p0, q3 = (a2,4s), q1 = (a0,s), q2 = (a0,2s),
+; a3 = I, a5 = 2I, d6 = count << 16 | s.  |x| <= I is x + I <= 2I,
+; unsigned.  d0-d5 hold bytes in words (the high bytes stay 0)
 ; (d1 kept)
 ;--------------------------------------------------------------------
 Edge:
-	movem.l	d1-d7/a1-a3/a6,-(sp)
-	lea	g_8FTab(a4),a6
-	move.l	d0,g_8FCnt(a4)
-	move.l	g_8FH(a4),d6		; d6 = s, d5 = -s
-	move.l	d6,d5
-	neg.l	d5
+	movem.l	d1-d7/a1-a3/a5-a6,-(sp)
+	lea	g_8FTab+TAB_AB(a4),a6
+	move.l	d0,d7			; d7 = pixels - 1
+	subq.l	#1,d7
 	move.l	g_8FT(a4),d0		; thresh2 = 2 * limit + 1
 	add.l	d0,d0
 	addq.l	#1,d0
 	move.w	d0,g_8FT2(a4)
-	move.l	g_8FV(a4),a3		; a3 = step along
-	lea	(a0,d5.l*2),a1
-	add.l	d5,a1			; a1 = p2
-	lea	(a0,d6.l*2),a2
-	add.l	d6,a2			; a2 = q3
-.px:	moveq	#0,d0
-	move.b	(a0,d5.l*2),d0		; p1
+	move.l	g_8FType(a4),d4		; d4 = 0 simple, 1 inner, 2 MB edge
+	subq.l	#1,d4
+	beq.s	.k
+	move.l	g_8FKind(a4),d4
+.k:	moveq	#1,d1
+	cmp.l	g_8FH(a4),d1
+	bne.s	.hz
+	move.l	g_8FV(a4),a3		; vertical: a3 = step along
+	move.l	g_8FI(a4),a1
+	lea	(a1,a1.l),a2
+	move.l	d0,a5
+	move.l	d7,d6
+	bsr.s	.clr
+	subq.l	#1,d4
+	bmi	.pvs
+	beq	.pv4
+	bra	.pv6
+.hz:	move.l	g_8FH(a4),d6		; horizontal: d6 = count << 16 | s
+	swap	d6
+	move.w	d7,d6
+	swap	d6
+	move.l	a0,a2
+	sub.w	d6,a2			; a2 = p0
+	move.l	a2,a1
+	sub.w	d6,a1
+	sub.w	d6,a1
+	sub.w	d6,a1			; a1 = p3
+	move.l	g_8FI(a4),a3
+	lea	(a3,a3.l),a5
+	bsr.s	.clr
+	subq.l	#1,d4
+	bmi	.phs
+	beq	.ph4
+	bra	.ph6
+.clr:	moveq	#0,d0
 	moveq	#0,d1
-	move.b	(a0,d5.l),d1		; p0
 	moveq	#0,d2
-	move.b	(a0),d2			; q0
 	moveq	#0,d3
-	move.b	(a0,d6.l),d3		; q1
+	moveq	#0,d5
+	rts
+.pv4:	move.b	-2(a0),d0		; p1
+	move.b	-1(a0),d1		; p0
+	move.b	(a0),d2		; q0
+	move.b	1(a0),d3		; q1
 	move.w	d1,d4			; 4 |p0 - q0| + |p1 - q1| <= thresh2
 	sub.w	d2,d4
-	move.w	TAB_AB(a6,d4.w*2),d4
+	move.w	(a6,d4.w*2),d4
 	add.w	d4,d4
 	add.w	d4,d4
 	move.w	d0,d7
 	sub.w	d3,d7
-	add.w	TAB_AB(a6,d7.w*2),d4
-	cmp.w	g_8FT2(a4),d4
-	bhi	.next
-	cmp.l	#1,g_8FType(a4)		; simple: 2 taps, always
-	beq	.f2
-	moveq	#0,d4			; d4 = high edge variance
-	move.w	d0,d7			; interior differences <= ilevel
+	add.w	(a6,d7.w*2),d4
+	cmp.w	a5,d4
+	bhi	.nv4
+	move.w	d0,d7			; |p1 - p0| <= ilevel ...
 	sub.w	d1,d7
-	move.w	TAB_AB(a6,d7.w*2),d7	; |p1 - p0|
-	cmp.w	g_8FI+2(a4),d7
-	bhi	.next
-	cmp.w	g_8FHev+2(a4),d7
-	bls.s	.h1
-	moveq	#1,d4
-.h1:	move.w	d3,d7
+	add.w	a1,d7
+	cmp.w	a2,d7
+	bhi	.nv4
+	move.w	d3,d7			; |q1 - q0|
 	sub.w	d2,d7
-	move.w	TAB_AB(a6,d7.w*2),d7	; |q1 - q0|
-	cmp.w	g_8FI+2(a4),d7
-	bhi	.next
-	cmp.w	g_8FHev+2(a4),d7
-	bls.s	.h2
-	moveq	#1,d4
-.h2:	moveq	#0,d7
-	move.b	(a1),d7			; p2
-	move.w	d7,g_8FTmp(a4)
+	add.w	a1,d7
+	cmp.w	a2,d7
+	bhi	.nv4
+	move.b	-3(a0),d5		; p2
+	move.w	d5,d7			; |p2 - p1|
 	sub.w	d0,d7
-	move.w	TAB_AB(a6,d7.w*2),d7	; |p2 - p1|
-	cmp.w	g_8FI+2(a4),d7
-	bhi	.next
-	moveq	#0,d7
-	move.b	(a1,d5.l),d7		; p3
-	sub.w	g_8FTmp(a4),d7
-	move.w	TAB_AB(a6,d7.w*2),d7	; |p3 - p2|
-	cmp.w	g_8FI+2(a4),d7
-	bhi	.next
-	moveq	#0,d7
-	move.b	(a0,d6.l*2),d7		; q2
-	move.w	d7,g_8FTmp(a4)
+	add.w	a1,d7
+	cmp.w	a2,d7
+	bhi	.nv4
+	moveq	#0,d4
+	move.b	-4(a0),d4		; p3
+	move.w	d4,d7			; |p3 - p2|
+	sub.w	d5,d7
+	add.w	a1,d7
+	cmp.w	a2,d7
+	bhi	.nv4
+	move.b	2(a0),d5		; q2 (kept in d5)
+	move.w	d5,d7			; |q2 - q1|
 	sub.w	d3,d7
-	move.w	TAB_AB(a6,d7.w*2),d7	; |q2 - q1|
-	cmp.w	g_8FI+2(a4),d7
-	bhi	.next
-	moveq	#0,d7
-	move.b	(a2),d7			; q3
-	sub.w	g_8FTmp(a4),d7
-	move.w	TAB_AB(a6,d7.w*2),d7	; |q3 - q2|
-	cmp.w	g_8FI+2(a4),d7
-	bhi	.next
-	tst.w	d4			; high variance: 2 taps
-	bne.s	.f2
-	cmp.l	#2,g_8FKind(a4)
-	beq.s	.f6
-	; 4 taps: a = 3 (q0 - p0)
-	move.w	d2,d4
+	add.w	a1,d7
+	cmp.w	a2,d7
+	bhi	.nv4
+	move.b	3(a0),d4		; q3
+	move.w	d4,d7			; |q3 - q2|
+	sub.w	d5,d7
+	add.w	a1,d7
+	cmp.w	a2,d7
+	bhi	.nv4
+	move.w	d0,d7			; high edge variance: 2 taps
+	sub.w	d1,d7
+	move.w	(a6,d7.w*2),d7
+	cmp.w	g_8FHev+2(a4),d7
+	bhi	.tv4
+	move.w	d3,d7
+	sub.w	d2,d7
+	move.w	(a6,d7.w*2),d7
+	cmp.w	g_8FHev+2(a4),d7
+	bhi	.tv4
+	move.w	d2,d4			; 4 taps: a = 3 (q0 - p0)
 	sub.w	d1,d4
 	move.w	d4,d7
 	add.w	d4,d4
@@ -2067,91 +2100,482 @@ Edge:
 	move.w	d4,d7
 	addq.w	#4,d4
 	asr.w	#3,d4
-	move.w	TAB_SC2(a6,d4.w*2),d4	; a1
+	move.w	R_SC2(a6,d4.w*2),d4	; a1
 	addq.w	#3,d7
 	asr.w	#3,d7
-	move.w	TAB_SC2(a6,d7.w*2),d7	; a2
-	add.w	d7,d1			; p0 + a2
-	move.w	TAB_C1(a6,d1.w*2),d1
-	move.b	d1,(a0,d5.l)
-	sub.w	d4,d2			; q0 - a1
-	move.w	TAB_C1(a6,d2.w*2),d2
-	move.b	d2,(a0)
+	move.w	R_SC2(a6,d7.w*2),d7	; a2
+	add.w	d7,d1
+	move.w	R_C1(a6,d1.w*2),d1
+	move.b	d1,-1(a0)		; p0 + a2
+	sub.w	d4,d2
+	move.w	R_C1(a6,d2.w*2),d2
+	move.b	d2,(a0)		; q0 - a1
 	addq.w	#1,d4			; a3 = (a1 + 1) >> 1
 	asr.w	#1,d4
-	add.w	d4,d0			; p1 + a3
-	move.w	TAB_C1(a6,d0.w*2),d0
-	move.b	d0,(a0,d5.l*2)
-	sub.w	d4,d3			; q1 - a3
-	move.w	TAB_C1(a6,d3.w*2),d3
-	move.b	d3,(a0,d6.l)
-	bra	.next
-.f2:	; 2 taps: a = 3 (q0 - p0) + sclip1(p1 - q1)
-	move.w	d2,d4
+	add.w	d4,d0
+	move.w	R_C1(a6,d0.w*2),d0
+	move.b	d0,-2(a0)		; p1 + a3
+	sub.w	d4,d3
+	move.w	R_C1(a6,d3.w*2),d3
+	move.b	d3,1(a0)		; q1 - a3
+.nv4:	add.l	a3,a0
+	dbf	d6,.pv4
+	bra	.x
+.tv4:
+	move.w	d2,d4			; 2 taps: a = 3 (q0 - p0) + sclip1(p1 - q1)
 	sub.w	d1,d4
 	move.w	d4,d7
 	add.w	d4,d4
 	add.w	d7,d4
 	move.w	d0,d7
 	sub.w	d3,d7
-	add.w	TAB_SC1(a6,d7.w*2),d4
+	add.w	R_SC1(a6,d7.w*2),d4
 	move.w	d4,d7
 	addq.w	#4,d4
 	asr.w	#3,d4
-	move.w	TAB_SC2(a6,d4.w*2),d4	; a1
+	move.w	R_SC2(a6,d4.w*2),d4	; a1 = sclip2((a + 4) >> 3)
 	addq.w	#3,d7
 	asr.w	#3,d7
-	move.w	TAB_SC2(a6,d7.w*2),d7	; a2
+	move.w	R_SC2(a6,d7.w*2),d7	; a2 = sclip2((a + 3) >> 3)
 	add.w	d7,d1
-	move.w	TAB_C1(a6,d1.w*2),d1
-	move.b	d1,(a0,d5.l)
+	move.w	R_C1(a6,d1.w*2),d1
+	move.b	d1,-1(a0)		; p0 + a2
 	sub.w	d4,d2
-	move.w	TAB_C1(a6,d2.w*2),d2
+	move.w	R_C1(a6,d2.w*2),d2
+	move.b	d2,(a0)		; q0 - a1
+	bra	.nv4
+.pv6:	move.b	-2(a0),d0		; p1
+	move.b	-1(a0),d1		; p0
+	move.b	(a0),d2		; q0
+	move.b	1(a0),d3		; q1
+	move.w	d1,d4			; 4 |p0 - q0| + |p1 - q1| <= thresh2
+	sub.w	d2,d4
+	move.w	(a6,d4.w*2),d4
+	add.w	d4,d4
+	add.w	d4,d4
+	move.w	d0,d7
+	sub.w	d3,d7
+	add.w	(a6,d7.w*2),d4
+	cmp.w	a5,d4
+	bhi	.nv6
+	move.w	d0,d7			; |p1 - p0| <= ilevel ...
+	sub.w	d1,d7
+	add.w	a1,d7
+	cmp.w	a2,d7
+	bhi	.nv6
+	move.w	d3,d7			; |q1 - q0|
+	sub.w	d2,d7
+	add.w	a1,d7
+	cmp.w	a2,d7
+	bhi	.nv6
+	move.b	-3(a0),d5		; p2
+	move.w	d5,d7			; |p2 - p1|
+	sub.w	d0,d7
+	add.w	a1,d7
+	cmp.w	a2,d7
+	bhi	.nv6
+	moveq	#0,d4
+	move.b	-4(a0),d4		; p3
+	move.w	d4,d7			; |p3 - p2|
+	sub.w	d5,d7
+	add.w	a1,d7
+	cmp.w	a2,d7
+	bhi	.nv6
+	move.b	2(a0),d5		; q2 (kept in d5)
+	move.w	d5,d7			; |q2 - q1|
+	sub.w	d3,d7
+	add.w	a1,d7
+	cmp.w	a2,d7
+	bhi	.nv6
+	move.b	3(a0),d4		; q3
+	move.w	d4,d7			; |q3 - q2|
+	sub.w	d5,d7
+	add.w	a1,d7
+	cmp.w	a2,d7
+	bhi	.nv6
+	move.w	d0,d7			; high edge variance: 2 taps
+	sub.w	d1,d7
+	move.w	(a6,d7.w*2),d7
+	cmp.w	g_8FHev+2(a4),d7
+	bhi	.tv6
+	move.w	d3,d7
+	sub.w	d2,d7
+	move.w	(a6,d7.w*2),d7
+	cmp.w	g_8FHev+2(a4),d7
+	bhi	.tv6
+	move.w	d2,d4			; 6 taps: a = sclip1(3 (q0 - p0)
+	sub.w	d1,d4			;	+ sclip1(p1 - q1))
+	move.w	d4,d7
+	add.w	d4,d4
+	add.w	d7,d4
+	move.w	d0,d7
+	sub.w	d3,d7
+	add.w	R_SC1(a6,d7.w*2),d4
+	move.w	R_SC1(a6,d4.w*2),d4	; a
+	move.w	R_27(a6,d4.w*2),d7	; p0 + a1, q0 - a1
+	add.w	d7,d1
+	move.w	R_C1(a6,d1.w*2),d1
+	move.b	d1,-1(a0)
+	sub.w	d7,d2
+	move.w	R_C1(a6,d2.w*2),d2
 	move.b	d2,(a0)
-	bra.s	.next
-.f6:	; 6 taps: a = sclip1(3 (q0 - p0) + sclip1(p1 - q1))
-	move.w	d2,d4
+	move.w	R_18(a6,d4.w*2),d7	; p1 + a2, q1 - a2
+	add.w	d7,d0
+	move.w	R_C1(a6,d0.w*2),d0
+	move.b	d0,-2(a0)
+	sub.w	d7,d3
+	move.w	R_C1(a6,d3.w*2),d3
+	move.b	d3,1(a0)
+	move.w	R_9(a6,d4.w*2),d7	; q2 - a3, p2 + a3
+	sub.w	d7,d5
+	move.w	R_C1(a6,d5.w*2),d5
+	move.b	d5,2(a0)
+	move.b	-3(a0),d5
+	add.w	d7,d5
+	move.w	R_C1(a6,d5.w*2),d5
+	move.b	d5,-3(a0)
+.nv6:	add.l	a3,a0
+	dbf	d6,.pv6
+	bra	.x
+.tv6:
+	move.w	d2,d4			; 2 taps: a = 3 (q0 - p0) + sclip1(p1 - q1)
 	sub.w	d1,d4
 	move.w	d4,d7
 	add.w	d4,d4
 	add.w	d7,d4
 	move.w	d0,d7
 	sub.w	d3,d7
-	add.w	TAB_SC1(a6,d7.w*2),d4
-	move.w	TAB_SC1(a6,d4.w*2),d4	; a
-	move.w	TAB_27(a6,d4.w*2),d7	; p0 + a1, q0 - a1
+	add.w	R_SC1(a6,d7.w*2),d4
+	move.w	d4,d7
+	addq.w	#4,d4
+	asr.w	#3,d4
+	move.w	R_SC2(a6,d4.w*2),d4	; a1 = sclip2((a + 4) >> 3)
+	addq.w	#3,d7
+	asr.w	#3,d7
+	move.w	R_SC2(a6,d7.w*2),d7	; a2 = sclip2((a + 3) >> 3)
 	add.w	d7,d1
-	move.w	TAB_C1(a6,d1.w*2),d1
-	move.b	d1,(a0,d5.l)
+	move.w	R_C1(a6,d1.w*2),d1
+	move.b	d1,-1(a0)		; p0 + a2
+	sub.w	d4,d2
+	move.w	R_C1(a6,d2.w*2),d2
+	move.b	d2,(a0)		; q0 - a1
+	bra	.nv6
+.pvs:	move.b	-2(a0),d0		; p1
+	move.b	-1(a0),d1		; p0
+	move.b	(a0),d2		; q0
+	move.b	1(a0),d3		; q1
+	move.w	d1,d4			; 4 |p0 - q0| + |p1 - q1| <= thresh2
+	sub.w	d2,d4
+	move.w	(a6,d4.w*2),d4
+	add.w	d4,d4
+	add.w	d4,d4
+	move.w	d0,d7
+	sub.w	d3,d7
+	add.w	(a6,d7.w*2),d4
+	cmp.w	a5,d4
+	bhi	.nvs
+	move.w	d2,d4			; 2 taps: a = 3 (q0 - p0) + sclip1(p1 - q1)
+	sub.w	d1,d4
+	move.w	d4,d7
+	add.w	d4,d4
+	add.w	d7,d4
+	move.w	d0,d7
+	sub.w	d3,d7
+	add.w	R_SC1(a6,d7.w*2),d4
+	move.w	d4,d7
+	addq.w	#4,d4
+	asr.w	#3,d4
+	move.w	R_SC2(a6,d4.w*2),d4	; a1 = sclip2((a + 4) >> 3)
+	addq.w	#3,d7
+	asr.w	#3,d7
+	move.w	R_SC2(a6,d7.w*2),d7	; a2 = sclip2((a + 3) >> 3)
+	add.w	d7,d1
+	move.w	R_C1(a6,d1.w*2),d1
+	move.b	d1,-1(a0)		; p0 + a2
+	sub.w	d4,d2
+	move.w	R_C1(a6,d2.w*2),d2
+	move.b	d2,(a0)		; q0 - a1
+.nvs:	add.l	a3,a0
+	dbf	d6,.pvs
+	bra	.x
+.ph4:	move.b	(a1,d6.w*2),d0		; p1
+	move.b	(a2),d1		; p0
+	move.b	(a0),d2		; q0
+	move.b	(a0,d6.w),d3		; q1
+	move.w	d1,d4			; 4 |p0 - q0| + |p1 - q1| <= thresh2
+	sub.w	d2,d4
+	move.w	(a6,d4.w*2),d4
+	add.w	d4,d4
+	add.w	d4,d4
+	move.w	d0,d7
+	sub.w	d3,d7
+	add.w	(a6,d7.w*2),d4
+	cmp.w	g_8FT2(a4),d4
+	bhi	.nh4
+	move.w	d0,d7			; |p1 - p0| <= ilevel ...
+	sub.w	d1,d7
+	add.w	a3,d7
+	cmp.w	a5,d7
+	bhi	.nh4
+	move.w	d3,d7			; |q1 - q0|
+	sub.w	d2,d7
+	add.w	a3,d7
+	cmp.w	a5,d7
+	bhi	.nh4
+	move.b	(a1,d6.w),d5		; p2
+	move.w	d5,d7			; |p2 - p1|
+	sub.w	d0,d7
+	add.w	a3,d7
+	cmp.w	a5,d7
+	bhi	.nh4
+	moveq	#0,d4
+	move.b	(a1),d4		; p3
+	move.w	d4,d7			; |p3 - p2|
+	sub.w	d5,d7
+	add.w	a3,d7
+	cmp.w	a5,d7
+	bhi	.nh4
+	move.b	(a0,d6.w*2),d5		; q2 (kept in d5)
+	move.w	d5,d7			; |q2 - q1|
+	sub.w	d3,d7
+	add.w	a3,d7
+	cmp.w	a5,d7
+	bhi	.nh4
+	move.b	(a2,d6.w*4),d4		; q3
+	move.w	d4,d7			; |q3 - q2|
+	sub.w	d5,d7
+	add.w	a3,d7
+	cmp.w	a5,d7
+	bhi	.nh4
+	move.w	d0,d7			; high edge variance: 2 taps
+	sub.w	d1,d7
+	move.w	(a6,d7.w*2),d7
+	cmp.w	g_8FHev+2(a4),d7
+	bhi	.th4
+	move.w	d3,d7
+	sub.w	d2,d7
+	move.w	(a6,d7.w*2),d7
+	cmp.w	g_8FHev+2(a4),d7
+	bhi	.th4
+	move.w	d2,d4			; 4 taps: a = 3 (q0 - p0)
+	sub.w	d1,d4
+	move.w	d4,d7
+	add.w	d4,d4
+	add.w	d7,d4
+	move.w	d4,d7
+	addq.w	#4,d4
+	asr.w	#3,d4
+	move.w	R_SC2(a6,d4.w*2),d4	; a1
+	addq.w	#3,d7
+	asr.w	#3,d7
+	move.w	R_SC2(a6,d7.w*2),d7	; a2
+	add.w	d7,d1
+	move.w	R_C1(a6,d1.w*2),d1
+	move.b	d1,(a2)		; p0 + a2
+	sub.w	d4,d2
+	move.w	R_C1(a6,d2.w*2),d2
+	move.b	d2,(a0)		; q0 - a1
+	addq.w	#1,d4			; a3 = (a1 + 1) >> 1
+	asr.w	#1,d4
+	add.w	d4,d0
+	move.w	R_C1(a6,d0.w*2),d0
+	move.b	d0,(a1,d6.w*2)		; p1 + a3
+	sub.w	d4,d3
+	move.w	R_C1(a6,d3.w*2),d3
+	move.b	d3,(a0,d6.w)		; q1 - a3
+.nh4:	addq.l	#1,a0
+	addq.l	#1,a1
+	addq.l	#1,a2
+	sub.l	#$10000,d6
+	bcc	.ph4
+	bra	.x
+.th4:
+	move.w	d2,d4			; 2 taps: a = 3 (q0 - p0) + sclip1(p1 - q1)
+	sub.w	d1,d4
+	move.w	d4,d7
+	add.w	d4,d4
+	add.w	d7,d4
+	move.w	d0,d7
+	sub.w	d3,d7
+	add.w	R_SC1(a6,d7.w*2),d4
+	move.w	d4,d7
+	addq.w	#4,d4
+	asr.w	#3,d4
+	move.w	R_SC2(a6,d4.w*2),d4	; a1 = sclip2((a + 4) >> 3)
+	addq.w	#3,d7
+	asr.w	#3,d7
+	move.w	R_SC2(a6,d7.w*2),d7	; a2 = sclip2((a + 3) >> 3)
+	add.w	d7,d1
+	move.w	R_C1(a6,d1.w*2),d1
+	move.b	d1,(a2)		; p0 + a2
+	sub.w	d4,d2
+	move.w	R_C1(a6,d2.w*2),d2
+	move.b	d2,(a0)		; q0 - a1
+	bra	.nh4
+.ph6:	move.b	(a1,d6.w*2),d0		; p1
+	move.b	(a2),d1		; p0
+	move.b	(a0),d2		; q0
+	move.b	(a0,d6.w),d3		; q1
+	move.w	d1,d4			; 4 |p0 - q0| + |p1 - q1| <= thresh2
+	sub.w	d2,d4
+	move.w	(a6,d4.w*2),d4
+	add.w	d4,d4
+	add.w	d4,d4
+	move.w	d0,d7
+	sub.w	d3,d7
+	add.w	(a6,d7.w*2),d4
+	cmp.w	g_8FT2(a4),d4
+	bhi	.nh6
+	move.w	d0,d7			; |p1 - p0| <= ilevel ...
+	sub.w	d1,d7
+	add.w	a3,d7
+	cmp.w	a5,d7
+	bhi	.nh6
+	move.w	d3,d7			; |q1 - q0|
+	sub.w	d2,d7
+	add.w	a3,d7
+	cmp.w	a5,d7
+	bhi	.nh6
+	move.b	(a1,d6.w),d5		; p2
+	move.w	d5,d7			; |p2 - p1|
+	sub.w	d0,d7
+	add.w	a3,d7
+	cmp.w	a5,d7
+	bhi	.nh6
+	moveq	#0,d4
+	move.b	(a1),d4		; p3
+	move.w	d4,d7			; |p3 - p2|
+	sub.w	d5,d7
+	add.w	a3,d7
+	cmp.w	a5,d7
+	bhi	.nh6
+	move.b	(a0,d6.w*2),d5		; q2 (kept in d5)
+	move.w	d5,d7			; |q2 - q1|
+	sub.w	d3,d7
+	add.w	a3,d7
+	cmp.w	a5,d7
+	bhi	.nh6
+	move.b	(a2,d6.w*4),d4		; q3
+	move.w	d4,d7			; |q3 - q2|
+	sub.w	d5,d7
+	add.w	a3,d7
+	cmp.w	a5,d7
+	bhi	.nh6
+	move.w	d0,d7			; high edge variance: 2 taps
+	sub.w	d1,d7
+	move.w	(a6,d7.w*2),d7
+	cmp.w	g_8FHev+2(a4),d7
+	bhi	.th6
+	move.w	d3,d7
+	sub.w	d2,d7
+	move.w	(a6,d7.w*2),d7
+	cmp.w	g_8FHev+2(a4),d7
+	bhi	.th6
+	move.w	d2,d4			; 6 taps: a = sclip1(3 (q0 - p0)
+	sub.w	d1,d4			;	+ sclip1(p1 - q1))
+	move.w	d4,d7
+	add.w	d4,d4
+	add.w	d7,d4
+	move.w	d0,d7
+	sub.w	d3,d7
+	add.w	R_SC1(a6,d7.w*2),d4
+	move.w	R_SC1(a6,d4.w*2),d4	; a
+	move.w	R_27(a6,d4.w*2),d7	; p0 + a1, q0 - a1
+	add.w	d7,d1
+	move.w	R_C1(a6,d1.w*2),d1
+	move.b	d1,(a2)
 	sub.w	d7,d2
-	move.w	TAB_C1(a6,d2.w*2),d2
+	move.w	R_C1(a6,d2.w*2),d2
 	move.b	d2,(a0)
-	move.w	TAB_18(a6,d4.w*2),d7	; p1 + a2, q1 - a2
+	move.w	R_18(a6,d4.w*2),d7	; p1 + a2, q1 - a2
 	add.w	d7,d0
-	move.w	TAB_C1(a6,d0.w*2),d0
-	move.b	d0,(a0,d5.l*2)
+	move.w	R_C1(a6,d0.w*2),d0
+	move.b	d0,(a1,d6.w*2)
 	sub.w	d7,d3
-	move.w	TAB_C1(a6,d3.w*2),d3
-	move.b	d3,(a0,d6.l)
-	move.w	TAB_9(a6,d4.w*2),d7	; p2 + a3, q2 - a3
-	moveq	#0,d0
-	move.b	(a1),d0
-	add.w	d7,d0
-	move.w	TAB_C1(a6,d0.w*2),d0
-	move.b	d0,(a1)
-	moveq	#0,d0
-	move.b	(a0,d6.l*2),d0
-	sub.w	d7,d0
-	move.w	TAB_C1(a6,d0.w*2),d0
-	move.b	d0,(a0,d6.l*2)
-.next:	add.l	a3,a0
-	add.l	a3,a1
-	add.l	a3,a2
-	subq.l	#1,g_8FCnt(a4)
-	bne	.px
-	movem.l	(sp)+,d1-d7/a1-a3/a6
+	move.w	R_C1(a6,d3.w*2),d3
+	move.b	d3,(a0,d6.w)
+	move.w	R_9(a6,d4.w*2),d7	; q2 - a3, p2 + a3
+	sub.w	d7,d5
+	move.w	R_C1(a6,d5.w*2),d5
+	move.b	d5,(a0,d6.w*2)
+	move.b	(a1,d6.w),d5
+	add.w	d7,d5
+	move.w	R_C1(a6,d5.w*2),d5
+	move.b	d5,(a1,d6.w)
+.nh6:	addq.l	#1,a0
+	addq.l	#1,a1
+	addq.l	#1,a2
+	sub.l	#$10000,d6
+	bcc	.ph6
+	bra	.x
+.th6:
+	move.w	d2,d4			; 2 taps: a = 3 (q0 - p0) + sclip1(p1 - q1)
+	sub.w	d1,d4
+	move.w	d4,d7
+	add.w	d4,d4
+	add.w	d7,d4
+	move.w	d0,d7
+	sub.w	d3,d7
+	add.w	R_SC1(a6,d7.w*2),d4
+	move.w	d4,d7
+	addq.w	#4,d4
+	asr.w	#3,d4
+	move.w	R_SC2(a6,d4.w*2),d4	; a1 = sclip2((a + 4) >> 3)
+	addq.w	#3,d7
+	asr.w	#3,d7
+	move.w	R_SC2(a6,d7.w*2),d7	; a2 = sclip2((a + 3) >> 3)
+	add.w	d7,d1
+	move.w	R_C1(a6,d1.w*2),d1
+	move.b	d1,(a2)		; p0 + a2
+	sub.w	d4,d2
+	move.w	R_C1(a6,d2.w*2),d2
+	move.b	d2,(a0)		; q0 - a1
+	bra	.nh6
+.phs:	move.b	(a1,d6.w*2),d0		; p1
+	move.b	(a2),d1		; p0
+	move.b	(a0),d2		; q0
+	move.b	(a0,d6.w),d3		; q1
+	move.w	d1,d4			; 4 |p0 - q0| + |p1 - q1| <= thresh2
+	sub.w	d2,d4
+	move.w	(a6,d4.w*2),d4
+	add.w	d4,d4
+	add.w	d4,d4
+	move.w	d0,d7
+	sub.w	d3,d7
+	add.w	(a6,d7.w*2),d4
+	cmp.w	g_8FT2(a4),d4
+	bhi	.nhs
+	move.w	d2,d4			; 2 taps: a = 3 (q0 - p0) + sclip1(p1 - q1)
+	sub.w	d1,d4
+	move.w	d4,d7
+	add.w	d4,d4
+	add.w	d7,d4
+	move.w	d0,d7
+	sub.w	d3,d7
+	add.w	R_SC1(a6,d7.w*2),d4
+	move.w	d4,d7
+	addq.w	#4,d4
+	asr.w	#3,d4
+	move.w	R_SC2(a6,d4.w*2),d4	; a1 = sclip2((a + 4) >> 3)
+	addq.w	#3,d7
+	asr.w	#3,d7
+	move.w	R_SC2(a6,d7.w*2),d7	; a2 = sclip2((a + 3) >> 3)
+	add.w	d7,d1
+	move.w	R_C1(a6,d1.w*2),d1
+	move.b	d1,(a2)		; p0 + a2
+	sub.w	d4,d2
+	move.w	R_C1(a6,d2.w*2),d2
+	move.b	d2,(a0)		; q0 - a1
+.nhs:	addq.l	#1,a0
+	addq.l	#1,a1
+	addq.l	#1,a2
+	sub.l	#$10000,d6
+	bcc	.phs
+	bra	.x
+.x:	movem.l	(sp)+,d1-d7/a1-a3/a5-a6
 	rts
 
+;--------------------------------------------------------------------
 ; FilterTabs - the loop filter's tables (once)
 FilterTabs:
 	tst.l	g_8FTabOk(a4)
@@ -2273,13 +2697,15 @@ Clip0:
 ; its "fancy" upsampling of the chroma (each pixel 9:3:3:1 from the
 ; four nearest samples, mirrored at the edges)
 ;--------------------------------------------------------------------
+RGB_OFF	equ	288*64			; (the sums: -17685 .. 34237)
 ToARGB:
 	movem.l	d2-d7/a2-a3/a5-a6,-(sp)
-	move.l	g_8Rgb(a4),a5		; tables: (v * k) >> 8 (- offset)
-	moveq	#0,d1
-.t:	move.l	d1,d0
+	move.l	g_8Rgb(a4),a5		; tables: (v * k) >> 8 (- offset),
+	moveq	#0,d1			; words that add up to the channel
+.t:	move.l	d1,d0			; + RGB_OFF (all sums 0..65535)
 	mulu.w	#19077,d0
 	lsr.l	#8,d0
+	add.l	#RGB_OFF,d0
 	move.w	d0,(a5,d1.l*2)		; Y
 	move.l	d1,d0
 	mulu.w	#26149,d0
@@ -2289,11 +2715,14 @@ ToARGB:
 	move.l	d1,d0
 	mulu.w	#6419,d0
 	lsr.l	#8,d0
-	move.w	d0,1024(a5,d1.l*2)	; U -> G
+	neg.l	d0
+	add.l	#8708,d0
+	move.w	d0,1024(a5,d1.l*2)	; U -> G (- with G's constant)
 	move.l	d1,d0
 	mulu.w	#13320,d0
 	lsr.l	#8,d0
-	move.w	d0,1536(a5,d1.l*2)	; V -> G
+	neg.l	d0
+	move.w	d0,1536(a5,d1.l*2)	; V -> G (-)
 	move.l	d1,d0
 	mulu.w	#33050,d0
 	lsr.l	#8,d0
@@ -2302,10 +2731,10 @@ ToARGB:
 	addq.l	#1,d1
 	cmp.w	#256,d1
 	blo.s	.t
-	move.l	g_8Clip(a4),a6		; clip: (v >> 6) + 256
+	move.l	g_8Clip(a4),a6		; clip: v >> 6 (+ RGB_OFF >> 6)
 	moveq	#0,d1
 .c:	move.l	d1,d0
-	sub.l	#256,d0
+	sub.l	#RGB_OFF>>6,d0
 	bsr	Clip0
 	move.b	d0,(a6,d1.l)
 	addq.l	#1,d1
@@ -2364,41 +2793,30 @@ ToARGB:
 	lea	(a3,d0.l*4),a3
 	move.l	g_8W(a4),d6
 	subq.l	#1,d6
-.px:	moveq	#0,d0
-	move.b	(a0)+,d0
-	move.w	(a5,d0.l*2),d2		; d2 = Y term
-	ext.l	d2
+	moveq	#0,d0			; (bytes: the rest stays 0)
 	moveq	#0,d3
-	move.b	(a1)+,d3		; d3 = U
 	moveq	#0,d4
+.px:	move.b	(a0)+,d0
+	move.w	(a5,d0.w*2),d2		; d2 = Y term
+	move.b	(a1)+,d3		; d3 = U
 	move.b	(a2)+,d4		; d4 = V
-	move.b	#$ff,(a3)+
-	move.w	512(a5,d4.l*2),d0	; R = Y + V
-	ext.l	d0
-	add.l	d2,d0
-	asr.l	#6,d0
-	add.l	#256,d0
-	and.l	#1023,d0
-	move.b	(a6,d0.l),(a3)+
-	move.l	d2,d0			; G = Y - U - V + 8708
-	move.w	1024(a5,d3.l*2),d1
-	ext.l	d1
-	sub.l	d1,d0
-	move.w	1536(a5,d4.l*2),d1
-	ext.l	d1
-	sub.l	d1,d0
-	add.l	#8708,d0
-	asr.l	#6,d0
-	add.l	#256,d0
-	and.l	#1023,d0
-	move.b	(a6,d0.l),(a3)+
-	move.w	2048(a5,d3.l*2),d0	; B = Y + U
-	ext.l	d0
-	add.l	d2,d0
-	asr.l	#6,d0
-	add.l	#256,d0
-	and.l	#1023,d0
-	move.b	(a6,d0.l),(a3)+
+	moveq	#-1,d1
+	move.w	512(a5,d4.w*2),d5	; R = Y + V
+	add.w	d2,d5
+	lsr.w	#6,d5
+	move.b	(a6,d5.w),d1
+	lsl.l	#8,d1
+	move.w	1024(a5,d3.w*2),d5	; G = Y - U - V + 8708
+	add.w	1536(a5,d4.w*2),d5
+	add.w	d2,d5
+	lsr.w	#6,d5
+	move.b	(a6,d5.w),d1
+	lsl.l	#8,d1
+	move.w	2048(a5,d3.w*2),d5	; B = Y + U
+	add.w	d2,d5
+	lsr.w	#6,d5
+	move.b	(a6,d5.w),d1
+	move.l	d1,(a3)+
 	dbf	d6,.px
 	addq.l	#1,d7
 	bra	.y
@@ -2411,59 +2829,56 @@ ToARGB:
 UpLine:
 	movem.l	d2-d7/a2,-(sp)
 	moveq	#0,d2			; x = 0: (3 near + far + 2) >> 2
-	move.b	(a0),d2
+	move.b	(a0)+,d2
 	moveq	#0,d3
-	move.b	(a1),d3
-	move.l	d2,d0
-	add.l	d0,d0
-	add.l	d2,d0
-	add.l	d3,d0
-	addq.l	#2,d0
-	lsr.l	#2,d0
+	move.b	(a1)+,d3
+	move.w	d2,d0
+	add.w	d0,d0
+	add.w	d2,d0
+	add.w	d3,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
 	move.b	d0,(a2)+
+	moveq	#0,d4
+	moveq	#0,d5
 	move.l	g_8W(a4),d7		; pairs: x = 1 .. (W - 1) / 2
 	subq.l	#1,d7
 	lsr.l	#1,d7
-	moveq	#1,d6
-.p:	cmp.l	d7,d6
-	bhi.s	.end
-	moveq	#0,d4			; near[x], far[x]
-	move.b	(a0,d6.l),d4
-	moveq	#0,d5
-	move.b	(a1,d6.l),d5
-	move.l	d2,d1			; avg = near[x-1] + near[x] +
-	add.l	d3,d1			;	far[x-1] + far[x] + 8
-	add.l	d4,d1
-	add.l	d5,d1
-	addq.l	#8,d1
-	move.l	d4,d0			; 2x-1: ((avg + 2 (near[x] +
-	add.l	d3,d0			; far[x-1])) >> 3 + near[x-1]) >> 1
-	add.l	d0,d0
-	add.l	d1,d0
-	lsr.l	#3,d0
-	add.l	d2,d0
-	lsr.l	#1,d0
+	bra.s	.pe
+.p:	move.b	(a0)+,d4		; near[x], far[x]
+	move.b	(a1)+,d5
+	move.w	d2,d1			; avg = near[x-1] + near[x] +
+	add.w	d3,d1			;	far[x-1] + far[x] + 8
+	add.w	d4,d1
+	add.w	d5,d1
+	addq.w	#8,d1
+	move.w	d4,d0			; 2x-1: ((avg + 2 (near[x] +
+	add.w	d3,d0			; far[x-1])) >> 3 + near[x-1]) >> 1
+	add.w	d0,d0
+	add.w	d1,d0
+	lsr.w	#3,d0
+	add.w	d2,d0
+	lsr.w	#1,d0
 	move.b	d0,(a2)+
-	move.l	d2,d0			; 2x: ((avg + 2 (near[x-1] +
-	add.l	d5,d0			; far[x])) >> 3 + near[x]) >> 1
-	add.l	d0,d0
-	add.l	d1,d0
-	lsr.l	#3,d0
-	add.l	d4,d0
-	lsr.l	#1,d0
+	move.w	d2,d0			; 2x: ((avg + 2 (near[x-1] +
+	add.w	d5,d0			; far[x])) >> 3 + near[x]) >> 1
+	add.w	d0,d0
+	add.w	d1,d0
+	lsr.w	#3,d0
+	add.w	d4,d0
+	lsr.w	#1,d0
 	move.b	d0,(a2)+
-	move.l	d4,d2
-	move.l	d5,d3
-	addq.l	#1,d6
-	bra.s	.p
-.end:	btst	#0,g_8W+3(a4)		; an even width: the last pixel
+	move.w	d4,d2
+	move.w	d5,d3
+.pe:	dbf	d7,.p
+	btst	#0,g_8W+3(a4)		; an even width: the last pixel
 	bne.s	.x
-	move.l	d2,d0
-	add.l	d0,d0
-	add.l	d2,d0
-	add.l	d3,d0
-	addq.l	#2,d0
-	lsr.l	#2,d0
+	move.w	d2,d0
+	add.w	d0,d0
+	add.w	d2,d0
+	add.w	d3,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
 	move.b	d0,(a2)+
 .x:	movem.l	(sp)+,d2-d7/a2
 	rts

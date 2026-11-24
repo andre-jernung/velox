@@ -191,18 +191,44 @@ before the `<img>`s, are tiled from the box's top left (`repeat`,
 64 pixels or more so that painting them takes few blits.
 
 Speed on a stock A1200 (14 MHz 68020, `SPEED=real test/emu.sh --auto
-speed`), for a 640x480 picture shown 400 wide (seconds):
+speed`), for a 640x480 picture shown 400 wide (seconds; the first
+versions in brackets):
 
-| Format           | decode | bitmap |
-|------------------|--------|--------|
-| baseline JPEG    | 9.5    | 2.7    |
-| progressive JPEG | 13.7   | 2.7    |
-| PNG              | 17.4   | 2.8    |
-| WebP (lossy)     | 35.9   | 2.8    |
-| GIF              | 3.2    | 2.7    |
+| Format           | decode       | bitmap     |
+|------------------|--------------|------------|
+| baseline JPEG    | 7.3 (9.5)    | 1.4 (2.7)  |
+| progressive JPEG | 11.5 (13.7)  | 1.4 (2.7)  |
+| PNG              | 9.2 (17.4)   | 1.4 (2.8)  |
+| WebP (lossy)     | 19.2 (35.9)  | 1.4 (2.8)  |
+| GIF              | 3.2          | 1.4 (2.7)  |
 
-These are first, unoptimized versions: the inner loops still go through
-subroutines per symbol and per pixel.
+`PROFILE=1` with the same command times each stage. What is left, for a
+640x480 image:
+- JPEG: the IDCT takes 3.9 s, mostly in its `muls.l` (80 for each block).
+  Colour conversion takes 2.2 s.
+- PNG: Paeth unfiltering takes 6.3 s, inflate 1.8 s.
+- WebP: the loop filter takes 6.6 s, VP8 to RGB 4.8 s, reconstruction
+  4.5 s and tokens 3.0 s.
+- The bitmap: dithering takes 0.8 s and the chunky-to-planar conversion
+  0.6 s.
+
+What made the difference:
+- Small loops without subroutine calls.
+- Table lookups instead of clipping branches.
+- A loop for each case, such as filter kind and edge direction, or
+  chroma subsampling.
+- Bytes kept in registers whose upper bytes stay zero, so no `moveq #0`
+  before each load.
+- The DC-only and two-coefficient IDCT shortcuts.
+
+The 68020's cache holds 256 bytes, so a hot loop should fit in it.
+
+Velox turns the dithered pens into bitplanes itself on standard (planar)
+bitmaps, eight pixels at a time through lookup tables, instead of
+calling `WriteChunkyPixels`. The mask of an image starts all set and
+holes clear their bits, so opaque pixels cost nothing for it. On screens
+of 15 bits or more (cybergraphics.library), images are written in ARGB
+with `WritePixelArray`, with no colour cube and no dithering.
 
 ## Known issues
 

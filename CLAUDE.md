@@ -43,7 +43,11 @@ and a single event dispatch point.
   is set, which the test config does.
 - `SPEED=real test/emu.sh --auto speed` runs a stock 14 MHz A1200 (not the
   unthrottled CPU) and reports image decoding times (`imgtime`/`imgconv`
-  log events, in 1/50 s).
+  log events, in 1/50 s). With `PROFILE=1` as well, it builds the
+  profiling version (`make PROFILE=1`, PROFB/PROFE macros, EClock) and
+  lists the time of each decoding stage. The 68020's instruction cache
+  holds 256 bytes, and a stock A1200 has only Chip RAM, so hot loops
+  that fit in 256 bytes run much faster.
 - `OS=3.2 test/emu.sh --auto` runs the same tests on AmigaOS 3.2 (Kickstart
   3.2 and Workbench/Classes/Fonts disks from the user's 3.2 CD in
   `~/amiga/os32/cd`). Run both before calling GUI or image work done.

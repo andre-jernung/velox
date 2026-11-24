@@ -344,7 +344,7 @@ Adam7:	dc.b	0,0,8,8, 4,0,8,8, 0,4,4,8, 2,0,4,4, 0,2,2,4, 1,0,2,2
 ; Unfilter - undo the filter d0 of row a0 (previous row a1), in place
 ;--------------------------------------------------------------------
 Unfilter:
-	movem.l	d2-d7,-(sp)
+	movem.l	d2-d7/a2,-(sp)
 	move.l	g_PngChans(a4),d2	; d2 = bytes per pixel (at least 1)
 	mulu.l	g_PngDepth(a4),d2
 	lsr.l	#3,d2
@@ -394,45 +394,55 @@ Unfilter:
 	subq.l	#1,d3
 	bne.s	.ar
 	bra.s	.x
-.paeth:	move.l	d2,d1			; the first pixel: x += above
+.paeth:	lea	g_PngAbs+510(a4),a2	; |v| of -510..510 (255 at most)
+	tst.b	g_PngAbsOk(a4)
+	bne.s	.pt
+	st	g_PngAbsOk(a4)
+	move.w	#-510,d0
+.pa:	move.w	d0,d1
+	bpl.s	.pb
+	neg.w	d1
+.pb:	cmp.w	#255,d1
+	bls.s	.pc
+	move.w	#255,d1
+.pc:	move.b	d1,(a2,d0.w)
+	addq.w	#1,d0
+	cmp.w	#510,d0
+	ble.s	.pa
+.pt:	moveq	#0,d0
+	moveq	#0,d1
+	moveq	#0,d4
+	move.l	d2,d6			; the first pixel: x += above
 .p0:	move.b	(a1)+,d0
 	add.b	d0,(a0)+
 	subq.l	#1,d3
 	beq.s	.x
-	subq.l	#1,d1
+	subq.l	#1,d6
 	bne.s	.p0
-.pl:	moveq	#0,d0
-	move.b	(a0,d5.l),d0		; a: left
-	moveq	#0,d1
-	move.b	(a1)+,d1		; b: above
-	moveq	#0,d4
+.pl:	move.b	(a0,d5.l),d0		; a: left (the words' high bytes
+	move.b	(a1)+,d1		; b: above	stay 0)
 	move.b	-1(a1,d5.l),d4		; c: above left
 	move.w	d1,d2
 	sub.w	d4,d2			; p = b - c: pa = |p|
 	move.w	d0,d6
 	sub.w	d4,d6			; q = a - c: pb = |q|
 	move.w	d2,d7
-	add.w	d6,d7			; pc = |p + q|
-	bpl.s	.a1
-	neg.w	d7
-.a1:	tst.w	d2
-	bpl.s	.a2
-	neg.w	d2
-.a2:	tst.w	d6
-	bpl.s	.a3
-	neg.w	d6
-.a3:	cmp.w	d6,d2			; pa <= pb and pa <= pc: a
+	add.w	d6,d7			; pc = |p + q| (255 at most: ties
+	move.b	(a2,d2.w),d2		; still go to a and b)
+	move.b	(a2,d6.w),d6
+	move.b	(a2,d7.w),d7
+	cmp.b	d6,d2			; pa <= pb and pa <= pc: a
 	bhi.s	.nb
-	cmp.w	d7,d2
+	cmp.b	d7,d2
 	bls.s	.pp
 .nb:	move.w	d1,d0			; pb <= pc: b, else c
-	cmp.w	d7,d6
+	cmp.b	d7,d6
 	bls.s	.pp
 	move.w	d4,d0
 .pp:	add.b	d0,(a0)+
 	subq.l	#1,d3
 	bne.s	.pl
-.x:	movem.l	(sp)+,d2-d7
+.x:	movem.l	(sp)+,d2-d7/a2
 	rts
 
 ;--------------------------------------------------------------------
