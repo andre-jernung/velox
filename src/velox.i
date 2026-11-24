@@ -20,6 +20,7 @@ VELOX_I	SET	1
 	include	"dos/dos.i"
 	include	"dos/dosextens.i"
 	include	"intuition/intuition.i"
+	include	"devices/timer.i"
 	include	"graphics/rastport.i"
 	include	"workbench/startup.i"
 	include	"utility/tagitem.i"
@@ -577,6 +578,11 @@ g_SelBOff	rs.l	1
 g_SelFrom	rs.l	1		; scratch
 g_PaintIdx	rs.l	1		; index of the run being painted
 g_PageGen	rs.l	1		; counts the pages shown
+g_Prof		rs.l	16		; profiling: ticks of each slot,
+g_ProfT		rs.l	16		; ... when it began,
+g_ProfIO	rs.b	IOTV_SIZE	; ... timer.device
+g_ProfEC	rs.l	2		; ... an EClockVal
+g_ProfHz	rs.l	1		; ... ticks a second
 g_PageBgRec	rs.l	1		; the page's background image (record)
 g_PageBgRep	rs.l	1		; ... repeated: 1 x, 2 y
 g_BgList	rs.l	1		; background image records (img.s)
@@ -619,6 +625,7 @@ g_PngKey	rs.w	4		; ... grey, or red, green, blue
 g_PngFirst	rs.l	1		; the first chunk
 g_PngIdat	rs.l	1		; the IDATs joined
 g_PngRaw	rs.l	1		; the rows (after a row of zeros)
+g_PngGrey	rs.l	1		; g_GifPal holds the greys
 g_PngZero	rs.l	1		; size of that row
 g_PngPW		rs.l	1		; pass: width,
 g_PngRB		rs.l	1		; bytes in a row
@@ -718,6 +725,10 @@ g_8FT		rs.l	1		; limit,
 g_8FI		rs.l	1		; interior limit,
 g_8FHev		rs.l	1		; high edge variance threshold,
 g_8FKind	rs.l	1		; 2: macroblock edge, 1: inner
+g_8FCnt		rs.l	1		; pixels left on the edge
+g_8FT2		rs.w	1		; 2 * limit + 1
+g_8FTmp		rs.w	1
+g_8FTabOk	rs.l	1		; g_8FTab is made
 g_WAlph		rs.l	1		; webp.s: the ALPH chunk,
 g_WAlphLen	rs.l	1		; its length
 g_WArgb		rs.l	1		; its pixels when lossless
@@ -747,6 +758,7 @@ g_PalLevels	rs.l	1		; levels of each colour
 g_PalCount	rs.l	1		; pens obtained
 g_PalDepth	rs.l	1		; of the screen
 g_PalFriend	rs.l	1		; the screen's bitmap
+g_CgxBase	rs.l	1		; cybergraphics.library (true colour)
 g_PbmW		rs.l	1		; PicToBitMap: the size,
 g_PbmH		rs.l	1
 g_PbmMask	rs.l	1		; the mask plane,
@@ -754,6 +766,7 @@ g_PbmMaskBPR	rs.l	1		; its bytes per row,
 g_PbmXMap	rs.l	1		; source x for each column,
 g_PbmBuf	rs.l	1		; a row of pens,
 g_PbmHoles	rs.l	1		; (first byte: transparent pixels seen)
+g_PbmPlanar	rs.l	1		; a standard planar bitmap: own c2p
 g_PbmRP		rs.b	rp_SIZEOF	; RastPort on the bitmap
 g_Cube		rs.b	216		; the pens of the colour cube
 g_BandsOk	rs.l	1		; g_Bands tells what is on the screen
@@ -784,12 +797,15 @@ g_NavUrl	rs.b	URL_MAX		; URL being loaded
 g_LinkUrl	rs.b	URL_MAX
 ; (large arrays last: the rest stays in reach of 16-bit offsets)
 g_BgUrl		rs.b	URL_MAX		; a background image's URL
+g_8FTab		rs.w	4312		; vp8.s: the loop filter's tables
 g_BgAbs		rs.b	URL_MAX		; ... resolved
 g_Bands		rs.l	BANDS_MAX	; signature of each band on the screen
 g_BandsNew	rs.l	BANDS_MAX	; ... and of the runs now
 g_Vis		rs.l	VIS_MAX		; indexes of the runs being painted
 g_GifPal	rs.l	256		; colour table, as ARGB
 g_DitTab	rs.b	3*4*4*256	; dither tables (picbm.s)
+g_C2pLo		rs.l	256		; c2p: a pen's bits, planes 0-3,
+g_C2pHi		rs.l	256		; ... 4-7 (just after)
 g_SIZEOF	rs.b	0
 
 ;--------------------------------------------------------------------
@@ -836,6 +852,28 @@ SOCK	MACRO
 	ENDM
 
 ; SETERR code - store an error code in g_Error
+;--------------------------------------------------------------------
+; Profiling (PROFILE=1 builds): PROFB n / PROFE n add the EClock ticks
+; between them to slot n (0-15); img.s logs the slots after each image
+;--------------------------------------------------------------------
+PROFB	MACRO
+	IFD	PROFILE
+	movem.l	d0-d1/a0-a1/a6,-(sp)
+	jsr	ProfRead
+	move.l	d0,g_ProfT+\1*4(a4)
+	movem.l	(sp)+,d0-d1/a0-a1/a6
+	ENDC
+	ENDM
+PROFE	MACRO
+	IFD	PROFILE
+	movem.l	d0-d1/a0-a1/a6,-(sp)
+	jsr	ProfRead
+	sub.l	g_ProfT+\1*4(a4),d0
+	add.l	d0,g_Prof+\1*4(a4)
+	movem.l	(sp)+,d0-d1/a0-a1/a6
+	ENDC
+	ENDM
+
 SETERR	MACRO
 	move.l	#\1,g_Error(a4)
 	ENDM

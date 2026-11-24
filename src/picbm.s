@@ -17,9 +17,16 @@
 	include	"graphics/view.i"
 
 	xdef	PalInit,PalFree,PicToBitMap
+	IFD	PROFILE
+	xref	ProfRead
+	ENDC
 	xref	PicAlloc,PicFreeMem
 
 DIT_CH		equ	4*4*256		; one channel: 4 rows, 4 columns
+TRUE_DEPTH	equ	15		; this deep and more: true colour
+; cybergraphics.library (CyberGraphX, Picasso96), not in the NDK
+_LVOWritePixelArray	equ	-126
+RECTFMT_ARGB		equ	2
 
 	section	code,code
 
@@ -37,7 +44,16 @@ PalInit:
 	moveq	#BMA_DEPTH,d1
 	GFX	GetBitMapAttr
 	move.l	d0,g_PalDepth(a4)
-	cmp.l	#8,d0
+	clr.l	g_PalCount(a4)
+	cmp.l	#TRUE_DEPTH,d0		; 15 bits and more: no dithering, the
+	blo.s	.pens			; colours as they are (WritePixelArray)
+	lea	CgxName(pc),a1
+	moveq	#41,d0
+	EXEC	OpenLibrary
+	move.l	d0,g_CgxBase(a4)
+	bne	.ready			; (without it: pens after all)
+	move.l	g_PalDepth(a4),d0
+.pens:	cmp.l	#8,d0
 	bls.s	.d
 	moveq	#8,d0
 .d:	moveq	#0,d7
@@ -105,7 +121,29 @@ PalInit:
 	dbf	d4,.pos
 	divu.w	d7,d5
 	dbf	d6,.ch
-	moveq	#1,d0
+	; c2p: each pen's bits spread to the bottom of a byte a plane
+	lea	g_C2pLo(a4),a0		; (planes 0-3, then 4-7)
+	moveq	#0,d1			; pen
+.c2:	moveq	#0,d0
+	moveq	#0,d2
+	moveq	#3,d3			; planes 3..0, 7..4
+.c3:	lsl.l	#8,d0
+	lsl.l	#8,d2
+	btst	d3,d1
+	beq.s	.c4
+	addq.l	#1,d0
+.c4:	addq.l	#4,d3
+	btst	d3,d1
+	beq.s	.c5
+	addq.l	#1,d2
+.c5:	subq.l	#5,d3
+	bpl.s	.c3
+	move.l	d0,(a0,d1.l*4)
+	move.l	d2,1024(a0,d1.l*4)
+	addq.l	#1,d1
+	cmp.w	#256,d1
+	blo.s	.c2
+.ready:	moveq	#1,d0
 	move.l	d0,g_PalReady(a4)
 	movem.l	(sp)+,d2-d7/a2
 .x:	rts
@@ -128,6 +166,8 @@ Levels:	dc.b	2,2,2,2,3,3,4,5,6
 Bayer:	dc.b	0,8,2,10, 12,4,14,6, 3,11,1,9, 15,7,13,5
 	even
 CubeTags:	dc.l	OBP_Precision,PRECISION_IMAGE,TAG_DONE
+CgxName:	dc.b	"cybergraphics.library",0
+	even
 
 ;--------------------------------------------------------------------
 ; PalFree - release the cube's pens
@@ -136,6 +176,12 @@ PalFree:
 	tst.l	g_PalReady(a4)
 	beq.s	.x
 	clr.l	g_PalReady(a4)
+	move.l	g_CgxBase(a4),d0
+	beq.s	.nc
+	clr.l	g_CgxBase(a4)
+	move.l	d0,a1
+	EXEC	CloseLibrary
+.nc:
 	movem.l	d2/a2,-(sp)
 	lea	g_Cube(a4),a2
 	move.l	g_PalCount(a4),d2
@@ -167,6 +213,15 @@ PicToBitMap:
 	GFX	AllocBitMap
 	move.l	d0,d7			; d7 = bitmap
 	beq	.x
+	clr.l	g_PbmPlanar(a4)		; a standard planar one: c2p by hand
+	tst.l	g_CgxBase(a4)
+	bne.s	.np
+	move.l	d7,a0
+	moveq	#BMA_FLAGS,d1
+	GFX	GetBitMapAttr
+	and.l	#BMF_STANDARD,d0
+	move.l	d0,g_PbmPlanar(a4)
+.np:
 	move.l	g_PbmW(a4),d0		; source x of each column, in bytes
 	lsl.l	#2,d0
 	jsr	PicAlloc
@@ -182,8 +237,9 @@ PicToBitMap:
 	addq.l	#1,d2
 	cmp.l	g_PbmW(a4),d2
 	blo.s	.xm
-	move.l	g_PbmW(a4),d0		; one row of pens
+	move.l	g_PbmW(a4),d0		; one row of pens (or of ARGB)
 	addq.l	#1,d0
+	lsl.l	#2,d0
 	jsr	PicAlloc
 	move.l	d0,g_PbmBuf(a4)
 	beq	.fail
@@ -230,7 +286,10 @@ PicToBitMap:
 	mulu.l	g_PbmMaskBPR(a4),d0
 	move.l	g_PbmMask(a4),a6
 	add.l	d0,a6
+	PROFB	0
 	moveq	#7,d6			; d6 = mask bit
+	tst.l	g_CgxBase(a4)		; true colour: the pixels as they are
+	bne	.true
 	moveq	#0,d5			; d5 = column & 3, times 256
 	move.l	g_PbmW(a4),d2		; d2 = pixels left
 .px:	move.l	(a0)+,d0
@@ -257,7 +316,15 @@ PicToBitMap:
 	addq.l	#1,a6
 .mb:	subq.l	#1,d2
 	bne.s	.px
-	lea	g_PbmRP(a4),a0		; the row into the bitmap
+	PROFE	0
+	PROFB	1
+	tst.l	g_PbmPlanar(a4)		; planes: Velox's own c2p
+	beq.s	.wcp
+	move.l	d3,d0
+	move.l	d7,a0
+	bsr	C2PRow
+	bra.s	.wcd
+.wcp:	lea	g_PbmRP(a4),a0		; the row into the bitmap
 	moveq	#0,d0
 	move.l	d3,d1
 	move.l	g_PbmW(a4),d2
@@ -267,11 +334,43 @@ PicToBitMap:
 	move.l	g_PbmW(a4),d4
 	GFX	WriteChunkyPixels
 	move.l	(sp)+,d3
+.wcd:	PROFE	1
 	addq.l	#1,d3
 	bra	.row
 .hole:	move.b	(a3),(a2)+		; (any pen: not drawn)
 	st	g_PbmHoles(a4)
 	bra.s	.next
+.true:	move.l	g_PbmW(a4),d2		; ARGB, and the mask
+.tp:	move.l	(a0)+,d0
+	move.l	(a1,d0.l),d0
+	bpl.s	.th
+	bset	d6,(a6)
+	bra.s	.tn
+.th:	st	g_PbmHoles(a4)
+.tn:	move.l	d0,(a2)+
+	subq.l	#1,d6
+	bpl.s	.tb
+	moveq	#7,d6
+	addq.l	#1,a6
+.tb:	subq.l	#1,d2
+	bne.s	.tp
+	movem.l	d2-d7/a2-a3,-(sp)	; WritePixelArray(buf, 0, 0, mod,
+	move.l	g_PbmBuf(a4),a0		; rp, 0, row, width, 1, ARGB)
+	moveq	#0,d0
+	moveq	#0,d1
+	move.l	g_PbmW(a4),d2
+	lsl.l	#2,d2
+	lea	g_PbmRP(a4),a1
+	move.l	d3,d4
+	moveq	#0,d3
+	move.l	g_PbmW(a4),d5
+	moveq	#1,d6
+	moveq	#RECTFMT_ARGB,d7
+	move.l	g_CgxBase(a4),a6
+	jsr	_LVOWritePixelArray(a6)
+	movem.l	(sp)+,d2-d7/a2-a3
+	addq.l	#1,d3
+	bra	.row
 .done:	tst.b	g_PbmHoles(a4)		; no holes: no mask
 	bne.s	.free
 	bsr	FreeMask
@@ -287,6 +386,64 @@ PicToBitMap:
 	jsr	PicFreeMem
 .x:	move.l	d7,d0
 	movem.l	(sp)+,d2-d7/a2-a3/a5-a6
+	rts
+
+; C2PRow - the row of pens g_PbmBuf (g_PbmW of them) into row d0 of
+; the planes of bitmap a0 (standard, planar): 8 pixels at a time,
+; each pen's bits shifted in through the tables (g_C2pLo/Hi), then a
+; byte to each plane
+C2PRow:
+	movem.l	d2-d7/a2-a3/a5,-(sp)
+	moveq	#0,d1
+	move.w	bm_BytesPerRow(a0),d1
+	mulu.l	d1,d0			; the row's offset in a plane
+	lea	-32(sp),sp		; the planes' rows
+	moveq	#0,d7
+	move.b	bm_Depth(a0),d7		; d7 = depth
+	cmp.l	#8,d7
+	bls.s	.d
+	moveq	#8,d7
+.d:	lea	bm_Planes(a0),a1
+	move.l	sp,a2
+	move.l	d7,d1
+	bra.s	.pe
+.pl:	move.l	(a1)+,d2
+	add.l	d0,d2
+	move.l	d2,(a2)+
+.pe:	dbf	d1,.pl
+	move.l	g_PbmBuf(a4),a0		; a0 = pens
+	lea	g_C2pLo(a4),a1		; a1 = tables
+	move.l	g_PbmW(a4),d6		; d6 = pixels left
+	moveq	#0,d5			; d5 = byte in the row
+.g:	moveq	#0,d0			; planes 0-3
+	moveq	#0,d1			; planes 4-7
+	moveq	#8-1,d3
+.px:	moveq	#0,d4			; (past the end: pen 0)
+	tst.l	d6
+	beq.s	.z
+	move.b	(a0)+,d4
+	subq.l	#1,d6
+.z:	add.l	d0,d0
+	or.l	(a1,d4.l*4),d0
+	add.l	d1,d1
+	or.l	1024(a1,d4.l*4),d1
+	dbf	d3,.px
+	move.l	sp,a2			; a byte to each plane
+	move.l	d7,d3
+	subq.l	#1,d3
+	moveq	#4-1,d2
+.w:	move.l	(a2)+,a3
+	move.b	d0,(a3,d5.l)
+	lsr.l	#8,d0
+	subq.l	#1,d2
+	bpl.s	.wn
+	move.l	d1,d0			; then planes 4-7
+.wn:	dbf	d3,.w
+	addq.l	#1,d5
+	tst.l	d6
+	bne.s	.g
+	lea	32(sp),sp
+	movem.l	(sp)+,d2-d7/a2-a3/a5
 	rts
 
 ; FreeMask - free g_PbmMask (if any)

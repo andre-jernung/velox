@@ -17,6 +17,9 @@
 	include	"velox.i"
 
 	xdef	Vp8Decode
+	IFD	PROFILE
+	xref	ProfRead
+	ENDC
 	xref	PicNew,PicAlloc,PicFreeMem
 
 BPS		equ	32		; work block: bytes a row
@@ -106,6 +109,7 @@ Vp8Decode:
 .mb:	move.l	g_8MbX(a4),d0
 	cmp.l	g_8MbW(a4),d0
 	bhs.s	.rown
+	PROFB	8
 	bsr	Modes			; (first partition)
 	lea	g_8BD(a4),a0
 	bsr	BdSave
@@ -116,19 +120,26 @@ Vp8Decode:
 	move.l	a0,-(sp)
 	bsr	BdLoad
 	bsr	Residuals
+	PROFE	8
 	move.l	(sp)+,a0
 	bsr	BdSave
 	lea	g_8BD(a4),a0
 	bsr	BdLoad
+	PROFB	9
 	bsr	Reconstruct
+	PROFE	9
 	addq.l	#1,g_8MbX(a4)
 	bra.s	.mb
 .rown:	addq.l	#1,g_8MbY(a4)
 	bra	.row
 .done:	tst.l	g_8FType(a4)
 	beq.s	.nf
+	PROFB	10
 	bsr	Filter
-.nf:	bsr	ToARGB
+	PROFE	10
+.nf:	PROFB	11
+	bsr	ToARGB
+	PROFE	11
 	moveq	#1,d0
 	bra.s	.x
 .fail:	moveq	#0,d0
@@ -1533,18 +1544,32 @@ Clip255:
 .x:	rts
 
 ; Idct - the 4x4 inverse DCT of block a0, added to the pixels at a2
-; (libwebp's TransformOne)
-MUL1	MACRO				; \1 = \1 * 20091 >> 16 + \1
-	move.l	\1,-(sp)
-	muls.l	#20091,\1
-	asr.l	#8,\1
-	asr.l	#8,\1
-	add.l	(sp)+,\1
+; (libwebp's TransformOne); MUL1(x) = (x * 20091 >> 16) + x,
+; MUL2(x) = x * 35468 >> 16 (swap + ext: >> 16, rounding down)
+MUL1	MACRO				; \2 = MUL1(\1)
+	move.l	\1,\2
+	muls.l	#20091,\2
+	swap	\2
+	ext.l	\2
+	add.l	\1,\2
 	ENDM
-MUL2	MACRO				; \1 = \1 * 35468 >> 16
-	muls.l	#35468,\1
-	asr.l	#8,\1
-	asr.l	#8,\1
+MUL2	MACRO				; \2 = MUL2(\1)
+	move.l	\1,\2
+	muls.l	#35468,\2
+	swap	\2
+	ext.l	\2
+	ENDM
+; ISTORE - pixel (a3)+ += \1 >> 3, clipped to 0..255 (d0 changed)
+ISTORE	MACRO
+	asr.l	#3,\1
+	moveq	#0,d0
+	move.b	(a3),d0
+	add.l	\1,d0
+	cmp.l	#255,d0
+	bls.s	.s\@
+	smi	d0
+	not.b	d0
+.s\@:	move.b	d0,(a3)+
 	ENDM
 Idct:
 	movem.l	d2-d7/a3,-(sp)
@@ -1562,75 +1587,56 @@ Idct:
 	move.l	d0,d4
 	add.l	d2,d4			; a = in0 + in8
 	sub.l	d2,d0			; b = in0 - in8
-	move.l	d1,d5
-	MUL2	d5
-	move.l	d3,d6
-	MUL1	d6
+	MUL2	d1,d5
+	MUL1	d3,d6
 	sub.l	d6,d5			; c = MUL2(in4) - MUL1(in12)
-	MUL1	d1
-	MUL2	d3
-	add.l	d3,d1			; d = MUL1(in4) + MUL2(in12)
+	MUL1	d1,d6
+	MUL2	d3,d2
+	add.l	d2,d6			; d = MUL1(in4) + MUL2(in12)
 	move.l	d4,d2
-	add.l	d1,d2
-	move.l	d2,(a1)+		; tmp[0] = a + d
+	add.l	d6,d2
+	move.l	d2,(a1)+		; a + d
 	move.l	d0,d2
 	add.l	d5,d2
-	move.l	d2,(a1)+		; tmp[1] = b + c
+	move.l	d2,(a1)+		; b + c
 	sub.l	d5,d0
-	move.l	d0,(a1)+		; tmp[2] = b - c
-	sub.l	d1,d4
-	move.l	d4,(a1)+		; tmp[3] = a - d
+	move.l	d0,(a1)+		; b - c
+	sub.l	d6,d4
+	move.l	d4,(a1)+		; a - d
 	addq.l	#2,a0
 	dbf	d7,.v
 	move.l	sp,a1
 	move.l	a2,a3
 	moveq	#4-1,d7
-.h:	move.l	(a1),d0			; dc = tmp[0] + 4
-	addq.l	#4,d0
+.h:	move.l	(a1),d4			; dc = tmp[0] + 4
+	addq.l	#4,d4
 	move.l	32(a1),d2
-	move.l	d0,d4
+	move.l	d4,d1
 	add.l	d2,d4			; a = dc + tmp[8]
-	sub.l	d2,d0			; b = dc - tmp[8]
-	move.l	16(a1),d1
-	move.l	48(a1),d3
-	move.l	d1,d5
-	MUL2	d5
-	move.l	d3,d6
-	MUL1	d6
+	sub.l	d2,d1			; b = dc - tmp[8]
+	move.l	16(a1),d2		; tmp[4]
+	move.l	48(a1),d3		; tmp[12]
+	MUL2	d2,d5
+	MUL1	d3,d6
 	sub.l	d6,d5			; c
-	MUL1	d1
-	MUL2	d3
-	add.l	d3,d1			; d
-	move.l	d4,d2			; the row: a + d, b + c, b - c, a - d
-	add.l	d1,d2
-	bsr.s	IdctSt
-	move.l	d0,d2
+	MUL1	d2,d6
+	MUL2	d3,d3
+	add.l	d3,d6			; d
+	move.l	d4,d2			; a + d, b + c, b - c, a - d
+	add.l	d6,d2
+	ISTORE	d2
+	move.l	d1,d2
 	add.l	d5,d2
-	bsr.s	IdctSt
-	move.l	d0,d2
-	sub.l	d5,d2
-	bsr.s	IdctSt
-	move.l	d4,d2
-	sub.l	d1,d2
-	bsr.s	IdctSt
+	ISTORE	d2
+	sub.l	d5,d1
+	ISTORE	d1
+	sub.l	d6,d4
+	ISTORE	d4
 	lea	BPS-4(a3),a3
 	addq.l	#4,a1
 	dbf	d7,.h
 	lea	64(sp),sp
 	movem.l	(sp)+,d2-d7/a3
-	rts
-
-; IdctSt - pixel a3 += d2 >> 3, clipped; Out: a3 advanced (d0, d1, a1
-; kept)
-IdctSt:
-	asr.l	#3,d2
-	move.l	d0,-(sp)
-	moveq	#0,d0
-	move.b	(a3),d0
-	add.l	d0,d2
-	movem.l	(sp)+,d0
-	bsr	Clip255
-	move.b	d2,(a3)+
 	rts
 
 ;--------------------------------------------------------------------
@@ -1797,46 +1803,9 @@ Pred4:
 	cmp.l	#4,d4
 	blo.s	.tr
 	bra.s	.x
-.tab:	subq.l	#2,d0			; the others: by the table
-	lsl.l	#6,d0
-	lea	Pred4Tab(pc),a1
-	add.l	d0,a1
-	moveq	#0,d4			; pixel
-.p:	moveq	#0,d3
-	move.b	(a1)+,d3		; kind
-	moveq	#0,d0
-	move.b	(a1)+,d0
-	moveq	#0,d1
-	move.b	(sp,d0.l),d1		; a
-	move.b	(a1)+,d0
-	moveq	#0,d2
-	move.b	(sp,d0.l),d2		; b
-	move.b	(a1)+,d0
-	moveq	#0,d5
-	move.b	(sp,d0.l),d5		; c
-	tst.l	d3
-	beq.s	.cp
-	cmp.l	#1,d3
-	beq.s	.a2
-	add.l	d2,d2			; (a + 2b + c + 2) >> 2
-	add.l	d2,d1
-	add.l	d5,d1
-	addq.l	#2,d1
-	lsr.l	#2,d1
-	bra.s	.cp
-.a2:	add.l	d2,d1			; (a + b + 1) >> 1
-	addq.l	#1,d1
-	lsr.l	#1,d1
-.cp:	move.l	d4,d0			; to (x, y)
-	lsr.l	#2,d0
-	lsl.l	#5,d0
-	moveq	#3,d2
-	and.l	d4,d2
-	add.l	d2,d0
-	move.b	d1,(a2,d0.l)
-	addq.l	#1,d4
-	cmp.l	#16,d4
-	blo.s	.p
+.tab:	subq.l	#2,d0			; the others: straight code
+	move.w	Pred4Modes(pc,d0.l*2),d0
+	jsr	Pred4Modes(pc,d0.w)
 .x:	lea	16(sp),sp
 	movem.l	(sp)+,d2-d6
 	rts
@@ -1846,6 +1815,7 @@ Pred4:
 ;--------------------------------------------------------------------
 Filter:
 	movem.l	d2-d7/a2-a3/a5-a6,-(sp)
+	bsr	FilterTabs
 	move.l	g_8Info(a4),a6
 	moveq	#0,d7			; y
 .y:	cmp.l	g_8MbH(a4),d7
@@ -1984,193 +1954,266 @@ Filter:
 	bsr	Edge
 .h1:	rts
 
+; loop filter tables (FilterTabs): word tables, offsets of their centre
+TAB_AB		equ	255*2			; |v|, v = -255..255
+TAB_SC1		equ	511*2+1020*2		; clip -128..127 of -1020..1020
+TAB_SC2		equ	(511+2041)*2+112*2	; clip -16..15 of -112..112
+TAB_C1		equ	(511+2041+225)*2+255*2	; clip 0..255 of -255..511
+TAB_27		equ	(511+2041+225+767)*2+128*2	; (27a + 63) >> 7
+TAB_18		equ	TAB_27+256*2		; (18a + 63) >> 7
+TAB_9		equ	TAB_18+256*2		; (9a + 63) >> 7
+
+
 ;--------------------------------------------------------------------
-; Edge - filter d0 pixels along an edge at a0: g_8FH = step across it,
-; g_8FV = step along it, g_8FT = limit, g_8FI = interior limit,
-; g_8FHev = high edge variance threshold, g_8FKind = 2 (6 taps on MB
-; edges) or 1 (4 taps inside); simple filter if g_8FType = 1
+; Edge - filter d0 pixels along an edge at a0 (q0 of the first):
+; g_8FH = step across it, g_8FV = step along it, g_8FT = limit,
+; g_8FI = interior limit, g_8FHev = high edge variance threshold,
+; g_8FKind = 2 (6 taps on MB edges) or 1 (4 taps inside); the simple
+; filter (2 taps) if g_8FType = 1.  libwebp's filters, with its tables
+; (FilterTabs); the taps are read where they are: p1 = (a0,-2s),
+; p0 = (a0,-s), q1 = (a0,s), q2 = (a0,2s), p2/p3 from a1 = a0 - 3s,
+; q3 = (a2) = a0 + 3s
 ; (d1 kept)
 ;--------------------------------------------------------------------
 Edge:
-	movem.l	d1-d7/a2-a3,-(sp)
-	move.l	d0,d7
-	move.l	a0,a2
-	move.l	g_8FT(a4),d6		; thresh2 = 2 * limit + 1
-	add.l	d6,d6
-	addq.l	#1,d6
-	lea	-32(sp),sp		; p3 p2 p1 p0 q0 q1 q2 q3 (longs)
-.l:	move.l	g_8FH(a4),d1		; gather
-	move.l	a2,a1
-	sub.l	d1,a1
-	sub.l	d1,a1
-	sub.l	d1,a1
-	sub.l	d1,a1
-	move.l	sp,a3
-	moveq	#8-1,d2
-.g:	moveq	#0,d0
-	move.b	(a1),d0
-	move.l	d0,(a3)+
-	add.l	d1,a1
-	dbf	d2,.g
-	; 4 |p0 - q0| + |p1 - q1| <= thresh2?
-	move.l	12(sp),d0
-	sub.l	16(sp),d0
-	bsr	Abs
-	lsl.l	#2,d0
-	move.l	d0,d2
-	move.l	8(sp),d0
-	sub.l	20(sp),d0
-	bsr	Abs
-	add.l	d0,d2
-	cmp.l	d6,d2
+	movem.l	d1-d7/a1-a3/a6,-(sp)
+	lea	g_8FTab(a4),a6
+	move.l	d0,g_8FCnt(a4)
+	move.l	g_8FH(a4),d6		; d6 = s, d5 = -s
+	move.l	d6,d5
+	neg.l	d5
+	move.l	g_8FT(a4),d0		; thresh2 = 2 * limit + 1
+	add.l	d0,d0
+	addq.l	#1,d0
+	move.w	d0,g_8FT2(a4)
+	move.l	g_8FV(a4),a3		; a3 = step along
+	lea	(a0,d5.l*2),a1
+	add.l	d5,a1			; a1 = p2
+	lea	(a0,d6.l*2),a2
+	add.l	d6,a2			; a2 = q3
+.px:	moveq	#0,d0
+	move.b	(a0,d5.l*2),d0		; p1
+	moveq	#0,d1
+	move.b	(a0,d5.l),d1		; p0
+	moveq	#0,d2
+	move.b	(a0),d2			; q0
+	moveq	#0,d3
+	move.b	(a0,d6.l),d3		; q1
+	move.w	d1,d4			; 4 |p0 - q0| + |p1 - q1| <= thresh2
+	sub.w	d2,d4
+	move.w	TAB_AB(a6,d4.w*2),d4
+	add.w	d4,d4
+	add.w	d4,d4
+	move.w	d0,d7
+	sub.w	d3,d7
+	add.w	TAB_AB(a6,d7.w*2),d4
+	cmp.w	g_8FT2(a4),d4
 	bhi	.next
-	cmp.l	#1,g_8FType(a4)
-	beq.s	.f2			; simple: always 2 taps
-	move.l	g_8FI(a4),d3		; interior differences <= ilevel
-	lea	(sp),a3
-	moveq	#3-1,d2			; p3-p2, p2-p1, p1-p0
-.i1:	move.l	(a3),d0
-	sub.l	4(a3),d0
-	bsr	Abs
-	cmp.l	d3,d0
+	cmp.l	#1,g_8FType(a4)		; simple: 2 taps, always
+	beq	.f2
+	moveq	#0,d4			; d4 = high edge variance
+	move.w	d0,d7			; interior differences <= ilevel
+	sub.w	d1,d7
+	move.w	TAB_AB(a6,d7.w*2),d7	; |p1 - p0|
+	cmp.w	g_8FI+2(a4),d7
 	bhi	.next
-	addq.l	#4,a3
-	dbf	d2,.i1
-	lea	16(sp),a3		; q0-q1, q1-q2, q2-q3
-	moveq	#3-1,d2
-.i2:	move.l	(a3),d0
-	sub.l	4(a3),d0
-	bsr	Abs
-	cmp.l	d3,d0
+	cmp.w	g_8FHev+2(a4),d7
+	bls.s	.h1
+	moveq	#1,d4
+.h1:	move.w	d3,d7
+	sub.w	d2,d7
+	move.w	TAB_AB(a6,d7.w*2),d7	; |q1 - q0|
+	cmp.w	g_8FI+2(a4),d7
 	bhi	.next
-	addq.l	#4,a3
-	dbf	d2,.i2
-	move.l	g_8FHev(a4),d3		; high edge variance: 2 taps
-	move.l	8(sp),d0
-	sub.l	12(sp),d0
-	bsr	Abs
-	cmp.l	d3,d0
-	bhi.s	.f2
-	move.l	20(sp),d0
-	sub.l	16(sp),d0
-	bsr	Abs
-	cmp.l	d3,d0
-	bhi.s	.f2
+	cmp.w	g_8FHev+2(a4),d7
+	bls.s	.h2
+	moveq	#1,d4
+.h2:	moveq	#0,d7
+	move.b	(a1),d7			; p2
+	move.w	d7,g_8FTmp(a4)
+	sub.w	d0,d7
+	move.w	TAB_AB(a6,d7.w*2),d7	; |p2 - p1|
+	cmp.w	g_8FI+2(a4),d7
+	bhi	.next
+	moveq	#0,d7
+	move.b	(a1,d5.l),d7		; p3
+	sub.w	g_8FTmp(a4),d7
+	move.w	TAB_AB(a6,d7.w*2),d7	; |p3 - p2|
+	cmp.w	g_8FI+2(a4),d7
+	bhi	.next
+	moveq	#0,d7
+	move.b	(a0,d6.l*2),d7		; q2
+	move.w	d7,g_8FTmp(a4)
+	sub.w	d3,d7
+	move.w	TAB_AB(a6,d7.w*2),d7	; |q2 - q1|
+	cmp.w	g_8FI+2(a4),d7
+	bhi	.next
+	moveq	#0,d7
+	move.b	(a2),d7			; q3
+	sub.w	g_8FTmp(a4),d7
+	move.w	TAB_AB(a6,d7.w*2),d7	; |q3 - q2|
+	cmp.w	g_8FI+2(a4),d7
+	bhi	.next
+	tst.w	d4			; high variance: 2 taps
+	bne.s	.f2
 	cmp.l	#2,g_8FKind(a4)
-	beq	.f6
+	beq.s	.f6
 	; 4 taps: a = 3 (q0 - p0)
-	move.l	16(sp),d0
-	sub.l	12(sp),d0
-	move.l	d0,d1
-	add.l	d0,d0
-	add.l	d1,d0
-	bsr	A12			; d1 = a1, d2 = a2
-	move.l	d1,d3			; a3 = (a1 + 1) >> 1
-	addq.l	#1,d3
-	asr.l	#1,d3
-	move.l	8(sp),d0
-	add.l	d3,d0
-	bsr	Clip0
-	move.l	d0,8(sp)
-	move.l	12(sp),d0
-	add.l	d2,d0
-	bsr	Clip0
-	move.l	d0,12(sp)
-	move.l	16(sp),d0
-	sub.l	d1,d0
-	bsr	Clip0
-	move.l	d0,16(sp)
-	move.l	20(sp),d0
-	sub.l	d3,d0
-	bsr	Clip0
-	move.l	d0,20(sp)
-	bra	.put
+	move.w	d2,d4
+	sub.w	d1,d4
+	move.w	d4,d7
+	add.w	d4,d4
+	add.w	d7,d4
+	move.w	d4,d7
+	addq.w	#4,d4
+	asr.w	#3,d4
+	move.w	TAB_SC2(a6,d4.w*2),d4	; a1
+	addq.w	#3,d7
+	asr.w	#3,d7
+	move.w	TAB_SC2(a6,d7.w*2),d7	; a2
+	add.w	d7,d1			; p0 + a2
+	move.w	TAB_C1(a6,d1.w*2),d1
+	move.b	d1,(a0,d5.l)
+	sub.w	d4,d2			; q0 - a1
+	move.w	TAB_C1(a6,d2.w*2),d2
+	move.b	d2,(a0)
+	addq.w	#1,d4			; a3 = (a1 + 1) >> 1
+	asr.w	#1,d4
+	add.w	d4,d0			; p1 + a3
+	move.w	TAB_C1(a6,d0.w*2),d0
+	move.b	d0,(a0,d5.l*2)
+	sub.w	d4,d3			; q1 - a3
+	move.w	TAB_C1(a6,d3.w*2),d3
+	move.b	d3,(a0,d6.l)
+	bra	.next
 .f2:	; 2 taps: a = 3 (q0 - p0) + sclip1(p1 - q1)
-	move.l	16(sp),d0
-	sub.l	12(sp),d0
-	move.l	d0,d1
-	add.l	d0,d0
-	add.l	d1,d0
-	move.l	d0,-(sp)
-	move.l	8+4(sp),d0
-	sub.l	20+4(sp),d0
-	bsr	Sat128
-	add.l	(sp)+,d0
-	bsr	A12
-	move.l	12(sp),d0
-	add.l	d2,d0
-	bsr	Clip0
-	move.l	d0,12(sp)
-	move.l	16(sp),d0
-	sub.l	d1,d0
-	bsr	Clip0
-	move.l	d0,16(sp)
-	bra	.put
+	move.w	d2,d4
+	sub.w	d1,d4
+	move.w	d4,d7
+	add.w	d4,d4
+	add.w	d7,d4
+	move.w	d0,d7
+	sub.w	d3,d7
+	add.w	TAB_SC1(a6,d7.w*2),d4
+	move.w	d4,d7
+	addq.w	#4,d4
+	asr.w	#3,d4
+	move.w	TAB_SC2(a6,d4.w*2),d4	; a1
+	addq.w	#3,d7
+	asr.w	#3,d7
+	move.w	TAB_SC2(a6,d7.w*2),d7	; a2
+	add.w	d7,d1
+	move.w	TAB_C1(a6,d1.w*2),d1
+	move.b	d1,(a0,d5.l)
+	sub.w	d4,d2
+	move.w	TAB_C1(a6,d2.w*2),d2
+	move.b	d2,(a0)
+	bra.s	.next
 .f6:	; 6 taps: a = sclip1(3 (q0 - p0) + sclip1(p1 - q1))
-	move.l	16(sp),d0
-	sub.l	12(sp),d0
-	move.l	d0,d1
-	add.l	d0,d0
-	add.l	d1,d0
-	move.l	d0,-(sp)
-	move.l	8+4(sp),d0
-	sub.l	20+4(sp),d0
-	bsr	Sat128
-	add.l	(sp)+,d0
-	bsr	Sat128
-	move.l	d0,d5			; a
-	moveq	#27,d1			; a1 = (27a + 63) >> 7
-	muls.l	d5,d1
-	add.l	#63,d1
-	asr.l	#7,d1
-	moveq	#18,d2			; a2 = (18a + 63) >> 7
-	muls.l	d5,d2
-	add.l	#63,d2
-	asr.l	#7,d2
-	moveq	#9,d3			; a3 = (9a + 63) >> 7
-	muls.l	d5,d3
-	add.l	#63,d3
-	asr.l	#7,d3
-	move.l	4(sp),d0		; p2 += a3
-	add.l	d3,d0
-	bsr	Clip0
-	move.l	d0,4(sp)
-	move.l	8(sp),d0		; p1 += a2
-	add.l	d2,d0
-	bsr	Clip0
-	move.l	d0,8(sp)
-	move.l	12(sp),d0		; p0 += a1
-	add.l	d1,d0
-	bsr	Clip0
-	move.l	d0,12(sp)
-	move.l	16(sp),d0		; q0 -= a1
-	sub.l	d1,d0
-	bsr	Clip0
-	move.l	d0,16(sp)
-	move.l	20(sp),d0		; q1 -= a2
-	sub.l	d2,d0
-	bsr	Clip0
-	move.l	d0,20(sp)
-	move.l	24(sp),d0		; q2 -= a3
-	sub.l	d3,d0
-	bsr	Clip0
-	move.l	d0,24(sp)
-.put:	move.l	g_8FH(a4),d1		; p2 .. q2 back
-	move.l	a2,a1
-	sub.l	d1,a1
-	sub.l	d1,a1
-	sub.l	d1,a1
-	lea	4(sp),a3
-	moveq	#6-1,d2
-.pb:	move.l	(a3)+,d0
+	move.w	d2,d4
+	sub.w	d1,d4
+	move.w	d4,d7
+	add.w	d4,d4
+	add.w	d7,d4
+	move.w	d0,d7
+	sub.w	d3,d7
+	add.w	TAB_SC1(a6,d7.w*2),d4
+	move.w	TAB_SC1(a6,d4.w*2),d4	; a
+	move.w	TAB_27(a6,d4.w*2),d7	; p0 + a1, q0 - a1
+	add.w	d7,d1
+	move.w	TAB_C1(a6,d1.w*2),d1
+	move.b	d1,(a0,d5.l)
+	sub.w	d7,d2
+	move.w	TAB_C1(a6,d2.w*2),d2
+	move.b	d2,(a0)
+	move.w	TAB_18(a6,d4.w*2),d7	; p1 + a2, q1 - a2
+	add.w	d7,d0
+	move.w	TAB_C1(a6,d0.w*2),d0
+	move.b	d0,(a0,d5.l*2)
+	sub.w	d7,d3
+	move.w	TAB_C1(a6,d3.w*2),d3
+	move.b	d3,(a0,d6.l)
+	move.w	TAB_9(a6,d4.w*2),d7	; p2 + a3, q2 - a3
+	moveq	#0,d0
+	move.b	(a1),d0
+	add.w	d7,d0
+	move.w	TAB_C1(a6,d0.w*2),d0
 	move.b	d0,(a1)
-	add.l	d1,a1
-	dbf	d2,.pb
-.next:	add.l	g_8FV(a4),a2
-	subq.l	#1,d7
-	bne	.l
-	lea	32(sp),sp
-	movem.l	(sp)+,d1-d7/a2-a3
+	moveq	#0,d0
+	move.b	(a0,d6.l*2),d0
+	sub.w	d7,d0
+	move.w	TAB_C1(a6,d0.w*2),d0
+	move.b	d0,(a0,d6.l*2)
+.next:	add.l	a3,a0
+	add.l	a3,a1
+	add.l	a3,a2
+	subq.l	#1,g_8FCnt(a4)
+	bne	.px
+	movem.l	(sp)+,d1-d7/a1-a3/a6
+	rts
+
+; FilterTabs - the loop filter's tables (once)
+FilterTabs:
+	tst.l	g_8FTabOk(a4)
+	bne	.x
+	movem.l	d2-d3,-(sp)
+	lea	g_8FTab(a4),a0
+	move.l	#-255,d1		; |v|
+.ab:	move.l	d1,d0
+	bpl.s	.ab1
+	neg.l	d0
+.ab1:	move.w	d0,(a0)+
+	addq.l	#1,d1
+	cmp.l	#255,d1
+	ble.s	.ab
+	move.l	#-1020,d1		; -128..127
+	moveq	#-128,d2
+	moveq	#127,d3
+	move.l	#1020,d0
+	bsr.s	.clip
+	moveq	#-112,d1		; -16..15
+	moveq	#-16,d2
+	moveq	#15,d3
+	moveq	#112,d0
+	bsr.s	.clip
+	move.l	#-255,d1		; 0..255
+	moveq	#0,d2
+	move.l	#255,d3
+	move.l	#511,d0
+	bsr.s	.clip
+	moveq	#27,d2			; (k a + 63) >> 7
+	bsr.s	.mul
+	moveq	#18,d2
+	bsr.s	.mul
+	moveq	#9,d2
+	bsr.s	.mul
+	moveq	#1,d0
+	move.l	d0,g_8FTabOk(a4)
+	movem.l	(sp)+,d2-d3
+.x:	rts
+.clip:	move.l	d0,-(sp)		; v = d1 .. (sp): clamp to d2 .. d3
+.cl:	move.l	d1,d0
+	cmp.l	d2,d0
+	bge.s	.c1
+	move.l	d2,d0
+.c1:	cmp.l	d3,d0
+	ble.s	.c2
+	move.l	d3,d0
+.c2:	move.w	d0,(a0)+
+	addq.l	#1,d1
+	cmp.l	(sp),d1
+	ble.s	.cl
+	addq.l	#4,sp
+	rts
+.mul:	move.l	#-128,d1
+.m:	move.l	d1,d0
+	muls.l	d2,d0
+	add.l	#63,d0
+	asr.l	#7,d0
+	move.w	d0,(a0)+
+	addq.l	#1,d1
+	cmp.l	#127,d1
+	ble.s	.m
 	rts
 
 ; A12 - from a (d0)
@@ -2426,47 +2469,740 @@ UpLine:
 	rts
 
 	include	"vp8tab.i"
-; the 4x4 predictions of modes 2-9 (VE HE RD VR LD VL HD HU), as
-; libwebp computes them: for each pixel (rows of 4) kind (0 copy,
-; 1 avg2, 2 avg3) and edge pixels (0 L, 1 K, 2 J, 3 I, 4 X, 5-12 A-H)
-Pred4Tab:
-	; VE
-	dc.b	2,4,5,6,2,5,6,7,2,6,7,8,2,7,8,9
-	dc.b	2,4,5,6,2,5,6,7,2,6,7,8,2,7,8,9
-	dc.b	2,4,5,6,2,5,6,7,2,6,7,8,2,7,8,9
-	dc.b	2,4,5,6,2,5,6,7,2,6,7,8,2,7,8,9
-	; HE
-	dc.b	2,4,3,2,2,4,3,2,2,4,3,2,2,4,3,2
-	dc.b	2,3,2,1,2,3,2,1,2,3,2,1,2,3,2,1
-	dc.b	2,2,1,0,2,2,1,0,2,2,1,0,2,2,1,0
-	dc.b	2,1,0,0,2,1,0,0,2,1,0,0,2,1,0,0
-	; RD
-	dc.b	2,5,4,3,2,6,5,4,2,7,6,5,2,8,7,6
-	dc.b	2,4,3,2,2,5,4,3,2,6,5,4,2,7,6,5
-	dc.b	2,3,2,1,2,4,3,2,2,5,4,3,2,6,5,4
-	dc.b	2,2,1,0,2,3,2,1,2,4,3,2,2,5,4,3
-	; VR
-	dc.b	1,4,5,0,1,5,6,0,1,6,7,0,1,7,8,0
-	dc.b	2,3,4,5,2,4,5,6,2,5,6,7,2,6,7,8
-	dc.b	2,2,3,4,1,4,5,0,1,5,6,0,1,6,7,0
-	dc.b	2,1,2,3,2,3,4,5,2,4,5,6,2,5,6,7
-	; LD
-	dc.b	2,5,6,7,2,6,7,8,2,7,8,9,2,8,9,10
-	dc.b	2,6,7,8,2,7,8,9,2,8,9,10,2,9,10,11
-	dc.b	2,7,8,9,2,8,9,10,2,9,10,11,2,10,11,12
-	dc.b	2,8,9,10,2,9,10,11,2,10,11,12,2,11,12,12
-	; VL
-	dc.b	1,5,6,0,1,6,7,0,1,7,8,0,1,8,9,0
-	dc.b	2,5,6,7,2,6,7,8,2,7,8,9,2,8,9,10
-	dc.b	1,6,7,0,1,7,8,0,1,8,9,0,2,9,10,11
-	dc.b	2,6,7,8,2,7,8,9,2,8,9,10,2,10,11,12
-	; HD
-	dc.b	1,3,4,0,2,3,4,5,2,4,5,6,2,5,6,7
-	dc.b	1,2,3,0,2,2,3,4,1,3,4,0,2,3,4,5
-	dc.b	1,1,2,0,2,1,2,3,1,2,3,0,2,2,3,4
-	dc.b	1,0,1,0,2,0,1,2,1,1,2,0,2,1,2,3
-	; HU
-	dc.b	1,3,2,0,2,3,2,1,1,2,1,0,2,2,1,0
-	dc.b	1,2,1,0,2,2,1,0,1,1,0,0,2,1,0,0
-	dc.b	1,1,0,0,2,1,0,0,0,0,0,0,0,0,0,0
-	dc.b	0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+
+; the 4x4 predictions of modes 2-9 (VE HE RD VR LD VL HD HU) as
+; straight code, generated from libwebp's formulas: each value once,
+; then to every pixel that has it; the edge (L K J I X A..H, bytes)
+; is on the stack at (sp) (0 L .. 12 H), a2 = the block, BPS a row
+Pred4Modes:
+	dc.w	P4_VE-Pred4Modes
+	dc.w	P4_HE-Pred4Modes
+	dc.w	P4_RD-Pred4Modes
+	dc.w	P4_VR-Pred4Modes
+	dc.w	P4_LD-Pred4Modes
+	dc.w	P4_VL-Pred4Modes
+	dc.w	P4_HD-Pred4Modes
+	dc.w	P4_HU-Pred4Modes
+P4_VE:
+	moveq	#0,d0
+	move.b	4+4(sp),d0
+	moveq	#0,d1
+	move.b	5+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	6+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,(a2)
+	move.b	d0,32(a2)
+	move.b	d0,64(a2)
+	move.b	d0,96(a2)
+	moveq	#0,d0
+	move.b	5+4(sp),d0
+	moveq	#0,d1
+	move.b	6+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	7+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,1(a2)
+	move.b	d0,33(a2)
+	move.b	d0,65(a2)
+	move.b	d0,97(a2)
+	moveq	#0,d0
+	move.b	6+4(sp),d0
+	moveq	#0,d1
+	move.b	7+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	8+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,2(a2)
+	move.b	d0,34(a2)
+	move.b	d0,66(a2)
+	move.b	d0,98(a2)
+	moveq	#0,d0
+	move.b	7+4(sp),d0
+	moveq	#0,d1
+	move.b	8+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	9+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,3(a2)
+	move.b	d0,35(a2)
+	move.b	d0,67(a2)
+	move.b	d0,99(a2)
+	rts
+P4_HE:
+	moveq	#0,d0
+	move.b	4+4(sp),d0
+	moveq	#0,d1
+	move.b	3+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	2+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,(a2)
+	move.b	d0,1(a2)
+	move.b	d0,2(a2)
+	move.b	d0,3(a2)
+	moveq	#0,d0
+	move.b	3+4(sp),d0
+	moveq	#0,d1
+	move.b	2+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	1+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,32(a2)
+	move.b	d0,33(a2)
+	move.b	d0,34(a2)
+	move.b	d0,35(a2)
+	moveq	#0,d0
+	move.b	2+4(sp),d0
+	moveq	#0,d1
+	move.b	1+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	0+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,64(a2)
+	move.b	d0,65(a2)
+	move.b	d0,66(a2)
+	move.b	d0,67(a2)
+	moveq	#0,d0
+	move.b	1+4(sp),d0
+	moveq	#0,d1
+	move.b	0+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	0+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,96(a2)
+	move.b	d0,97(a2)
+	move.b	d0,98(a2)
+	move.b	d0,99(a2)
+	rts
+P4_RD:
+	moveq	#0,d0
+	move.b	2+4(sp),d0
+	moveq	#0,d1
+	move.b	1+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	0+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,96(a2)
+	moveq	#0,d0
+	move.b	3+4(sp),d0
+	moveq	#0,d1
+	move.b	2+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	1+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,97(a2)
+	move.b	d0,64(a2)
+	moveq	#0,d0
+	move.b	4+4(sp),d0
+	moveq	#0,d1
+	move.b	3+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	2+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,98(a2)
+	move.b	d0,65(a2)
+	move.b	d0,32(a2)
+	moveq	#0,d0
+	move.b	5+4(sp),d0
+	moveq	#0,d1
+	move.b	4+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	3+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,99(a2)
+	move.b	d0,66(a2)
+	move.b	d0,33(a2)
+	move.b	d0,(a2)
+	moveq	#0,d0
+	move.b	6+4(sp),d0
+	moveq	#0,d1
+	move.b	5+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	4+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,67(a2)
+	move.b	d0,34(a2)
+	move.b	d0,1(a2)
+	moveq	#0,d0
+	move.b	7+4(sp),d0
+	moveq	#0,d1
+	move.b	6+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	5+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,35(a2)
+	move.b	d0,2(a2)
+	moveq	#0,d0
+	move.b	8+4(sp),d0
+	moveq	#0,d1
+	move.b	7+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	6+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,3(a2)
+	rts
+P4_VR:
+	moveq	#0,d0
+	move.b	4+4(sp),d0
+	moveq	#0,d1
+	move.b	5+4(sp),d1
+	add.w	d1,d0
+	addq.w	#1,d0
+	lsr.w	#1,d0
+	move.b	d0,(a2)
+	move.b	d0,65(a2)
+	moveq	#0,d0
+	move.b	5+4(sp),d0
+	moveq	#0,d1
+	move.b	6+4(sp),d1
+	add.w	d1,d0
+	addq.w	#1,d0
+	lsr.w	#1,d0
+	move.b	d0,1(a2)
+	move.b	d0,66(a2)
+	moveq	#0,d0
+	move.b	6+4(sp),d0
+	moveq	#0,d1
+	move.b	7+4(sp),d1
+	add.w	d1,d0
+	addq.w	#1,d0
+	lsr.w	#1,d0
+	move.b	d0,2(a2)
+	move.b	d0,67(a2)
+	moveq	#0,d0
+	move.b	7+4(sp),d0
+	moveq	#0,d1
+	move.b	8+4(sp),d1
+	add.w	d1,d0
+	addq.w	#1,d0
+	lsr.w	#1,d0
+	move.b	d0,3(a2)
+	moveq	#0,d0
+	move.b	1+4(sp),d0
+	moveq	#0,d1
+	move.b	2+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	3+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,96(a2)
+	moveq	#0,d0
+	move.b	2+4(sp),d0
+	moveq	#0,d1
+	move.b	3+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	4+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,64(a2)
+	moveq	#0,d0
+	move.b	3+4(sp),d0
+	moveq	#0,d1
+	move.b	4+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	5+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,32(a2)
+	move.b	d0,97(a2)
+	moveq	#0,d0
+	move.b	4+4(sp),d0
+	moveq	#0,d1
+	move.b	5+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	6+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,33(a2)
+	move.b	d0,98(a2)
+	moveq	#0,d0
+	move.b	5+4(sp),d0
+	moveq	#0,d1
+	move.b	6+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	7+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,34(a2)
+	move.b	d0,99(a2)
+	moveq	#0,d0
+	move.b	6+4(sp),d0
+	moveq	#0,d1
+	move.b	7+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	8+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,35(a2)
+	rts
+P4_LD:
+	moveq	#0,d0
+	move.b	5+4(sp),d0
+	moveq	#0,d1
+	move.b	6+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	7+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,(a2)
+	moveq	#0,d0
+	move.b	6+4(sp),d0
+	moveq	#0,d1
+	move.b	7+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	8+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,1(a2)
+	move.b	d0,32(a2)
+	moveq	#0,d0
+	move.b	7+4(sp),d0
+	moveq	#0,d1
+	move.b	8+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	9+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,2(a2)
+	move.b	d0,33(a2)
+	move.b	d0,64(a2)
+	moveq	#0,d0
+	move.b	8+4(sp),d0
+	moveq	#0,d1
+	move.b	9+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	10+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,3(a2)
+	move.b	d0,34(a2)
+	move.b	d0,65(a2)
+	move.b	d0,96(a2)
+	moveq	#0,d0
+	move.b	9+4(sp),d0
+	moveq	#0,d1
+	move.b	10+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	11+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,35(a2)
+	move.b	d0,66(a2)
+	move.b	d0,97(a2)
+	moveq	#0,d0
+	move.b	10+4(sp),d0
+	moveq	#0,d1
+	move.b	11+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	12+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,67(a2)
+	move.b	d0,98(a2)
+	moveq	#0,d0
+	move.b	11+4(sp),d0
+	moveq	#0,d1
+	move.b	12+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	12+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,99(a2)
+	rts
+P4_VL:
+	moveq	#0,d0
+	move.b	5+4(sp),d0
+	moveq	#0,d1
+	move.b	6+4(sp),d1
+	add.w	d1,d0
+	addq.w	#1,d0
+	lsr.w	#1,d0
+	move.b	d0,(a2)
+	moveq	#0,d0
+	move.b	6+4(sp),d0
+	moveq	#0,d1
+	move.b	7+4(sp),d1
+	add.w	d1,d0
+	addq.w	#1,d0
+	lsr.w	#1,d0
+	move.b	d0,1(a2)
+	move.b	d0,64(a2)
+	moveq	#0,d0
+	move.b	7+4(sp),d0
+	moveq	#0,d1
+	move.b	8+4(sp),d1
+	add.w	d1,d0
+	addq.w	#1,d0
+	lsr.w	#1,d0
+	move.b	d0,2(a2)
+	move.b	d0,65(a2)
+	moveq	#0,d0
+	move.b	8+4(sp),d0
+	moveq	#0,d1
+	move.b	9+4(sp),d1
+	add.w	d1,d0
+	addq.w	#1,d0
+	lsr.w	#1,d0
+	move.b	d0,3(a2)
+	move.b	d0,66(a2)
+	moveq	#0,d0
+	move.b	5+4(sp),d0
+	moveq	#0,d1
+	move.b	6+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	7+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,32(a2)
+	moveq	#0,d0
+	move.b	6+4(sp),d0
+	moveq	#0,d1
+	move.b	7+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	8+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,33(a2)
+	move.b	d0,96(a2)
+	moveq	#0,d0
+	move.b	7+4(sp),d0
+	moveq	#0,d1
+	move.b	8+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	9+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,34(a2)
+	move.b	d0,97(a2)
+	moveq	#0,d0
+	move.b	8+4(sp),d0
+	moveq	#0,d1
+	move.b	9+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	10+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,35(a2)
+	move.b	d0,98(a2)
+	moveq	#0,d0
+	move.b	9+4(sp),d0
+	moveq	#0,d1
+	move.b	10+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	11+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,67(a2)
+	moveq	#0,d0
+	move.b	10+4(sp),d0
+	moveq	#0,d1
+	move.b	11+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	12+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,99(a2)
+	rts
+P4_HD:
+	moveq	#0,d0
+	move.b	3+4(sp),d0
+	moveq	#0,d1
+	move.b	4+4(sp),d1
+	add.w	d1,d0
+	addq.w	#1,d0
+	lsr.w	#1,d0
+	move.b	d0,(a2)
+	move.b	d0,34(a2)
+	moveq	#0,d0
+	move.b	2+4(sp),d0
+	moveq	#0,d1
+	move.b	3+4(sp),d1
+	add.w	d1,d0
+	addq.w	#1,d0
+	lsr.w	#1,d0
+	move.b	d0,32(a2)
+	move.b	d0,66(a2)
+	moveq	#0,d0
+	move.b	1+4(sp),d0
+	moveq	#0,d1
+	move.b	2+4(sp),d1
+	add.w	d1,d0
+	addq.w	#1,d0
+	lsr.w	#1,d0
+	move.b	d0,64(a2)
+	move.b	d0,98(a2)
+	moveq	#0,d0
+	move.b	0+4(sp),d0
+	moveq	#0,d1
+	move.b	1+4(sp),d1
+	add.w	d1,d0
+	addq.w	#1,d0
+	lsr.w	#1,d0
+	move.b	d0,96(a2)
+	moveq	#0,d0
+	move.b	5+4(sp),d0
+	moveq	#0,d1
+	move.b	6+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	7+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,3(a2)
+	moveq	#0,d0
+	move.b	4+4(sp),d0
+	moveq	#0,d1
+	move.b	5+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	6+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,2(a2)
+	moveq	#0,d0
+	move.b	3+4(sp),d0
+	moveq	#0,d1
+	move.b	4+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	5+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,1(a2)
+	move.b	d0,35(a2)
+	moveq	#0,d0
+	move.b	2+4(sp),d0
+	moveq	#0,d1
+	move.b	3+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	4+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,33(a2)
+	move.b	d0,67(a2)
+	moveq	#0,d0
+	move.b	1+4(sp),d0
+	moveq	#0,d1
+	move.b	2+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	3+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,65(a2)
+	move.b	d0,99(a2)
+	moveq	#0,d0
+	move.b	0+4(sp),d0
+	moveq	#0,d1
+	move.b	1+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	2+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,97(a2)
+	rts
+P4_HU:
+	moveq	#0,d0
+	move.b	3+4(sp),d0
+	moveq	#0,d1
+	move.b	2+4(sp),d1
+	add.w	d1,d0
+	addq.w	#1,d0
+	lsr.w	#1,d0
+	move.b	d0,(a2)
+	moveq	#0,d0
+	move.b	2+4(sp),d0
+	moveq	#0,d1
+	move.b	1+4(sp),d1
+	add.w	d1,d0
+	addq.w	#1,d0
+	lsr.w	#1,d0
+	move.b	d0,2(a2)
+	move.b	d0,32(a2)
+	moveq	#0,d0
+	move.b	1+4(sp),d0
+	moveq	#0,d1
+	move.b	0+4(sp),d1
+	add.w	d1,d0
+	addq.w	#1,d0
+	lsr.w	#1,d0
+	move.b	d0,34(a2)
+	move.b	d0,64(a2)
+	moveq	#0,d0
+	move.b	3+4(sp),d0
+	moveq	#0,d1
+	move.b	2+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	1+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,1(a2)
+	moveq	#0,d0
+	move.b	2+4(sp),d0
+	moveq	#0,d1
+	move.b	1+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	0+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,3(a2)
+	move.b	d0,33(a2)
+	moveq	#0,d0
+	move.b	1+4(sp),d0
+	moveq	#0,d1
+	move.b	0+4(sp),d1
+	add.w	d1,d1
+	add.w	d1,d0
+	moveq	#0,d1
+	move.b	0+4(sp),d1
+	add.w	d1,d0
+	addq.w	#2,d0
+	lsr.w	#2,d0
+	move.b	d0,35(a2)
+	move.b	d0,65(a2)
+	move.b	0+4(sp),d0
+	move.b	d0,67(a2)
+	move.b	d0,66(a2)
+	move.b	d0,96(a2)
+	move.b	d0,97(a2)
+	move.b	d0,98(a2)
+	move.b	d0,99(a2)
+	rts

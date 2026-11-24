@@ -13,6 +13,9 @@
 	include	"velox.i"
 
 	xdef	PicInfo,PicDecode,PicFree,PicAlloc,PicFreeMem,PicNew
+	IFD	PROFILE
+	xref	ProfRead
+	ENDC
 	xref	GifInfo,GifDecode,PngInfo,PngDecode,JpegInfo,JpegDecode,WebpInfo,WebpDecode
 
 	section	code,code
@@ -54,7 +57,9 @@ PicDecode:
 	move.l	.tab-4(pc,d0.l*4),a1
 	move.l	a2,a0
 	move.l	d2,d0
+	PROFB	12
 	jsr	(a1)
+	PROFE	12
 	tst.l	d0
 	bne.s	.x
 	bsr	PicFree			; (a decoder that failed half way)

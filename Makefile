@@ -14,6 +14,10 @@ VLINK   := $(TOOLS)/vlink
 #     creating external references)
 # -opt-allbra: also resize branches written with an explicit .s/.w size
 ASFLAGS := -Fhunk -m68020 -quiet -x -opt-allbra -I src -I $(NDK)
+# PROFILE=1: time the stages of the image decoders (prof log events)
+ifeq ($(PROFILE),1)
+ASFLAGS += -DPROFILE=1
+endif
 LDFLAGS := -bamigahunk -Bstatic -s -sc -sd
 
 # Size target for the executable, in bytes (can be raised when needed).
@@ -34,8 +38,13 @@ $(TARGET): build/main.o $(CORE)
 $(VTEST): build/vtest.o $(CORE)
 	$(VLINK) -bamigahunk -Bstatic -sc -sd -o $@ $^
 
-build/%.o: src/%.s $(INCS) | build
+build/%.o: src/%.s $(INCS) build/flags | build
 	$(VASM) $(ASFLAGS) -o $@ $<
+
+# the assembler flags (PROFILE=1 or not): everything again when they change
+build/flags: FORCE | build
+	@echo '$(ASFLAGS)' | cmp -s - $@ || echo '$(ASFLAGS)' >$@
+.PHONY: FORCE
 
 # wbrun: starts a program as Workbench does (for the 'wb' emulator test)
 build/wbrun: test/wbrun.s | build

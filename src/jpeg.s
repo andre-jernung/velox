@@ -16,6 +16,9 @@
 	include	"velox.i"
 
 	xdef	JpegInfo,JpegDecode
+	IFD	PROFILE
+	xref	ProfRead
+	ENDC
 	xref	PicNew,PicAlloc,PicFreeMem
 
 ; a Huffman table
@@ -208,7 +211,9 @@ JpegDecode:
 	bsr	ReadSOS
 	beq	.fail
 	move.l	a3,a2
+	PROFB	2
 	bsr	Scan			; a2: after the entropy-coded data
+	PROFE	2
 	beq	.fail
 	addq.l	#1,g_JScans(a4)
 	bra	.mark
@@ -1277,6 +1282,7 @@ OutputRow:
 	movem.l	d2-d7/a2-a3/a5-a6,-(sp)
 	move.l	d0,d7			; d7 = MCU row
 	move.l	g_JWork(a4),a6
+	PROFB	3
 	lea	g_JComp(a4),a5
 	move.l	g_JNf(a4),d6
 	subq.l	#1,d6
@@ -1326,7 +1332,9 @@ OutputRow:
 	bpl.s	.cl
 .cn:	lea	JC_SIZEOF(a5),a5
 	dbf	d6,.comp
+	PROFE	3
 	; the lines of this row
+	PROFB	4
 	move.l	g_JVmax(a4),d0
 	mulu.l	g_JBs(a4),d0
 	move.l	d0,d6			; d6 = lines in an MCU row
@@ -1366,7 +1374,57 @@ OutputRow:
 	move.l	(sp)+,a0
 	moveq	#0,d7			; x
 	bsr	IsRGB
-	bne.s	.rgb
+	bne	.rgb
+	tst.l	d3			; Y 1:1 and chroma 1:1 or 1:2 across
+	bne.s	.ycc			; (4:4:4, 4:2:2, 4:2:0): a quick loop
+	cmp.l	d4,d5
+	bne.s	.ycc
+	cmp.l	#1,d4
+	bhi.s	.ycc
+	move.l	g_JOutW(a4),d7		; d7 = pixels left
+	tst.l	d4
+	beq	.q1
+.q2:	bsr	.uv			; two pixels a chroma sample
+	bsr	.px
+	subq.l	#1,d7
+	beq	.ln
+	bsr	.px
+	subq.l	#1,d7
+	bne.s	.q2
+	bra	.ln
+.q1:	bsr	.uv			; one
+	bsr	.px
+	subq.l	#1,d7
+	bne.s	.q1
+	bra	.ln
+; .uv - the next chroma sample: d2 = R term, d3 = G, d4 = B
+.uv:	moveq	#0,d0
+	move.b	(a1)+,d0		; Cb
+	moveq	#0,d1
+	move.b	(a2)+,d1		; Cr
+	move.w	jw_CbB(a6,d0.w*2),d4
+	move.l	jw_CbG(a6,d0.w*4),d3
+	add.l	jw_CrG(a6,d1.w*4),d3
+	swap	d3
+	move.w	jw_CrR(a6,d1.w*2),d2
+	rts
+; .px - the next pixel: Y + the chroma terms, as $ffRRGGBB
+.px:	moveq	#0,d5
+	move.b	(a0)+,d5
+	moveq	#-1,d1
+	move.w	d2,d0
+	add.w	d5,d0
+	move.b	(a5,d0.w),d1
+	lsl.l	#8,d1
+	move.w	d3,d0
+	add.w	d5,d0
+	move.b	(a5,d0.w),d1
+	lsl.l	#8,d1
+	move.w	d4,d0
+	add.w	d5,d0
+	move.b	(a5,d0.w),d1
+	move.l	d1,(a3)+
+	rts
 .ycc:	move.l	d7,d0
 	lsr.l	d3,d0
 	moveq	#0,d1
@@ -1427,7 +1485,8 @@ OutputRow:
 	blo.s	.g
 .ln:	addq.l	#1,g_JLy(a4)
 	bra	.line
-.x:	movem.l	(sp)+,d2-d7/a2-a3/a5-a6
+.x:	PROFE	4
+	movem.l	(sp)+,d2-d7/a2-a3/a5-a6
 	rts
 
 ; PlaneRow - component a0's samples for output line g_JLy of the row
@@ -1488,7 +1547,74 @@ FIX_1_414	equ	362			; 1.414213562
 FIX_1_847	equ	473			; 1.847759065
 FIX_2_613	equ	669			; 2.613125930
 IdctFull:
-	movem.l	d2-d7/a2-a3/a5,-(sp)
+	move.w	2(a0),d0		; no AC at all: one value (often)
+	or.l	4(a0),d0
+	or.l	8(a0),d0
+	or.l	12(a0),d0
+	or.l	16(a0),d0
+	or.l	20(a0),d0
+	or.l	24(a0),d0
+	or.l	28(a0),d0
+	or.l	32(a0),d0
+	or.l	36(a0),d0
+	or.l	40(a0),d0
+	or.l	44(a0),d0
+	or.l	48(a0),d0
+	or.l	52(a0),d0
+	or.l	56(a0),d0
+	or.l	60(a0),d0
+	or.l	64(a0),d0
+	or.l	68(a0),d0
+	or.l	72(a0),d0
+	or.l	76(a0),d0
+	or.l	80(a0),d0
+	or.l	84(a0),d0
+	or.l	88(a0),d0
+	or.l	92(a0),d0
+	or.l	96(a0),d0
+	or.l	100(a0),d0
+	or.l	104(a0),d0
+	or.l	108(a0),d0
+	or.l	112(a0),d0
+	or.l	116(a0),d0
+	or.l	120(a0),d0
+	or.l	124(a0),d0
+	bne.s	.full
+	move.w	(a0),d0
+	muls.w	(a1),d0
+	add.l	#512<<5,d0
+	asr.l	#5,d0
+	and.l	#1023,d0
+	move.b	jw_Range(a6,d0.l),d0
+	and.l	#$ff,d0
+	mulu.l	#$01010101,d0
+	move.l	a2,a0			; (d1 = bytes a row)
+	move.l	d0,(a0)
+	move.l	d0,4(a0)
+	add.l	d1,a0
+	move.l	d0,(a0)
+	move.l	d0,4(a0)
+	add.l	d1,a0
+	move.l	d0,(a0)
+	move.l	d0,4(a0)
+	add.l	d1,a0
+	move.l	d0,(a0)
+	move.l	d0,4(a0)
+	add.l	d1,a0
+	move.l	d0,(a0)
+	move.l	d0,4(a0)
+	add.l	d1,a0
+	move.l	d0,(a0)
+	move.l	d0,4(a0)
+	add.l	d1,a0
+	move.l	d0,(a0)
+	move.l	d0,4(a0)
+	add.l	d1,a0
+	move.l	d0,(a0)
+	move.l	d0,4(a0)
+	add.l	d1,a0
+	rts
+.full:	movem.l	d2-d7/a2-a3/a5,-(sp)
 	move.l	d1,-(sp)		; (row stride)
 	lea	jw_WS(a6),a5
 	moveq	#8-1,d0
@@ -1501,7 +1627,7 @@ IdctFull:
 	or.w	80(a0),d0
 	or.w	96(a0),d0
 	or.w	112(a0),d0
-	bne.s	.cfull
+	bne.s	.c2
 	move.w	(a0),d0
 	muls.w	(a1),d0
 	move.l	d0,(a5)
@@ -1512,6 +1638,55 @@ IdctFull:
 	move.l	d0,160(a5)
 	move.l	d0,192(a5)
 	move.l	d0,224(a5)
+	bra	.cnext
+.c2:	move.w	32(a0),d0		; rows 2-7 empty?
+	or.w	48(a0),d0
+	or.w	64(a0),d0
+	or.w	80(a0),d0
+	or.w	96(a0),d0
+	or.w	112(a0),d0
+	bne.s	.cfull
+	move.w	(a0),d0
+	muls.w	(a1),d0			; w0
+	move.w	16(a0),d1
+	muls.w	16(a1),d1		; w1
+	move.l	d1,d2			; only w0, w1: the butterflies with
+	muls.l	#FIX_1_414,d2		; zeros (3 multiplications, not 5)
+	asr.l	#8,d2			; tmp11
+	move.l	d1,d3
+	muls.l	#FIX_1_847,d3
+	asr.l	#8,d3			; z5
+	move.l	d1,d4
+	muls.l	#FIX_1_082,d4
+	asr.l	#8,d4
+	sub.l	d3,d4			; tmp10
+	sub.l	d1,d3			; tmp6 = z5 - w1
+	sub.l	d3,d2			; tmp5 = tmp11 - tmp6
+	add.l	d2,d4			; tmp4 = tmp10 + tmp5
+	move.l	d0,d5
+	add.l	d1,d5
+	move.l	d5,0(a5)
+	move.l	d0,d5
+	sub.l	d1,d5
+	move.l	d5,224(a5)
+	move.l	d0,d5
+	add.l	d3,d5
+	move.l	d5,32(a5)
+	move.l	d0,d5
+	sub.l	d3,d5
+	move.l	d5,192(a5)
+	move.l	d0,d5
+	add.l	d2,d5
+	move.l	d5,64(a5)
+	move.l	d0,d5
+	sub.l	d2,d5
+	move.l	d5,160(a5)
+	move.l	d0,d5
+	add.l	d4,d5
+	move.l	d5,128(a5)
+	move.l	d0,d5
+	sub.l	d4,d5
+	move.l	d5,96(a5)
 	bra	.cnext
 .cfull:	move.w	(a0),d0			; even part: rows 0, 2, 4, 6
 	muls.w	(a1),d0
@@ -1591,7 +1766,7 @@ IdctFull:
 	or.l	20(a5),d0
 	or.l	24(a5),d0
 	or.l	28(a5),d0
-	bne.s	.rfull
+	bne.s	.r2
 	move.l	(a5),d0
 	asr.l	#5,d0
 	and.l	#1023,d0
@@ -1604,6 +1779,69 @@ IdctFull:
 	move.b	d0,5(a2)
 	move.b	d0,6(a2)
 	move.b	d0,7(a2)
+	bra	.rnext
+.r2:	move.l	8(a5),d0		; w2-w7 empty?
+	or.l	12(a5),d0
+	or.l	16(a5),d0
+	or.l	20(a5),d0
+	or.l	24(a5),d0
+	or.l	28(a5),d0
+	bne.s	.rfull
+	move.l	(a5),d0			; w0 (+ the range offset)
+	move.l	4(a5),d1		; w1
+	move.l	d1,d2			; only w0, w1: the butterflies with
+	muls.l	#FIX_1_414,d2		; zeros (3 multiplications, not 5)
+	asr.l	#8,d2			; tmp11
+	move.l	d1,d3
+	muls.l	#FIX_1_847,d3
+	asr.l	#8,d3			; z5
+	move.l	d1,d4
+	muls.l	#FIX_1_082,d4
+	asr.l	#8,d4
+	sub.l	d3,d4			; tmp10
+	sub.l	d1,d3			; tmp6 = z5 - w1
+	sub.l	d3,d2			; tmp5 = tmp11 - tmp6
+	add.l	d2,d4			; tmp4 = tmp10 + tmp5
+	move.l	d0,d5
+	add.l	d1,d5
+	asr.l	#5,d5
+	and.l	#1023,d5
+	move.b	(a3,d5.l),(a2)
+	move.l	d0,d5
+	sub.l	d1,d5
+	asr.l	#5,d5
+	and.l	#1023,d5
+	move.b	(a3,d5.l),7(a2)
+	move.l	d0,d5
+	add.l	d3,d5
+	asr.l	#5,d5
+	and.l	#1023,d5
+	move.b	(a3,d5.l),1(a2)
+	move.l	d0,d5
+	sub.l	d3,d5
+	asr.l	#5,d5
+	and.l	#1023,d5
+	move.b	(a3,d5.l),6(a2)
+	move.l	d0,d5
+	add.l	d2,d5
+	asr.l	#5,d5
+	and.l	#1023,d5
+	move.b	(a3,d5.l),2(a2)
+	move.l	d0,d5
+	sub.l	d2,d5
+	asr.l	#5,d5
+	and.l	#1023,d5
+	move.b	(a3,d5.l),5(a2)
+	move.l	d0,d5
+	add.l	d4,d5
+	asr.l	#5,d5
+	and.l	#1023,d5
+	move.b	(a3,d5.l),4(a2)
+	move.l	d0,d5
+	sub.l	d4,d5
+	asr.l	#5,d5
+	and.l	#1023,d5
+	move.b	(a3,d5.l),3(a2)
 	bra	.rnext
 .rfull:	move.l	(a5),d0			; even: 0, 2, 4, 6
 	move.l	8(a5),d1

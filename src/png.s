@@ -8,6 +8,9 @@
 	include	"velox.i"
 
 	xdef	PngInfo,PngDecode
+	IFD	PROFILE
+	xref	ProfRead
+	ENDC
 	xref	PicNew,PicAlloc,PicFreeMem,Inflate
 
 	section	code,code
@@ -35,6 +38,7 @@ PngDecode:
 	move.l	a2,g_PngFirst(a4)	; (again, for the IDATs)
 	clr.l	g_PngIdat(a4)
 	clr.l	g_PngRaw(a4)
+	clr.l	g_PngGrey(a4)
 	clr.l	g_PngTrns(a4)
 	clr.l	g_PngW(a4)
 	moveq	#0,d7			; d7 = length of the IDATs
@@ -218,6 +222,7 @@ PngDecode:
 	add.l	d0,d0
 	add.l	#16,d0
 	move.l	d0,g_PngZero(a4)
+	addq.l	#4,d0			; (+4: the RGB loop reads a byte on)
 	add.l	d6,d0
 	jsr	PicAlloc
 	move.l	d0,g_PngRaw(a4)
@@ -228,7 +233,9 @@ PngDecode:
 	move.l	g_PngRaw(a4),a1
 	add.l	g_PngZero(a4),a1
 	move.l	d6,d1
+	PROFB	5
 	jsr	Inflate
+	PROFE	5
 	tst.l	d0			; (damaged: what came out is shown)
 	bgt.s	.infl
 	cmp.l	#-1,d0
@@ -254,9 +261,13 @@ PngDecode:
 .row:	move.b	(a3)+,d0		; filter
 	move.l	a3,a0
 	move.l	a6,a1
+	PROFB	6
 	bsr	Unfilter
+	PROFE	6
 	move.l	d4,d0
+	PROFB	7
 	bsr	Convert
+	PROFE	7
 	move.l	a3,a6
 	add.l	g_PngRB(a4),a3
 	addq.l	#1,d4
@@ -390,35 +401,34 @@ Unfilter:
 	beq.s	.x
 	subq.l	#1,d1
 	bne.s	.p0
-.pl:	moveq	#0,d0			; d0 = a: left
-	move.b	(a0,d5.l),d0
-	moveq	#0,d1			; d1 = b: above
-	move.b	(a1),d1
-	moveq	#0,d4			; d4 = c: above left
-	move.b	(a1,d5.l),d4
-	addq.l	#1,a1
-	move.l	d1,d2			; d2 = pa = |b - c|
-	sub.l	d4,d2
-	bpl.s	.pa
-	neg.l	d2
-.pa:	move.l	d0,d6			; d6 = pb = |a - c|
-	sub.l	d4,d6
-	bpl.s	.pb
-	neg.l	d6
-.pb:	move.l	d0,d7			; d7 = pc = |a + b - 2c|
-	add.l	d1,d7
-	sub.l	d4,d7
-	sub.l	d4,d7
-	bpl.s	.pc
-	neg.l	d7
-.pc:	cmp.l	d6,d2			; pa <= pb and pa <= pc: a
-	bhi.s	.nota
-	cmp.l	d7,d2
+.pl:	moveq	#0,d0
+	move.b	(a0,d5.l),d0		; a: left
+	moveq	#0,d1
+	move.b	(a1)+,d1		; b: above
+	moveq	#0,d4
+	move.b	-1(a1,d5.l),d4		; c: above left
+	move.w	d1,d2
+	sub.w	d4,d2			; p = b - c: pa = |p|
+	move.w	d0,d6
+	sub.w	d4,d6			; q = a - c: pb = |q|
+	move.w	d2,d7
+	add.w	d6,d7			; pc = |p + q|
+	bpl.s	.a1
+	neg.w	d7
+.a1:	tst.w	d2
+	bpl.s	.a2
+	neg.w	d2
+.a2:	tst.w	d6
+	bpl.s	.a3
+	neg.w	d6
+.a3:	cmp.w	d6,d2			; pa <= pb and pa <= pc: a
+	bhi.s	.nb
+	cmp.w	d7,d2
 	bls.s	.pp
-.nota:	move.l	d1,d0			; pb <= pc: b
-	cmp.l	d7,d6
+.nb:	move.w	d1,d0			; pb <= pc: b, else c
+	cmp.w	d7,d6
 	bls.s	.pp
-	move.l	d4,d0			; c
+	move.w	d4,d0
 .pp:	add.b	d0,(a0)+
 	subq.l	#1,d3
 	bne.s	.pl
@@ -451,6 +461,64 @@ Convert:
 	move.l	g_PngPW(a4),d7		; d7 = pixels
 	move.l	a3,a0			; a0 = samples
 	moveq	#0,d6			; d6 = bit offset (depths < 8)
+	cmp.l	#8,g_PngDepth(a4)	; 8 bits: tight loops
+	bne.s	.px
+	move.l	g_PngType(a4),d0
+	cmp.l	#6,d0
+	beq.s	.f6
+	cmp.l	#3,d0
+	beq.s	.f3
+	cmp.l	#4,d0
+	beq.s	.f4
+	tst.l	d0
+	beq.s	.f0
+	tst.l	g_PngTrns(a4)		; RGB (a colour key: the slow way)
+	bne.s	.px
+	subq.l	#1,d7
+.f2:	move.l	(a0),d1			; (one byte more: the buffer has it)
+	addq.l	#3,a0
+	lsr.l	#8,d1
+	or.l	#$ff000000,d1
+	move.l	d1,(a2)
+	add.l	a1,a2
+	dbf	d7,.f2
+	bra	.done
+.f6:	subq.l	#1,d7			; RGBA: rotate the alpha to the top
+.f6l:	move.l	(a0)+,d1
+	ror.l	#8,d1
+	move.l	d1,(a2)
+	add.l	a1,a2
+	dbf	d7,.f6l
+	bra	.done
+.f0:	tst.l	g_PngGrey(a4)		; grey: as a palette of greys
+	bne.s	.f3
+	move.l	a0,-(sp)
+	bsr	GreyPal
+	move.l	(sp)+,a0
+.f3:	lea	g_GifPal(a4),a3		; palette
+	subq.l	#1,d7
+	moveq	#0,d0
+.f3l:	move.b	(a0)+,d0
+	move.l	(a3,d0.l*4),(a2)
+	add.l	a1,a2
+	dbf	d7,.f3l
+	bra	.done
+.f4:	subq.l	#1,d7			; grey and alpha
+	moveq	#0,d0
+.f4l:	move.b	(a0)+,d0
+	move.l	d0,d1
+	lsl.l	#8,d1
+	or.l	d0,d1
+	lsl.l	#8,d1
+	or.l	d0,d1
+	move.b	(a0)+,d0
+	ror.l	#8,d0
+	or.l	d0,d1
+	moveq	#0,d0
+	move.l	d1,(a2)
+	add.l	a1,a2
+	dbf	d7,.f4l
+	bra.s	.done
 .px:	move.l	g_PngType(a4),d0
 	move.w	.types(pc,d0.l*2),d0
 	jmp	.types(pc,d0.w)
@@ -497,7 +565,7 @@ Convert:
 	add.l	a1,a2
 	subq.l	#1,d7
 	bne.s	.px
-	movem.l	(sp)+,d2-d7/a2-a3
+.done:	movem.l	(sp)+,d2-d7/a2-a3
 	rts
 .pal:	bsr	Sample
 	and.l	#$ff,d0
@@ -532,6 +600,25 @@ Convert:
 	ror.l	#8,d0
 	or.l	d0,d1
 	bra.s	.put
+
+; GreyPal - g_GifPal = 256 opaque greys (the clear grey of tRNS with
+; alpha 0), for 8-bit grey rows
+GreyPal:
+	lea	g_GifPal(a4),a0
+	move.l	#$ff000000,d0
+	move.w	#256-1,d1
+.l:	move.l	d0,(a0)+
+	add.l	#$010101,d0
+	dbf	d1,.l
+	tst.l	g_PngTrns(a4)
+	beq.s	.x
+	moveq	#0,d0
+	move.b	g_PngKey+1(a4),d0	; (the low byte: 8 bits)
+	lea	g_GifPal(a4),a0
+	clr.l	(a0,d0.l*4)
+.x:	moveq	#1,d0
+	move.l	d0,g_PngGrey(a4)
+	rts
 
 ; Sample - the next sample at a0/d6 (bit offset)
 ; Out: d0 (16 bits for depth 16); d1 kept

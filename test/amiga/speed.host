@@ -19,6 +19,19 @@ try:
     out.write("%-18s %8s %8s\n" % ("640x480 at 400", "decode", "bitmap"))
     for n, t, c in zip(names, times, conv):
         out.write("%-18s %7.2fs %7.2fs\n" % (n, t / 50.0, c / 50.0))
+    # profiling builds (PROFILE=1): the stages of each image, in ms
+    stage = {"a": "dither", "b": "WriteChunkyPixels", "c": "JPEG scans",
+             "d": "JPEG IDCT", "e": "JPEG colour", "f": "inflate",
+             "g": "PNG unfilter", "h": "PNG convert", "i": "VP8 tokens",
+             "j": "VP8 reconstruct", "k": "VP8 loop filter",
+             "l": "VP8 to RGB", "m": "decoder total"}
+    img = 0
+    for l in lines:
+        if l.startswith("imgconv "):
+            img += 1
+        if l.startswith("prof"):
+            k, v = l[4], l.split()[1]
+            out.write("  %s: %-18s %6s ms\n" % (names[img - 1] if img else "?", stage.get(k, k), v))
     a.shot(os.path.join(r, "speed.png"))
     a.key("ctrl+q")
     out.write("ok\n")

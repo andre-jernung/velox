@@ -29,8 +29,13 @@ DTM_PROCLAYOUT		equ	$0602
 bmh_Width		equ	0
 bmh_Height		equ	2
 	include	"lvo/datatypes_lib.i"
+	include	"lvo/timer_lib.i"
 
-	xdef	BgFind,ImagesStop,ImagesStart,ImagesStep,ImagesPending,ImagesFree,ImagePaint
+	xdef	BgFind
+	IFD	PROFILE
+	xdef	ProfRead
+	ENDC
+	xdef	ImagesStop,ImagesStart,ImagesStep,ImagesPending,ImagesFree,ImagePaint
 	xref	PageAlloc,DomGetAttr,UrlResolve,HttpGetCached,ParseDec,BufFree
 	xref	G,BusyEvents,PicInfo,PicDecode,PicFree,PalInit,PicToBitMap,PicAlloc,BufAppend,BufClear,GuiStatus,GuiRelayout,GuiRefresh,GuiPageWidth
 	xref	FmtDec,StrCopy,LogEvent,ImgNetHook
@@ -617,6 +622,9 @@ DecodeOwn:
 	lea	LogImgConv(pc),a0
 	suba.l	a1,a1
 	jsr	LogEvent
+	IFD	PROFILE
+	bsr	ProfLog
+	ENDC
 	tst.l	d7
 	beq.s	.fail
 	move.l	g_PbmMask(a4),a0
@@ -685,6 +693,53 @@ PicTile:
 	moveq	#1,d0
 .x:	movem.l	(sp)+,d2-d5/a2-a3
 	rts
+
+; ProfRead - (profiling) the EClock now, low long; Out: d0
+	IFD	PROFILE
+ProfRead:
+	tst.l	g_ProfHz(a4)		; timer.device: opened the first time
+	bne.s	.r
+	lea	TimerName(pc),a0
+	moveq	#UNIT_ECLOCK,d0
+	lea	g_ProfIO(a4),a1
+	moveq	#0,d1
+	EXEC	OpenDevice
+.r:	lea	g_ProfEC(a4),a0
+	move.l	g_ProfIO+IO_DEVICE(a4),a6
+	jsr	_LVOReadEClock(a6)
+	move.l	d0,g_ProfHz(a4)
+	move.l	g_ProfEC+4(a4),d0
+	rts
+TimerName:	dc.b	"timer.device",0
+	even
+
+; ProfLog - log and clear the profiling slots that have ticks
+ProfLog:
+	movem.l	d2,-(sp)
+	moveq	#0,d2
+.l:	move.l	g_Prof(a4,d2.l*4),d0
+	beq.s	.n
+	clr.l	g_Prof(a4,d2.l*4)
+	move.l	g_ProfHz(a4),d1		; milliseconds
+	divu.l	#1000,d1
+	divu.l	d1,d0
+	move.l	d0,-(sp)
+	lea	LogProfN,a0
+	move.b	#'a',d1
+	add.b	d2,d1
+	move.b	d1,4(a0)
+	move.l	(sp)+,d0
+	suba.l	a1,a1
+	jsr	LogEvent
+.n:	addq.l	#1,d2
+	cmp.l	#16,d2
+	blo.s	.l
+	movem.l	(sp)+,d2
+	rts
+	section	data,data
+LogProfN:	dc.b	"prof?",0
+	section	code,code
+	ENDC
 
 ; Ticks - the time in ticks (1/50 s); Out: d0
 Ticks:
