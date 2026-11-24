@@ -1,0 +1,7 @@
+; backdisk: Back to pages no longer kept in memory: from their page files
+; file, its images from the image cache (test/amiga/backdisk.host)
+Echo >VELOX:r/backdisk.txt "backdisk"
+Echo >VELOX:r/backdisk.start ""
+VELOX:velox http://127.0.0.1:8080/images.html?bd LOG=VELOX:r/backdisk.log
+Echo >>VELOX:r/backdisk.txt "exit rc=$RC"
+Echo >>VELOX:r/backdisk.txt "done"

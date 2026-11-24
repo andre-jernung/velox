@@ -39,7 +39,7 @@ bmh_Height		equ	2
 	ENDC
 	xdef	ImagesStop,ImagesStart,ImagesStep,ImagesPending,ImagesFree,ImagePaint
 	xdef	ImgListFree,ImagesAgain
-	xref	KeepEvict
+	xref	KeepEvict,DcPeek
 	xref	PageAlloc,DomGetAttr,UrlResolve,HttpGetCached,ParseDec,BufFree
 	xref	G,BusyEvents,PicInfo,PicDecode,PicFree,PalInit,PicToBitMap,PicAlloc,BufAppend,BufClear,GuiStatus,GuiRelayout,GuiRefresh,GuiPageWidth,GuiPaintImage
 	xref	FmtDec,StrCopy,LogEvent,ImgNetHook
@@ -422,14 +422,45 @@ ImagesStep:
 	addq.l	#1,g_ImgNext(a4)
 	move.l	g_ImgQueue(a4),a0
 	move.l	(a0,d0.l*4),a5		; a5 = <img>
-	tst.l	n_Data2(a5)		; has the image of an earlier copy
-	beq.s	.new
-	move.l	g_ImgNext(a4),d0
+	tst.l	n_Data2(a5)		; it has its image (an earlier copy's,
+	beq.s	.new			; or the cache's)
+	cmp.l	#2,g_ImgPass(a4)	; pass 2: to be checked?
+	bne.s	.skip
+	bclr	#NF_IMGCHECK,n_Flags(a5)
+	bne	.check
+.skip:	move.l	g_ImgNext(a4),d0
 	cmp.l	g_ImgCount(a4),d0
 	blo.s	.img
 	bra	.done			; (the last: lay out again)
-.new:
-	; status "Image 3 of 12"
+.new:	btst	#NF_IMGFAIL,n_Flags(a5)	; it failed before: again only in
+	beq.s	.try			; pass 2 of a load (not Back)
+	tst.l	g_ImgNoCheck(a4)
+	bne.s	.skip
+	cmp.l	#2,g_ImgPass(a4)
+	bne.s	.skip
+.try:	cmp.l	#2,g_ImgPass(a4)	; pass 1: the disk cache only
+	beq.s	.status
+	tst.l	g_NoCache(a4)
+	bne.s	.skip
+	bsr	ImgUrlKey
+	beq.s	.skip
+	lea	g_ImgKey(a4),a0
+	jsr	DcLoadImg
+	beq.s	.skip			; (not there: pass 2)
+	bsr	ImgCached
+	move.l	d0,-(sp)
+	jsr	DcImgFree
+	move.l	(sp)+,d0
+	beq.s	.skip
+	addq.l	#1,g_ImgLoaded(a4)
+	bsr	ShareImage
+	tst.l	g_ImgNoCheck(a4)	; Back/Forward: as it is
+	bne	.done
+	jsr	DcFresh			; fresh: nothing to ask
+	bne	.done
+	bset	#NF_IMGCHECK,n_Flags(a5)	; (checked in pass 2)
+	bra	.done
+.status:	; status "Image 3 of 12"
 	lea	g_StatusBuf(a4),a1
 	lea	MsgImage(pc),a0
 	jsr	StrCopy
@@ -448,38 +479,17 @@ ImagesStep:
 	move.l	#CHIP_RESERVE,d0
 	bsr	ChipRoom
 	beq	.done
-	; the URL
-	move.l	a5,a0
-	lea	AnSrc(pc),a1
-	jsr	DomGetAttr
-	tst.l	d0
+	bsr	ImgUrlKey
 	beq	.done
-	move.l	d0,a1
-	lea	g_PageUrl(a4),a0
-	lea	g_LinkUrl(a4),a2
-	jsr	UrlResolve
-	tst.l	d0
+	bra.s	.fetch
+.check:	; pass 2: an image shown from the disk cache, changed since?
+	bsr	ImgUrlKey
 	beq	.done
-	lea	g_LinkUrl(a4),a0	; (the loader's own copy: the window
-	lea	g_ImgUrl(a4),a1		;  uses g_LinkUrl meanwhile)
-	move.l	#URL_MAX-1,d0
-	jsr	StrCopyN
-	; in the disk cache, as shown?  Then at once, checked after
-	bsr	ImgKey
-	tst.l	g_NoCache(a4)
-	bne.s	.fetch
-	lea	g_ImgKey(a4),a0
-	jsr	DcLoadImg
-	beq.s	.fetch
-	bsr	ImgCached
-	move.l	d0,-(sp)
-	jsr	DcImgFree
-	move.l	(sp)+,d0
-	beq.s	.fetch
-	addq.l	#1,g_ImgLoaded(a4)
-	bsr	ShareImage
-	jsr	DcFresh			; fresh: nothing to ask
-	bne	.done
+	lea	g_ImgKey(a4),a0		; (its validators and hash)
+	moveq	#1,d0
+	jsr	DcPeek
+	beq	.done
+	move.l	g_DcHdr+dh_Hash(a4),g_ImgHash(a4)
 	jsr	DcCond			; changed since?  (304: no)
 	lea	g_ImgUrl(a4),a0
 	jsr	HttpGet
@@ -494,6 +504,7 @@ ImagesStep:
 	move.l	#200,d0
 	bra.s	.got
 .fetch:	; fetch (window events and Ctrl-C can stop it)
+	bset	#NF_IMGFAIL,n_Flags(a5)	; (until it is there)
 	move.l	g_WinSigMask(a4),d0
 	or.l	#SIGBREAKF_CTRL_C,d0
 	move.l	d0,g_AbortMask(a4)
@@ -509,6 +520,7 @@ ImagesStep:
 	tst.l	g_Quit(a4)
 	bne	.free
 	subq.l	#1,g_ImgNext(a4)
+	bclr	#NF_IMGFAIL,n_Flags(a5)
 	lea	g_Resp+r_Body(a4),a0
 	jsr	BufFree
 	bra	.x
@@ -560,7 +572,10 @@ ImagesStep:
 	bra.s	.done
 .free:	lea	g_Resp+r_Body(a4),a0
 	jsr	BufFree
-.done:	; lay out again now and then, and at the end
+.done:	tst.l	n_Data2(a5)		; (there: it did not fail)
+	beq.s	.nf
+	bclr	#NF_IMGFAIL,n_Flags(a5)
+.nf:	; lay out again now and then, and at the end
 	tst.l	g_ImgRelayout(a4)
 	beq.s	.paint
 	move.l	g_ImgNext(a4),d0
@@ -581,6 +596,8 @@ ImagesStep:
 .end:	move.l	g_ImgNext(a4),d0
 	cmp.l	g_ImgCount(a4),d0
 	blo.s	.x
+	cmp.l	#2,g_ImgPass(a4)	; (all done: after pass 2)
+	bne.s	.x
 	lea	LogImages(pc),a0	; all done
 	suba.l	a1,a1
 	move.l	g_ImgLoaded(a4),d0
@@ -798,13 +815,21 @@ DecReap:
 ; images, one after the other; the window comes first (TaskPoll)
 ;--------------------------------------------------------------------
 ImagesLoad:
-.l:	jsr	TaskPoll
-	bne.s	.stop
-	bsr	DecReapWait		; (a decoder of a stopped load)
-	beq.s	.stop
+	moveq	#1,d0			; pass 1: those in the disk cache, all
+	move.l	d0,g_ImgPass(a4)	; shown at once; pass 2: the others
+.l:	jsr	TaskPoll		; fetched, those shown from the cache
+	bne.s	.stop			; checked (not for Back/Forward:
+	bsr	DecReapWait		; g_ImgNoCheck)
+	beq.s	.stop			; (a decoder of a stopped load)
 	bsr	ImagesPending
+	bne.s	.step
+	cmp.l	#2,g_ImgPass(a4)
 	beq.s	.x
-	bsr	ImagesStep
+	moveq	#2,d0
+	move.l	d0,g_ImgPass(a4)
+	clr.l	g_ImgNext(a4)
+	bra.s	.l
+.step:	bsr	ImagesStep
 	tst.l	g_TkAbort(a4)
 	beq.s	.l
 .stop:	bra	ImagesStop
@@ -829,6 +854,32 @@ ImagesReapNow:
 
 ImagesQuit:
 	bra	DecReapWait
+
+;--------------------------------------------------------------------
+; ImgUrlKey - g_ImgUrl, g_ImgKey of <img> a5 (its src against the page)
+; Out: d0 = 0 if it has none (CCR set)
+;--------------------------------------------------------------------
+ImgUrlKey:
+	move.l	a2,-(sp)
+	move.l	a5,a0
+	lea	AnSrc(pc),a1
+	jsr	DomGetAttr
+	tst.l	d0
+	beq.s	.x
+	move.l	d0,a1
+	lea	g_PageUrl(a4),a0
+	lea	g_LinkUrl(a4),a2
+	jsr	UrlResolve
+	tst.l	d0
+	beq.s	.x
+	lea	g_LinkUrl(a4),a0	; (the loader's own copy: the window
+	lea	g_ImgUrl(a4),a1		;  uses g_LinkUrl meanwhile)
+	move.l	#URL_MAX-1,d0
+	jsr	StrCopyN
+	bsr	ImgKey
+	moveq	#1,d0
+.x:	move.l	(sp)+,a2
+	rts
 
 ;--------------------------------------------------------------------
 ; ImgKey - g_ImgKey = the disk cache key of <img> a5 (URL g_ImgUrl): the

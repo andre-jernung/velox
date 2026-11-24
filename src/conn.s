@@ -284,8 +284,9 @@ TlsChild:
 	bne.s	.done
 	bsr	TlsCtx
 	move.l	d0,g_TlsOk(a4)
-	suba.l	a0,a0
-	move.l	g_AmiSSLBase(a4),a6
+	SSL	OPENSSL_thread_stop	; (its per task OpenSSL state: else a
+	suba.l	a0,a0			;  later task at the same address gets
+	move.l	g_AmiSSLBase(a4),a6	;  it, and AmiSSL fails there)
 	jsr	_LVOCleanupAmiSSLA(a6)
 .done:	EXEC	Forbid			; (gone before Velox goes on)
 	move.l	g_TlsMain(a4),a1

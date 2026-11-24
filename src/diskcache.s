@@ -18,7 +18,7 @@
 	include	"velox.i"
 
 	xdef	DcInit,DcLoad,DcStore,DcFresh,DcLoadImg,DcStoreImg,DcImgFree,DcCond,DcHash
-	xdef	DcPathOf,DcAdded
+	xdef	DcPathOf,DcAdded,DcPeek
 	xref	StrCopyN,StrLen,StrIPrefix,BufClear,BufReserve,ParseDec,TaskPoll
 
 DC_MAGIC	equ	'VXC1'
@@ -406,6 +406,19 @@ DcOpenEntry:
 	moveq	#0,d0
 .x:	movem.l	(sp)+,d2-d4/a2
 	rts
+
+;--------------------------------------------------------------------
+; DcPeek - the header and validators of the entry of key a0 (d0 = 1: an
+; image) (g_DcHdr, g_DcETag/LM; DcCond can use them), not its data
+; Out: d0 = 1 if it is there (CCR set)
+;--------------------------------------------------------------------
+DcPeek:
+	bsr	DcOpenEntry
+	beq.s	.x
+	move.l	d0,d1
+	DOS	Close
+	moveq	#1,d0
+.x:	rts
 
 ;--------------------------------------------------------------------
 ; DcLoad - a page or style sheet from the cache, as if it had just

@@ -195,6 +195,8 @@ n_Anc		rs.l	2		; its tag, id, classes and its ancestors',
 					; n_Flags has NF_ANC
 NODE_SIZEOF	rs.b	0
 NF_ANC		equ	0		; n_Flags: n_Anc is there
+NF_IMGCHECK	equ	1		; <img> shown from the disk cache, to check
+NF_IMGFAIL	equ	2		; <img> that could not be loaded
 
 	RSRESET
 at_Next		rs.l	1
@@ -634,6 +636,8 @@ g_ImgNext	rs.l	1
 g_ImgLoaded	rs.l	1
 g_ImgRelayout	rs.l	1
 g_ImgList	rs.l	1		; loaded ImageInfos
+g_ImgPass	rs.l	1		; ImagesLoad: 1 from the disk cache, 2 the rest
+g_ImgNoCheck	rs.l	1		; Back/Forward: cached images not checked
 g_NoImages	rs.l	1		; Velox/NoImages
 g_PageFreeHook	rs.l	1		; called when a page is freed
 g_DtMsg		rs.l	3

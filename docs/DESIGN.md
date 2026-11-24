@@ -107,9 +107,12 @@ then the oldest are deleted (the window is served while it is read).
   then the network.
 - **Images** are kept as they were shown: scaled and dithered for this
   screen, with their mask, keyed by URL, width=/height=, the page width
-  and the screen's colours. They come back without fetching or decoding,
-  and are checked like pages. For an image without validators the file
-  is fetched again, but decoded only if its hash changed.
+  and the screen's colours. They come back without fetching or decoding.
+  A page's images load in two passes: first all those in the disk cache
+  are shown, then the others are fetched and those shown from the cache
+  are checked like pages (for an image without validators the file is
+  fetched again, but decoded only if its hash changed). Back and Forward
+  do not check them, nor try again images that failed (`NF_IMGFAIL`).
 
 - **Laid-out pages** (pagefile.s). Showing a 53 KB page from its HTML
   takes 1.0 s to parse and 2.8 s to lay out on a stock A1200, so a page
@@ -170,7 +173,11 @@ scroll position, focus and what was typed, with nothing fetched, parsed
 or laid out (unless the window's width changed); only painted. On a
 stock A1200 that takes 0.1 s for big.html, which takes 5.7 s from the
 disk cache. Images it had not loaded yet load then. A page no longer
-kept comes back from its page file (above) if it has one.
+kept comes back from its page file (above), its images from the image
+cache, with nothing fetched. A page is saved as its page file after its
+images; one left before that is saved from its kept copy when nothing
+loads, or at the latest when a newer page pushes it out of memory
+(`KeepSaveNext`).
 
 Only complete pages are kept, not error pages, and not a page replaced
 by itself (Reload, a newer version of a cached copy). At most

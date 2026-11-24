@@ -17,7 +17,7 @@
 	include	"velox.i"
 
 	xdef	PageLeave,PageRestore,KeepEvict,KeepDrop,KeepFreeAll,KeepCopy
-	xref	PageFree,Alloc,Free,BufFree,ImgListFree,LogEvent,ArenaFree
+	xref	PageFree,Alloc,Free,BufFree,ImgListFree,LogEvent,ArenaFree,PfWrite
 
 	section	code,code
 
@@ -181,6 +181,7 @@ PageKeep:
 .n:	bsr	KeepCount
 	cmp.l	g_KeepMax(a4),d0
 	blo.s	.mem
+	bsr	KeepSaveNext		; (to disk first, if not there yet)
 	bsr	KeepEvict
 	bne.s	.n
 	bra	.no
@@ -259,10 +260,11 @@ PageRestore:
 	rts
 
 ;--------------------------------------------------------------------
-; KeepEvict - free the kept page farthest from the current entry
-; Out: d0 = 1 if there was one (CCR set)
+; KeepNext - the kept page to go first: the farthest from the current
+; entry
+; Out: d0 = its entry or -1 (CCR set)
 ;--------------------------------------------------------------------
-KeepEvict:
+KeepNext:
 	movem.l	d2-d4,-(sp)
 	moveq	#-1,d3			; d3 = the entry
 	moveq	#-1,d4			; d4 = its distance
@@ -282,6 +284,45 @@ KeepEvict:
 	cmp.l	#HIST_ENTRIES,d2
 	blo.s	.l
 	move.l	d3,d0
+	movem.l	(sp)+,d2-d4
+	rts
+
+;--------------------------------------------------------------------
+; KeepSaveNext - (the loader) the kept page to go next, saved as its
+; page file first if it has none yet (left before its images came):
+; Back to it then comes from disk, not from the network
+;--------------------------------------------------------------------
+KeepSaveNext:
+	move.l	a2,-(sp)
+	tst.l	g_TkIn(a4)
+	beq.s	.x
+	bsr.s	KeepNext
+	bmi.s	.x
+	lea	g_HistKept(a4),a0
+	move.l	(a0,d0.l*4),a2
+	tst.l	kp_Done+16(a2)		; (g_PfFresh: it has one)
+	bne.s	.x
+	move.l	a2,a0
+	jsr	PfWrite
+	beq.s	.x
+	lea	g_HistKept(a4),a0	; (still kept?)
+	moveq	#HIST_ENTRIES-1,d0
+.f:	cmp.l	(a0)+,a2
+	dbeq	d0,.f
+	bne.s	.x
+	moveq	#1,d0
+	move.l	d0,kp_Done+16(a2)
+.x:	move.l	(sp)+,a2
+	rts
+
+;--------------------------------------------------------------------
+; KeepEvict - free the kept page farthest from the current entry
+; Out: d0 = 1 if there was one (CCR set)
+;--------------------------------------------------------------------
+KeepEvict:
+	movem.l	d2-d4,-(sp)
+	bsr	KeepNext
+	move.l	d0,d3
 	bmi.s	.x0
 	bsr.s	KeepDrop
 	lea	LogDropped(pc),a0	; (for tests)

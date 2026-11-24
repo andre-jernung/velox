@@ -40,7 +40,7 @@
 	include	"velox.i"
 	include	"buildid.i"
 
-	xdef	PfSave,PfSaveKept,PfLoad,PfBuild,PfApply,PfFonts
+	xdef	PfSave,PfSaveKept,PfLoad,PfBuild,PfApply,PfFonts,PfWrite
 	xref	KeepCopy,Alloc,Free,BufReserve,BufFree,PageNew,PageFree
 	xref	ArenaBlockRaw,TaskPoll,DcPathOf,DcAdded,LogEvent,StrLen
 	xref	AttrNames,AttrNamesEnd

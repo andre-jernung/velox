@@ -1,0 +1,77 @@
+#!/usr/bin/env python3
+"""Host side of backdisk.script: seven pages, then Back to the first two,
+no longer kept in memory: they come from their page files (the second
+was left before its images came: saved before it was dropped), the
+first one's images from the image cache, nothing fetched again."""
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from xdrive import Amiga, wait_log  # noqa: E402
+
+r = sys.argv[1]
+log = os.path.join(r, "backdisk.log")
+slog = os.path.join(r, "..", "server.log")
+out = open(os.path.join(r, "backdisk.driver"), "w")
+U = "http://127.0.0.1:8080/"
+
+
+def step(msg):
+    out.write(msg + "\n")
+    out.flush()
+
+
+def go(a, url):
+    a.key("ctrl+l")
+    a.type("127.0.0.1:8080/" + url)
+    a.key("Return")
+
+
+def since(lines, mark):
+    return lines[len(lines) - 1 - lines[::-1].index(mark):]
+
+
+try:
+    a = Amiga()
+    wait_log(log, "images ", timeout=120)     # the first page, its images
+    time.sleep(1)
+    go(a, "slow.html?bd")                     # left before its images come
+    wait_log(log, "page " + U + "slow.html?bd", timeout=120)
+    for p in ("index.html?bd", "second.html?bd", "third.html?bd", "form.html?bd", "icons.html?bd"):
+        go(a, p)
+        wait_log(log, "page " + U + p, timeout=120)
+        time.sleep(2)
+    wait_log(log, "images ", 2, timeout=120)  # icons.html's images too
+    time.sleep(2)
+    for i in range(5):
+        a.key("BackSpace")
+        time.sleep(3)
+    lines = wait_log(log, "page " + U + "slow.html?bd", 2, timeout=120)
+    seg = since(lines, "go " + U + "slow.html?bd")
+    if not any(l.startswith("pfshown " + U + "slow.html?bd") for l in seg):
+        raise AssertionError("slow.html not from its page file: %r" % seg)
+    step("a page left before its images came: from its page file")
+    time.sleep(2)
+    n0 = len(open(slog).read().split("\n"))
+    a.key("BackSpace")
+    lines = wait_log(log, "page " + U + "images.html?bd", 2, timeout=120)
+    time.sleep(5)
+    lines = open(log).read().split("\n")
+    seg = since(lines, "go " + U + "images.html?bd")
+    if not any(l.startswith("pfshown " + U + "images.html?bd") for l in seg):
+        raise AssertionError("images.html not from its page file: %r" % seg)
+    if len([l for l in seg if l.startswith("imgcache ")]) != 4:
+        raise AssertionError("its images not from the cache: %r" % seg)
+    gets = [l for l in open(slog).read().split("\n")[n0 - 1:] if '"GET ' in l and "/slow" not in l]
+    if gets:
+        raise AssertionError("fetched again: %r" % gets)
+    step("its images from the cache, nothing fetched again")
+    a.key("ctrl+q")
+    step("ok")
+except Exception as e:
+    step("FAIL " + repr(e))
+    try:
+        Amiga().key("ctrl+q")
+    except Exception:
+        pass

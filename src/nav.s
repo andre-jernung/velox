@@ -539,6 +539,9 @@ NavLoad:
 	move.l	d0,g_LoadPhase(a4)
 	move.l	g_NavFlags(a4),d3
 	clr.l	g_AbortReq(a4)
+	moveq	#2,d0			; Back/Forward (NAV_CACHE): images as
+	and.l	d3,d0			; they are in the cache, not checked
+	move.l	d0,g_ImgNoCheck(a4)
 	move.l	g_WinSigMask(a4),d0	; window events and Ctrl-C can stop
 	or.l	#SIGBREAKF_CTRL_C,d0	; the page and its style sheets
 	move.l	d0,g_AbortMask(a4)
@@ -2144,6 +2147,7 @@ LogFile:	dc.b	"pfshown",0
 KeptJob:
 	moveq	#2,d0			; (the page shown loads)
 	move.l	d0,g_LoadPhase(a4)
+	move.l	d0,g_ImgNoCheck(a4)	; (Back/Forward: not checked)
 	jsr	ImagesAgain
 	beq.s	.s
 	jsr	ImagesLoad
