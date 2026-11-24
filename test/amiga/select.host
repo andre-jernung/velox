@@ -31,6 +31,14 @@ try:
         f.write("\n".join(cmds) + "\n")
     os.rename(os.path.join(r, "select.go.tmp"), os.path.join(r, "select.go"))
     wait_log(log, "selected ", timeout=60)
-    out.write("selected\nok\n")
+    out.write("selected\n")
+    out.flush()
+    # a click on the link "the index" (after "Back to " on that line)
+    with open(os.path.join(r, "select.go2.tmp"), "w") as f:
+        f.write("VELOX:mouse %d %d DOWN\nVELOX:mouse %d %d UP\nWait 3\n"
+                % (x + 60, y + 48, x + 60, y + 48))
+    os.rename(os.path.join(r, "select.go2.tmp"), os.path.join(r, "select.go2"))
+    wait_log(log, "page http://127.0.0.1:8080/index.html", timeout=60)
+    out.write("a click follows a link\nok\n")
 except Exception as e:
     out.write("FAIL %r\n" % e)

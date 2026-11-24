@@ -10,6 +10,12 @@ IF NOT EXISTS VELOX:r/select.go
   Skip wait BACK
 EndIF
 Execute VELOX:r/select.go
+Lab wait2
+IF NOT EXISTS VELOX:r/select.go2
+  Wait 1
+  Skip wait2 BACK
+EndIF
+Execute VELOX:r/select.go2
 Wait 2
 Status >ENV:vpid COMMAND=VELOX:velox
 Break $vpid C
