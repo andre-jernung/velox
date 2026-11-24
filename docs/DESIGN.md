@@ -403,10 +403,29 @@ with `WritePixelArray`, with no colour cube and no dithering.
   `OPENSSL_thread_stop()` did not change it. The cause is not found yet; it
   may be in AmiSSL's socket I/O or in the bsdsocket emulation. The `tls`
   emulator test tolerates up to 64 bytes per connection.
-- A TLS handshake takes about 15 seconds on a stock 14 MHz 68020 (A1200).
-  Some servers (for example example.com) close the connection before it
-  finishes, and Velox then reports "Send failed". With an accelerator it
-  takes a second or two. Velox restricts key exchange to X25519/P-256,
-  because OpenSSL 4's default post-quantum hybrid is far slower. On slow
-  machines, `PROXY=` with tools/velox-proxy.py avoids TLS on the Amiga
-  entirely. The emulator tests run the 68020 unthrottled.
+- TLS is slow on a stock 14 MHz 68020 (A1200), measured with the
+  `tlsspeed` test (manual): AmiSSL's `SSL_CTX_new` takes 6.6 s, a full
+  handshake 6.2 s (mostly the X25519 key exchange and checking the
+  certificate), a resumed one 3.1 s, and data goes at 28 KB/s with
+  ChaCha20-Poly1305 (13 KB/s with AES-256-GCM). What Velox does about it:
+  - the SSL context is made by a process of its own below the window's
+    priority as soon as the network is first used (`TlsPrepare`), so the
+    window never waits for it and it is usually ready by the first
+    https page;
+  - ChaCha20-Poly1305 first, then AES-128-GCM (TLS 1.3 and 1.2): twice
+    as fast as AES without AES instructions; SHA-256 rather than SHA-384;
+  - RSA signatures first (cheap to verify; a server with both kinds of
+    certificate uses its RSA one), key exchange X25519/P-256 only
+    (OpenSSL 4's default post-quantum hybrid is far slower);
+  - a session of each of the last 4 servers is kept and resumed (no
+    certificate sent or checked). It is copied (`SSL_SESSION_dup`) at
+    the first data: OpenSSL marks the connection's own session not
+    resumable when the server closes without close_notify, as many do;
+  - up to 3 connections are kept alive, one a server, so going back and
+    forth between a site and its image or style sheet server costs no
+    new handshake.
+  Some servers (for example example.com) close the connection before a
+  handshake finishes, and Velox then reports "Send failed". With an
+  accelerator it takes a second or two. On slow machines, `PROXY=` with
+  tools/velox-proxy.py avoids TLS on the Amiga entirely. The emulator
+  tests run the 68020 unthrottled.

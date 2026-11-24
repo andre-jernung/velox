@@ -67,6 +67,7 @@ icon (remove the parentheses to enable one) or environment variables
 |                      | `Velox/CacheDir`    | disk cache drawer (default `PROGDIR:Cache`) |
 |                      | `Velox/CacheSize`   | disk cache size in KB (default 16384, 0: none) |
 |                      | `Velox/KeepPages`   | pages kept in memory for Back/Forward (default 4, 0: none) |
+|                      | `Velox/TlsCiphers`  | TLS 1.3 cipher suites, if a server needs others (default ChaCha20 first) |
 |                      | `Velox/InsecureTLS` | skip certificate checks (testing)   |
 
 The window opens where it was last closed (`Velox/Window`).
@@ -103,9 +104,12 @@ The Amiga key works in place of Ctrl for the menu commands.
 
 Without AmiSSL, or on a slow machine, run `velox-proxy.py` on a modern
 computer on your network (see the comment at its top) and set
-`PROXY=` or `Velox/Proxy` to it. TLS handshakes take about 15 seconds on
-a stock 68020 with AmiSSL; keep-alive connections mean one handshake per
-site instead of one per request.
+`PROXY=` or `Velox/Proxy` to it. On a stock 68020 with AmiSSL a TLS
+handshake takes about 6 seconds (3 when Velox resumes an earlier
+session with the server) and data comes at about 28 KB/s; connections
+kept alive to up to three servers mean one handshake per site rather
+than one per request. AmiSSL's own setup (6.6 s) runs in the
+background as soon as Velox first uses the network.
 
 ## Building
 

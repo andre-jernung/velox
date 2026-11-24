@@ -1,0 +1,14 @@
+#!/bin/sh
+# tlsspeed: the times (PROFILE=1 builds log them in ms: profw = waiting for
+# AmiSSL up, profu = TLS handshake, profv =
+# the whole fetch)
+d=$(dirname "$1")
+for n in 1 2 3 4 5 7; do
+	case $n in 1) w="hello";; 2) w="100 KB over HTTP";; 7) w="100 KB, default";; *) w="100 KB over TLS";; esac
+	printf '%-18s' "$w:"
+	sed -n 's/^cipher /  /p; s/^profw /  waited for TLS setup /p; s/^profu /  handshake /p; s/^profv /  fetch /p' "$d/tlsspeed$n.log" 2>/dev/null | tr '\n' ' '
+	echo
+done
+echo "the page twice, new connections (tls HOST 1: resumed):"
+grep -E '^(tls |cipher |profu )' "$d/tlsspeed6.log" | sed 's/^/  /'
+grep -q done2 "$1"

@@ -1,0 +1,7 @@
+; tlspool: TLS sessions resumed, and connections kept alive to more
+; than one server (test/amiga/tlspool.host)
+Echo >VELOX:r/tlspool.txt "tlspool"
+Echo >VELOX:r/tlspool.start ""
+VELOX:velox https://localhost:8443/hello-close?1 LOG=VELOX:r/tlspool.log
+Echo >>VELOX:r/tlspool.txt "exit rc=$RC"
+Echo >>VELOX:r/tlspool.txt "done"

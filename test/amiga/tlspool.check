@@ -1,0 +1,7 @@
+#!/bin/sh
+# checks for tlspool.script; $1 = result file
+d=$(dirname "$1"); fail=0
+sed 's/^/driver: /' "$d/tlspool.driver"
+grep -q '^ok$' "$d/tlspool.driver" || fail=1
+grep -q '^exit rc=0' "$1" || { echo "velox exit code: $(grep exit "$1")"; fail=1; }
+exit $fail

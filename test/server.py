@@ -34,7 +34,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         p = self.path
-        if p == "/hello":
+        if p.startswith("/hello-close"):
+            # a new connection each time (TLS: a session resumed)
+            self.send(200, b"<title>Hello</title>" + HELLO, "text/html",
+                      headers=[("Connection", "close")])
+        elif p == "/hello":
             self.send(200, HELLO)
         elif p == "/chunked":
             self.send_response(200)
@@ -168,6 +172,9 @@ if __name__ == "__main__":
         # 127.0.0.2, which the certificate does not name
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(sys.argv[4], sys.argv[5])
+        # the client's cipher order, as most servers do (nginx, Apache
+        # defaults; Cloudflare for ChaCha20)
+        ctx.options &= ~ssl.OP_CIPHER_SERVER_PREFERENCE
         for addr in ("127.0.0.1", "127.0.0.2"):
             tls = http.server.ThreadingHTTPServer((addr, int(sys.argv[3])), Handler)
             tls.socket = ctx.wrap_socket(tls.socket, server_side=True)

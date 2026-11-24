@@ -1,0 +1,20 @@
+; tlsspeed (manual): setting AmiSSL up, TLS handshakes and a 100 KB
+; transfer with each TLS 1.3 cipher (SPEED=real PROFILE=1 test/emu.sh
+; --auto tlsspeed)
+Echo >VELOX:r/tlsspeed.txt "tlsspeed"
+VELOX:velox https://127.0.0.1:8443/hello DUMP LOG=VELOX:r/tlsspeed1.log >NIL:
+VELOX:velox http://127.0.0.1:8080/big DUMP LOG=VELOX:r/tlsspeed2.log >NIL:
+SetEnv Velox/TlsCiphers TLS_AES_256_GCM_SHA384
+VELOX:velox https://127.0.0.1:8443/big DUMP LOG=VELOX:r/tlsspeed3.log >NIL:
+SetEnv Velox/TlsCiphers TLS_AES_128_GCM_SHA256
+VELOX:velox https://127.0.0.1:8443/big DUMP LOG=VELOX:r/tlsspeed4.log >NIL:
+SetEnv Velox/TlsCiphers TLS_CHACHA20_POLY1305_SHA256
+VELOX:velox https://127.0.0.1:8443/big DUMP LOG=VELOX:r/tlsspeed5.log >NIL:
+Delete >NIL: ENV:Velox/TlsCiphers
+VELOX:velox https://127.0.0.1:8443/big DUMP LOG=VELOX:r/tlsspeed7.log >NIL:
+Echo >>VELOX:r/tlsspeed.txt "done"
+; a page twice, each on a new connection: the second handshake resumes
+; the session of the first (test/amiga/tlsspeed.host)
+Echo >VELOX:r/tlsspeed.start ""
+VELOX:velox https://localhost:8443/hello-close?1 LOG=VELOX:r/tlsspeed6.log
+Echo >>VELOX:r/tlsspeed.txt "done2"

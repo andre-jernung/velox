@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+"""Host side of tlspool.script."""
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from xdrive import Amiga, wait_log  # noqa: E402
+
+r = sys.argv[1]
+log = os.path.join(r, "tlspool.log")
+out = open(os.path.join(r, "tlspool.driver"), "w")
+S = "https://localhost:8443/"
+H = "http://127.0.0.1:8080/"
+
+
+def step(msg):
+    out.write(msg + "\n")
+    out.flush()
+
+
+def go(a, url):
+    a.key("ctrl+l")
+    a.type(url)
+    a.key("Return")
+
+
+def tls(lines):
+    return [l for l in lines if l.startswith("tls ")]
+
+
+try:
+    a = Amiga()
+    lines = wait_log(log, "page " + S + "hello-close?1", timeout=120)
+    if tls(lines) != ["tls localhost 0"]:
+        raise AssertionError("first handshake: %r" % tls(lines))
+    time.sleep(1)
+    # the server closed it: a new connection, the session resumed
+    go(a, S + "hello-close?2")
+    lines = wait_log(log, "page " + S + "hello-close?2", timeout=120)
+    if tls(lines)[-1] != "tls localhost 1":
+        raise AssertionError("not resumed: %r" % tls(lines))
+    step("a new connection resumes the TLS session")
+    # kept alive: an HTTPS page, a plain one, the HTTPS server again:
+    # its connection is still there (no handshake)
+    go(a, S + "hello")
+    lines = wait_log(log, "go " + S + "hello", timeout=60)
+    time.sleep(4)
+    n = len(tls(open(log).read().split("\n")))
+    go(a, H + "second.html")
+    wait_log(log, "page " + H + "second.html", timeout=60)
+    time.sleep(1)
+    go(a, S + "hello?again")
+    wait_log(log, "go " + S + "hello?again", timeout=60)
+    time.sleep(4)
+    lines = open(log).read().split("\n")
+    if len(tls(lines)) != n:
+        raise AssertionError("a new handshake: %r" % tls(lines))
+    step("connections kept to two servers: no new handshake")
+    a.key("ctrl+q")
+    step("ok")
+except Exception as e:
+    step("FAIL " + repr(e))
+    try:
+        Amiga().key("ctrl+q")
+    except Exception:
+        pass

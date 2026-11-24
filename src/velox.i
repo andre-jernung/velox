@@ -60,10 +60,12 @@ MAX_REDIRECTS	equ	8
 STATUS_MAX	equ	160		; status line / title buffers
 PEN_CACHE	equ	64		; colours with an allocated pen
 HIST_ENTRIES	equ	32
-PROF_SLOTS	equ	20		; profiling: 0-11 images, 12 page shown,
+PROF_SLOTS	equ	23		; profiling: 0-11 images, 12 page shown,
 				; 13 parse, 14 CSS, 15 layout, 16 page file
 				; read, 17 built (to save), 18 selectors
-				; matched, 19 declarations applied
+				; matched, 19 declarations applied, 20 TLS
+				; handshake, 21 a CLI fetch, 22 waiting for
+				; the TLS setup
 KEEP_PAGES	equ	4		; pages kept for Back/Forward
 KEEP_FREE	equ	384*1024	; memory left free when keeping one
 
@@ -145,6 +147,8 @@ c_SSL		rs.l	1		; 0 = plain
 c_File		rs.l	1		; DOS file handle (tests), 0 = none
 c_Pos		rs.l	1		; read position in c_Buf
 c_End		rs.l	1		; end of valid data in c_Buf
+c_Sess		rs.l	1		; TLS: its entry in g_TlsSess (conn.s)
+c_SessGen	rs.l	1		; ... that entry's ts_Gen then
 c_Buf		rs.b	CONN_BUFSIZE
 CONN_SIZEOF	rs.b	0
 
@@ -654,9 +658,6 @@ g_CacheBytes	rs.l	1
 g_CacheMax	rs.l	1
 g_NoCache	rs.l	1		; Reload: fetch everything anew
 ; kept-alive connection
-g_KeepConn	rs.l	1
-g_KeepPort	rs.l	1
-g_KeepTls	rs.l	1
 g_KeepHost	rs.b	HOST_MAX
 ; settings
 g_HomeUrl	rs.b	256		; Velox/Home / HOME tooltype, or empty
@@ -985,6 +986,36 @@ g_ImgKey	rs.b	URL_MAX+80	; its disk cache key
 PF_REGMAX	equ	160		; parts of a page saved (blocks, buffers)
 g_PfReg		rs.l	4*PF_REGMAX	; pagefile.s: start, end, section | offset,
 					; place in the copy
+g_SIZEOF_0	rs.b	0
+TLS_SESS	equ	4		; TLS sessions kept (resumed: conn.s)
+	RSRESET
+ts_Sess		rs.l	1		; SSL_SESSION or 0
+ts_Gen		rs.l	1		; when the entry was made (0: free)
+ts_Port		rs.l	1
+ts_Host		rs.b	HOST_MAX
+TS_SIZEOF	rs.b	0
+	RSSET	g_SIZEOF_0
+g_TlsSess	rs.b	TLS_SESS*TS_SIZEOF
+g_TlsGen	rs.l	1		; the last ts_Gen
+g_SIZEOF_1	rs.b	0
+KEEP_CONNS	equ	3		; connections kept alive (http.s)
+	RSRESET
+kc_Conn		rs.l	1		; the Conn, 0: none
+kc_Port		rs.l	1
+kc_Tls		rs.l	1
+kc_Used		rs.l	1		; when it was last used (g_KeepUse)
+kc_Host		rs.b	HOST_MAX
+KC_SIZEOF	rs.b	0
+	RSSET	g_SIZEOF_1
+g_Keep		rs.b	KEEP_CONNS*KC_SIZEOF
+g_KeepUse	rs.l	1
+g_TlsPort	rs.l	1		; ConnOpen: the port (TlsHandshake)
+g_TlsSig	rs.l	1		; TLS setup process: its signal,
+g_TlsSigBit	rs.l	1		; ... (bit, -1: none)
+g_TlsMain	rs.l	1		; ... to this task,
+g_TlsOk		rs.l	1		; ... its result,
+g_TlsErrno	rs.l	1		; ... its errno
+g_TlsVar	rs.b	128		; ... Velox/TlsCiphers
 g_SIZEOF	rs.b	0
 
 ;--------------------------------------------------------------------

@@ -112,39 +112,23 @@ Exchange:
 	lea	g_Parts+up_Host(a4),a0
 	move.l	g_Parts+up_Port(a4),d5
 	move.l	g_Parts+up_Scheme(a4),d6
-.tgt:	; the kept connection, if it goes there
-	moveq	#0,d3			; reused?
-	move.l	g_KeepConn(a4),d0
-	beq.s	.new
-	clr.l	g_KeepConn(a4)
-	move.l	d0,a2
-	tst.l	d4
-	bne.s	.drop
-	cmp.l	g_KeepPort(a4),d5
-	bne.s	.drop
-	cmp.l	g_KeepTls(a4),d6
-	bne.s	.drop
-	move.l	a0,-(sp)
-	lea	g_KeepHost(a4),a1
-.hc:	move.b	(a0)+,d0
-	cmp.b	(a1)+,d0
-	bne.s	.hne
-	tst.b	d0
-	bne.s	.hc
-	move.l	(sp)+,a0
-	moveq	#1,d3
-	bra.s	.send
-.hne:	move.l	(sp)+,a0
-.drop:	move.l	a0,-(sp)		; another server: close it
-	move.l	a2,a0
-	jsr	ConnClose
-	move.l	(sp)+,a0
-.new:	move.l	a0,-(sp)		; remember the target for keeping
+.tgt:	move.l	a0,-(sp)		; the target (to keep the connection)
 	lea	g_KeepHost(a4),a1
 	move.l	#HOST_MAX-1,d0
 	jsr	StrCopyN
 	move.l	(sp)+,a0
-	move.l	d5,d0
+	moveq	#0,d3			; reused?
+	tst.l	d4			; (a retry: a new one)
+	bne.s	.new
+	move.l	a0,-(sp)		; a kept connection to it?
+	bsr	KeepTake
+	move.l	(sp)+,a0
+	tst.l	d0
+	beq.s	.new
+	move.l	d0,a2
+	moveq	#1,d3
+	bra.s	.send
+.new:	move.l	d5,d0
 	move.l	d6,d1
 	jsr	ConnOpen
 	beq	.fail
@@ -162,9 +146,8 @@ Exchange:
 	beq.s	.retry
 	tst.l	g_Resp+r_Reuse(a4)	; keep it for the next request?
 	beq.s	.close
-	move.l	a2,g_KeepConn(a4)
-	move.l	d5,g_KeepPort(a4)
-	move.l	d6,g_KeepTls(a4)
+	move.l	a2,a0
+	bsr	KeepPut
 	bra.s	.ok
 .close:	move.l	a2,a0
 	jsr	ConnClose
@@ -238,16 +221,93 @@ RqIfMod:	dc.b	13,10,"If-Modified-Since: ",0
 	even
 
 ;--------------------------------------------------------------------
-; HttpCloseKept - close the kept-alive connection (before the socket
+; Connections kept alive: up to KEEP_CONNS, one a server (host, port,
+; TLS or not), so that a page and its images or style sheets from
+; another server (a CDN) do not cost a new connection (over TLS, a
+; handshake of seconds on a 68020) each time Velox goes back and forth
+;--------------------------------------------------------------------
+
+; KeepTake - the connection kept to g_KeepHost, port d5, TLS d6: out
+; of the pool
+; Out: d0 = it or 0 (CCR set)
+KeepTake:
+	movem.l	d2/a2,-(sp)
+	lea	g_Keep(a4),a2
+	moveq	#KEEP_CONNS-1,d2
+.l:	tst.l	kc_Conn(a2)
+	beq.s	.n
+	cmp.l	kc_Port(a2),d5
+	bne.s	.n
+	cmp.l	kc_Tls(a2),d6
+	bne.s	.n
+	lea	kc_Host(a2),a0
+	lea	g_KeepHost(a4),a1
+.c:	move.b	(a0)+,d0
+	cmp.b	(a1)+,d0
+	bne.s	.n
+	tst.b	d0
+	bne.s	.c
+	move.l	kc_Conn(a2),d0
+	clr.l	kc_Conn(a2)
+	bra.s	.x
+.n:	lea	KC_SIZEOF(a2),a2
+	dbf	d2,.l
+	moveq	#0,d0
+.x:	movem.l	(sp)+,d2/a2
+	tst.l	d0
+	rts
+
+; KeepPut - keep connection a0 (to g_KeepHost, port d5, TLS d6); the
+; one used longest ago goes if the pool is full
+KeepPut:
+	movem.l	d2-d3/a2-a3,-(sp)
+	move.l	a0,a3
+	lea	g_Keep(a4),a2		; a free entry, or the oldest
+	move.l	a2,a1
+	moveq	#-1,d3
+	moveq	#KEEP_CONNS-1,d2
+.l:	tst.l	kc_Conn(a2)
+	beq.s	.free
+	move.l	kc_Used(a2),d0
+	cmp.l	d3,d0
+	bhs.s	.n
+	move.l	d0,d3
+	move.l	a2,a1
+.n:	lea	KC_SIZEOF(a2),a2
+	dbf	d2,.l
+	move.l	a1,a2			; the oldest: closed
+	move.l	kc_Conn(a2),a0
+	clr.l	kc_Conn(a2)
+	jsr	ConnClose
+.free:	move.l	a3,kc_Conn(a2)
+	move.l	d5,kc_Port(a2)
+	move.l	d6,kc_Tls(a2)
+	addq.l	#1,g_KeepUse(a4)
+	move.l	g_KeepUse(a4),kc_Used(a2)
+	lea	g_KeepHost(a4),a0
+	lea	kc_Host(a2),a1
+	move.l	#HOST_MAX-1,d0
+	jsr	StrCopyN
+	movem.l	(sp)+,d2-d3/a2-a3
+	rts
+
+;--------------------------------------------------------------------
+; HttpCloseKept - close the kept-alive connections (before the socket
 ; library goes)
 ;--------------------------------------------------------------------
 HttpCloseKept:
-	move.l	g_KeepConn(a4),d0
-	beq.s	.x
-	clr.l	g_KeepConn(a4)
+	movem.l	d2/a2,-(sp)
+	lea	g_Keep(a4),a2
+	moveq	#KEEP_CONNS-1,d2
+.l:	move.l	kc_Conn(a2),d0
+	beq.s	.n
+	clr.l	kc_Conn(a2)
 	move.l	d0,a0
-	jmp	ConnClose
-.x:	rts
+	jsr	ConnClose
+.n:	lea	KC_SIZEOF(a2),a2
+	dbf	d2,.l
+	movem.l	(sp)+,d2/a2
+	rts
 
 ;--------------------------------------------------------------------
 ; BuildRequest - build the GET request for g_Parts in g_ReqBuf

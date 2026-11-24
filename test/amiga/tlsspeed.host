@@ -1,0 +1,28 @@
+#!/usr/bin/env python3
+"""Host side of tlsspeed.script: the same page twice, each on a new TLS
+connection; the second resumes the first's session."""
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from xdrive import Amiga, wait_log  # noqa: E402
+
+r = sys.argv[1]
+log = os.path.join(r, "tlsspeed6.log")
+try:
+    a = Amiga()
+    wait_log(log, "page https://localhost:8443/hello-close?1", timeout=600)
+    time.sleep(2)
+    a.key("ctrl+l")
+    a.type("https://localhost:8443/hello-close?2")
+    a.key("Return")
+    wait_log(log, "page https://localhost:8443/hello-close?2", timeout=600)
+    time.sleep(2)
+    a.key("ctrl+q")
+except Exception as e:
+    open(os.path.join(r, "tlsspeed.driver"), "w").write("FAIL %r\n" % e)
+    try:
+        Amiga().key("ctrl+q")
+    except Exception:
+        pass

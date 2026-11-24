@@ -7,6 +7,9 @@
 	include	"lvo/icon_lib.i"
 
 	xdef	G
+	IFD	PROFILE
+	xref	ProfRead,ProfLog
+	ENDC
 	xref	MemInit,MemExit,NetExit,HttpGet,UrlFixup
 	xref	PutStr,PutBuf,PutNum,PutNL,FlushOut,ErrorText
 	xref	GuiOpen,GuiClose,GuiEventLoop,NavGo,NavExit,StrIPrefix,ParseDec
@@ -136,16 +139,12 @@ Main:
 	bne.s	.cli
 	tst.l	g_ArgArray+ARG_INFO(a4)
 	beq.s	.gui
-.cli:	bsr	CliFetch
+.cli:	bsr	OpenLog
+	bsr	CliFetch
 	move.l	d0,d2
-	bra.s	.cleanup
-.gui:
-	move.l	g_ArgArray+ARG_LOG(a4),d1	; event log for tests
-	beq.s	.nolog
-	move.l	#MODE_NEWFILE,d2
-	DOS	Open
-	move.l	d0,g_LogFH(a4)
-.nolog:	moveq	#RC_FAIL,d2
+	bra	.cleanup
+.gui:	bsr	OpenLog			; (also LOG= from the tool types)
+	moveq	#RC_FAIL,d2
 	jsr	TaskInit
 	beq.s	.closegui
 	jsr	GuiOpen
@@ -199,6 +198,19 @@ ArgTemplate:	dc.b	"URL,DUMP/S,INFO/S,LOG/K,PROXY/K",0
 ProgName:	dc.b	"velox",0
 StartUrl:	dc.b	"about:velox",0
 	even
+
+;--------------------------------------------------------------------
+; OpenLog - the event log of LOG= (tests), if given
+;--------------------------------------------------------------------
+OpenLog:
+	move.l	d2,-(sp)
+	move.l	g_ArgArray+ARG_LOG(a4),d1
+	beq.s	.x
+	move.l	#MODE_NEWFILE,d2
+	DOS	Open
+	move.l	d0,g_LogFH(a4)
+.x:	move.l	(sp)+,d2
+	rts
 
 ;--------------------------------------------------------------------
 ; LoadSettings - read ENV:Velox/... variables
@@ -505,7 +517,15 @@ CliFetch:
 	jsr	UrlFixup
 	move.l	#SIGBREAKF_CTRL_C,g_AbortMask(a4)
 	lea	g_UrlTmp2(a4),a0
+	PROFB	21
 	jsr	HttpGet
+	PROFE	21
+	IFD	PROFILE
+	move.l	d0,-(sp)
+	jsr	ProfLog			; (tlsspeed test)
+	move.l	(sp)+,d0
+	ENDC
+	tst.l	d0
 	bne.s	.ok
 	lea	ProgNameColon(pc),a0
 	jsr	PutStr

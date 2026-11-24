@@ -8,10 +8,14 @@
 ;
 
 	include	"velox.i"
+	include	"dos/dostags.i"
 
 	xdef	NetExit,ConnOpen,ConnOpenFile,ConnClose,TlsExit
 	xdef	ConnWrite,ConnRead,ConnGetByte,ConnReadLine
-	xref	Alloc,Free,HttpCloseKept
+	IFD	PROFILE
+	xref	ProfRead
+	ENDC
+	xref	Alloc,Free,HttpCloseKept,LogEvent,G,TaskWaitSig
 
 AmiSSL_SocketBase	equ	TAG_USER+$01
 AmiSSL_ErrNoPtr		equ	TAG_USER+$0b
@@ -58,6 +62,15 @@ TlsTagSock:	dc.l	AmiSSL_SocketBase,0
 TlsTagErrno:	dc.l	AmiSSL_ErrNoPtr,0
 TlsTagExt:	dc.l	AmiSSL_GetAmiSSLExtBase,0
 	dc.l	TAG_DONE
+TlsChildInit:	dc.l	AmiSSL_ErrNoPtr,0
+	dc.l	TAG_DONE
+TlsChildTags:	dc.l	NP_Entry,TlsChild
+	dc.l	NP_Name,TlsChildName
+	dc.l	NP_StackSize,65536
+	dc.l	NP_Priority,-1
+	dc.l	TAG_DONE
+TlsChildName:	dc.b	"Velox TLS setup",0
+	even
 	section	code,code
 
 ;--------------------------------------------------------------------
@@ -82,12 +95,19 @@ ConnOpen:
 	movem.l	d2-d3/a2-a3,-(sp)
 	move.l	a0,a2
 	move.l	d0,d2
+	moveq	#0,d3			; (the port: TLS sessions are per host
+	move.w	d0,d3			;  and port)
+	move.l	d3,g_TlsPort(a4)
 	move.l	d1,-(sp)		; TLS wanted?
 	bsr	NetOpen
 	beq	.fail1
 	tst.l	(sp)
-	beq.s	.plain
-	bsr	TlsInit			; AmiSSL needs the socket library
+	bne.s	.tls
+	tst.l	g_Window(a4)		; (the window: TLS ready by the time
+	beq.s	.plain			;  it is used; not for a CLI fetch)
+	bsr	TlsPrepare
+	bra.s	.plain
+.tls:	bsr	TlsInit			; AmiSSL needs the socket library
 	beq	.fail1
 .plain:
 
@@ -190,14 +210,16 @@ ConnOpen:
 	bra.s	.x
 
 ;--------------------------------------------------------------------
-; TlsInit - open AmiSSL and create the SSL context (once)
-; Out: d0 = 0 if TLS is not available (g_Error set)
+; TlsPrepare - (the network is used) open AmiSSL and have the SSL
+; context made by a process of its own below the window's priority
+; (TlsChild): SSL_CTX_new takes 6.6 s on a stock A1200, and nothing
+; waits for it unless a TLS connection needs it first (TlsInit)
+; g_SslState: 0 not yet, 2 being made, 1 ready, -1 no AmiSSL
 ;--------------------------------------------------------------------
-TlsInit:
-	move.l	g_SslState(a4),d0
-	bgt.s	.ok
-	bmi	.none
-	movem.l	d2-d3/a2,-(sp)
+TlsPrepare:
+	tst.l	g_SslState(a4)
+	bne	.x			; (done or under way)
+	movem.l	d2/a2,-(sp)
 	moveq	#-1,d0			; until proven otherwise
 	move.l	d0,g_SslState(a4)
 	lea	MasterName(pc),a1
@@ -220,11 +242,124 @@ TlsInit:
 	bne.s	.fail
 	tst.l	g_AmiSSLBase(a4)
 	beq.s	.fail
+	moveq	#2,d0			; the context: being made
+	move.l	d0,g_SslState(a4)
+	moveq	#-1,d0
+	EXEC	AllocSignal
+	move.l	d0,g_TlsSigBit(a4)
+	bmi.s	.here
+	moveq	#0,d1
+	bset	d0,d1
+	move.l	d1,g_TlsSig(a4)
+	suba.l	a1,a1
+	EXEC	FindTask
+	move.l	d0,g_TlsMain(a4)
+	move.l	#TlsChildTags,d1
+	DOS	CreateNewProc
+	tst.l	d0
+	bne.s	.xx
+	move.l	g_TlsSigBit(a4),d0	; no process: made here
+	EXEC	FreeSignal
+.here:	moveq	#-1,d0
+	move.l	d0,g_TlsSigBit(a4)
+	bsr	TlsCtx
+	bsr	TlsMade
+	bra.s	.xx
+.fail:	bsr	TlsExit
+	moveq	#-1,d0
+	move.l	d0,g_SslState(a4)
+.xx:	movem.l	(sp)+,d2/a2
+.x:	rts
+
+; TlsChild - the process that makes the context (shares Velox's AmiSSL)
+TlsChild:
+	lea	G,a4
+	clr.l	g_TlsOk(a4)
+	lea	TlsChildInit,a0		; (its own errno)
+	lea	g_TlsErrno(a4),a1
+	move.l	a1,4(a0)
+	move.l	g_AmiSSLBase(a4),a6
+	jsr	_LVOInitAmiSSLA(a6)
+	tst.l	d0
+	bne.s	.done
+	bsr	TlsCtx
+	move.l	d0,g_TlsOk(a4)
+	suba.l	a0,a0
+	move.l	g_AmiSSLBase(a4),a6
+	jsr	_LVOCleanupAmiSSLA(a6)
+.done:	EXEC	Forbid			; (gone before Velox goes on)
+	move.l	g_TlsMain(a4),a1
+	move.l	g_TlsSig(a4),d0
+	EXEC	Signal
+	moveq	#0,d0
+	rts
+
+; TlsMade - the context was made (g_TlsOk / g_SslCtx): ready, or no
+; AmiSSL after all
+TlsMade:
+	tst.l	g_SslCtx(a4)
+	beq.s	.no
+	moveq	#1,d0
+	move.l	d0,g_SslState(a4)
+	rts
+.no:	bsr	TlsExit
+	moveq	#-1,d0
+	move.l	d0,g_SslState(a4)
+	rts
+
+; TlsChildDone - the child signalled: its signal freed, the result
+TlsChildDone:
+	move.l	g_TlsSigBit(a4),d0
+	bmi.s	.n
+	EXEC	FreeSignal
+	moveq	#-1,d0
+	move.l	d0,g_TlsSigBit(a4)
+.n:	bra.s	TlsMade
+
+;--------------------------------------------------------------------
+; TlsInit - AmiSSL and the SSL context, for a TLS connection: made now
+; if not yet (TlsPrepare), waited for if being made (in the loader the
+; window is served meanwhile)
+; Out: d0 = 0 if there is no AmiSSL or it was stopped (g_Error)
+;--------------------------------------------------------------------
+TlsInit:
+	bsr	TlsPrepare
+	move.l	g_SslState(a4),d0
+	cmp.l	#2,d0
+	bne.s	.st
+	PROFB	22
+	move.l	g_TlsSig(a4),d0
+	tst.l	g_TkIn(a4)
+	beq.s	.own
+	jsr	TaskWaitSig
+	tst.l	d0
+	bne.s	.got
+	PROFE	22
+	moveq	#0,d0			; (stopped: g_Error is set)
+	rts
+.own:	EXEC	Wait
+.got:	bsr	TlsChildDone
+	PROFE	22
+	move.l	g_SslState(a4),d0
+.st:	tst.l	d0
+	bgt.s	.ok
+	SETERR	ERR_NOAMISSL
+	moveq	#0,d0
+	rts
+.ok:	moveq	#1,d0
+	rts
+
+;--------------------------------------------------------------------
+; TlsCtx - make the SSL context (g_SslCtx; 0 if it cannot be)
+; Out: d0 = 1 if made (CCR set)
+;--------------------------------------------------------------------
+TlsCtx:
+	movem.l	d2-d4,-(sp)
 	SSL	TLS_client_method
 	move.l	d0,a0
 	SSL	SSL_CTX_new
 	move.l	d0,g_SslCtx(a4)
-	beq.s	.fail
+	beq	.x
 	move.l	d0,a0
 	SSL	SSL_CTX_set_default_verify_paths
 	move.l	g_SslCtx(a4),a0		; verify the server's certificate
@@ -239,22 +374,49 @@ TlsInit:
 	moveq	#0,d1			; far too long on a 68020
 	lea	TlsGroups(pc),a1	; (SSL_CTRL_SET_GROUPS_LIST)
 	SSL	SSL_CTX_ctrl
-	moveq	#1,d0
-	move.l	d0,g_SslState(a4)
-	movem.l	(sp)+,d2-d3/a2
+	; the ciphers fastest on a 68k first: ChaCha20-Poly1305 (twice as
+	; fast as AES-GCM without AES instructions), then AES-128 (fewer
+	; rounds, SHA-256 instead of SHA-384)
+	move.l	g_SslCtx(a4),a0
+	lea	TlsSuites(pc),a1
+	SSL	SSL_CTX_set_ciphersuites
+	move.l	g_SslCtx(a4),a0
+	lea	TlsCiphers(pc),a1
+	SSL	SSL_CTX_set_cipher_list
+	move.l	g_SslCtx(a4),a0		; RSA signatures first: far cheaper
+	moveq	#98,d0			; to verify than ECDSA (a server with
+	moveq	#0,d1			; both kinds of certificate uses RSA)
+	lea	TlsSigalgs(pc),a1	; (SSL_CTRL_SET_SIGALGS_LIST)
+	SSL	SSL_CTX_ctrl
+	lea	VarCiphers(pc),a0	; Velox/TlsCiphers: TLS 1.3 suites
+	move.l	a0,d1			; (tests, or a server that wants
+	lea	g_TlsVar(a4),a0		;  others)
+	move.l	a0,d2
+	moveq	#127,d3
+	moveq	#0,d4
+	DOS	GetVar
+	tst.l	d0
+	ble.s	.ok
+	move.l	g_SslCtx(a4),a0
+	lea	g_TlsVar(a4),a1
+	SSL	SSL_CTX_set_ciphersuites
 .ok:	moveq	#1,d0
-	rts
-.fail:	movem.l	(sp)+,d2-d3/a2
-	bsr	TlsExit
-	moveq	#-1,d0
-	move.l	d0,g_SslState(a4)
-.none:	SETERR	ERR_NOAMISSL
-	moveq	#0,d0
+.x:	movem.l	(sp)+,d2-d4
 	rts
 
 AMISSL_API	equ	47		; AMISSL_V41x: AmiSSL 6
 MasterName:	dc.b	"amisslmaster.library",0
 TlsGroups:	dc.b	"X25519:P-256",0
+VarCiphers:	dc.b	"Velox/TlsCiphers",0
+TlsSuites:	dc.b	"TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:"
+		dc.b	"TLS_AES_256_GCM_SHA384",0
+TlsCiphers:	dc.b	"ECDHE+CHACHA20:ECDHE+AESGCM+AES128:ECDHE+AES128:"
+		dc.b	"DEFAULT",0
+TlsSigalgs:	dc.b	"rsa_pss_rsae_sha256:rsa_pkcs1_sha256:"
+		dc.b	"rsa_pss_rsae_sha384:rsa_pkcs1_sha384:"
+		dc.b	"rsa_pss_rsae_sha512:rsa_pkcs1_sha512:ed25519:"
+		dc.b	"ecdsa_secp256r1_sha256:ecdsa_secp384r1_sha384:"
+		dc.b	"ecdsa_secp521r1_sha512:rsa_pkcs1_sha1:ecdsa_sha1",0
 DbgW:		dc.b	"SSL_write error ",0
 	even
 
@@ -262,8 +424,34 @@ DbgW:		dc.b	"SSL_write error ",0
 ; TlsExit - free the context and close AmiSSL
 ;--------------------------------------------------------------------
 TlsExit:
-	move.l	g_SslCtx(a4),d0
+	cmp.l	#2,g_SslState(a4)	; the context still being made: wait
+	bne.s	.nc
+	move.l	g_TlsSigBit(a4),d0
+	bmi.s	.nc
+	move.l	g_TlsSig(a4),d0
+	EXEC	Wait
+	move.l	g_TlsSigBit(a4),d0
+	EXEC	FreeSignal
+	moveq	#-1,d0
+	move.l	d0,g_TlsSigBit(a4)
+	clr.l	g_SslState(a4)
+.nc:	move.l	g_SslCtx(a4),d0
 	beq.s	.noctx
+	move.l	d2,-(sp)		; the sessions kept
+	moveq	#TLS_SESS-1,d2
+.s:	move.l	d2,d0
+	mulu.w	#TS_SIZEOF,d0
+	lea	g_TlsSess(a4),a0
+	add.l	d0,a0
+	clr.l	ts_Gen(a0)
+	move.l	ts_Sess(a0),d0
+	beq.s	.sn
+	clr.l	ts_Sess(a0)
+	move.l	d0,a0
+	SSL	SSL_SESSION_free
+.sn:	dbf	d2,.s
+	move.l	(sp)+,d2
+	move.l	g_SslCtx(a4),d0
 	clr.l	g_SslCtx(a4)
 	move.l	d0,a0
 	SSL	SSL_CTX_free
@@ -289,6 +477,7 @@ TlsExit:
 ;--------------------------------------------------------------------
 TlsHandshake:
 	movem.l	d2/a2,-(sp)
+	PROFB	20
 	move.l	a0,a2
 	move.l	g_SslCtx(a4),a0
 	SSL	SSL_new
@@ -310,8 +499,21 @@ TlsHandshake:
 	bne.s	.ip
 	moveq	#0,d0			; length 0: NUL terminated
 	SSL	X509_VERIFY_PARAM_set1_host
-	bra.s	.conn
+	bra.s	.conn0
 .ip:	SSL	X509_VERIFY_PARAM_set1_ip_asc
+.conn0:	bsr	TlsSessFor		; a session of this host and port:
+	move.l	d0,c_Sess(a2)		; resumed (no certificate to check)
+	beq.s	.conn
+	move.l	d0,a0
+	move.l	ts_Gen(a0),c_SessGen(a2)
+	move.l	ts_Sess(a0),d0
+	beq.s	.conn
+	move.l	d0,a1
+	move.l	c_SSL(a2),a0
+	SSL	SSL_set_session
+	lea	LogSessUse(pc),a0	; (for tests)
+	move.l	g_TlsHost(a4),a1
+	jsr	LogEvent
 .conn:
 	move.l	c_SSL(a2),a0
 	SSL	SSL_connect
@@ -329,8 +531,120 @@ TlsHandshake:
 .fail:	SETERR	ERR_TLS
 .x0:	moveq	#0,d0
 	bra.s	.x
-.ok:	moveq	#1,d0
-.x:	movem.l	(sp)+,d2/a2
+.ok:	move.l	c_SSL(a2),a0		; (for tests: "tls host 1" when the
+	SSL	SSL_session_reused	;  session was resumed)
+	lea	LogTls(pc),a0
+	move.l	g_TlsHost(a4),a1
+	jsr	LogEvent
+	move.l	c_SSL(a2),a0		; (and the cipher)
+	SSL	SSL_get_current_cipher
+	move.l	d0,a0
+	SSL	SSL_CIPHER_get_name
+	move.l	d0,a1
+	lea	LogCipher(pc),a0
+	move.l	#$80000000,d0
+	jsr	LogEvent
+	moveq	#1,d0
+.x:	PROFE	20
+	movem.l	(sp)+,d2/a2
+	tst.l	d0
+	rts
+
+LogTls:	dc.b	"tls",0
+LogCipher:	dc.b	"cipher",0
+LogSessKept:	dc.b	"tlssession",0
+LogSessUse:	dc.b	"tlsresume",0
+	even
+
+;--------------------------------------------------------------------
+; TlsSessFor - the g_TlsSess entry of g_TlsHost, port g_TlsPort; made
+; (instead of the oldest) if there is none
+; Out: d0 = it
+;--------------------------------------------------------------------
+TlsSessFor:
+	movem.l	d2-d3/a2-a3,-(sp)
+	lea	g_TlsSess(a4),a2
+	suba.l	a3,a3			; a3 = the oldest
+	moveq	#-1,d3			; (its ts_Gen)
+	moveq	#TLS_SESS-1,d2
+.l:	move.l	ts_Gen(a2),d0
+	beq.s	.old			; (free: the oldest of all)
+	move.l	ts_Port(a2),d0
+	cmp.l	g_TlsPort(a4),d0
+	bne.s	.n
+	lea	ts_Host(a2),a0
+	move.l	g_TlsHost(a4),a1
+.c:	move.b	(a0)+,d0
+	cmp.b	(a1)+,d0
+	bne.s	.n
+	tst.b	d0
+	bne.s	.c
+	move.l	a2,d0			; found
+	bra.s	.x
+.n:	move.l	ts_Gen(a2),d0
+.old:	cmp.l	d3,d0
+	bhs.s	.nx
+	move.l	d0,d3
+	move.l	a2,a3
+.nx:	lea	TS_SIZEOF(a2),a2
+	dbf	d2,.l
+	move.l	ts_Sess(a3),d0		; the oldest becomes this host's
+	beq.s	.ns
+	clr.l	ts_Sess(a3)
+	move.l	d0,a0
+	SSL	SSL_SESSION_free
+.ns:	addq.l	#1,g_TlsGen(a4)
+	move.l	g_TlsGen(a4),ts_Gen(a3)
+	move.l	g_TlsPort(a4),ts_Port(a3)
+	move.l	g_TlsHost(a4),a0
+	lea	ts_Host(a3),a1
+	move.l	#HOST_MAX-2,d0
+.cp:	move.b	(a0)+,(a1)+
+	dbeq	d0,.cp
+	clr.b	(a1)
+	move.l	a3,d0
+.x:	movem.l	(sp)+,d2-d3/a2-a3
+	rts
+
+;--------------------------------------------------------------------
+; TlsKeepSession - (ConnClose) keep the session of TLS connection a2
+; for its host, if it can be resumed
+;--------------------------------------------------------------------
+TlsKeepSession:
+	movem.l	d2/a3,-(sp)
+	move.l	c_Sess(a2),d0
+	beq.s	.x
+	move.l	d0,a3
+	move.l	ts_Gen(a3),d0		; (the entry still this host's?)
+	cmp.l	c_SessGen(a2),d0
+	bne.s	.x
+	move.l	c_SSL(a2),a0
+	SSL	SSL_get1_session
+	move.l	d0,d2
+	beq.s	.x
+	move.l	d2,a0			; a copy: the connection's own is
+	SSL	SSL_SESSION_dup		; marked not resumable when the
+	move.l	d0,-(sp)		; server closes without close_notify
+	move.l	d2,a0			; (as many do)
+	SSL	SSL_SESSION_free
+	move.l	(sp)+,d2
+	beq	.x
+	move.l	d2,a0
+	SSL	SSL_SESSION_is_resumable
+	move.l	d0,-(sp)		; (for tests)
+	lea	LogSessKept(pc),a0
+	lea	ts_Host(a3),a1
+	jsr	LogEvent
+	move.l	(sp)+,d0
+	tst.l	d0
+	beq.s	.no
+	move.l	ts_Sess(a3),d0		; the newest replaces it
+	move.l	d2,ts_Sess(a3)
+	move.l	d0,d2
+	beq.s	.x
+.no:	move.l	d2,a0
+	SSL	SSL_SESSION_free
+.x:	movem.l	(sp)+,d2/a3
 	rts
 
 ;--------------------------------------------------------------------
@@ -464,7 +778,8 @@ ConnClose:
 	move.l	a0,a2
 	move.l	c_SSL(a2),d0
 	beq.s	.nossl
-	move.l	d0,a0
+	bsr	TlsKeepSession		; (resumed next time)
+	move.l	c_SSL(a2),a0
 	SSL	SSL_free
 .nossl:	move.l	c_Sock(a2),d0
 	bmi.s	.nosock
@@ -634,7 +949,15 @@ ConnFill:
 	move.l	#CONN_BUFSIZE,d0
 	SSL	SSL_read
 	tst.l	d0
-	bgt.s	.got
+	ble.s	.tno
+	tst.l	c_Sess(a2)		; the first data: the session tickets
+	beq.s	.got			; came before it; keep the session now
+	move.l	d0,-(sp)		; (closed without close_notify, as many
+	bsr	TlsKeepSession		;  servers do, it cannot be resumed)
+	clr.l	c_Sess(a2)
+	move.l	(sp)+,d0
+	bra.s	.got
+.tno:
 	move.l	d0,-(sp)		; why not?  closed = end of stream
 	move.l	c_SSL(a2),a0
 	SSL	SSL_get_error
