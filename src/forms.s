@@ -14,7 +14,7 @@
 	xdef	KeyToChars
 	xref	PageAlloc,DomGetAttr,StrIPrefix,ParseDec,Measure
 	xref	BufAppendByte,BufAppendStr,BufClear,UrlResolve
-	xref	NavGo,NavPost,GuiPaintAll,GuiStatus
+	xref	NavGo,NavPost,GuiPaintAll,GuiStatus,GuiPaintNode
 
 DEFAULT_MAX	equ	1024		; text input capacity without maxlength
 FIELD_MAX	equ	4096
@@ -493,11 +493,18 @@ FormActivate:
 	cmp.b	#FK_SELECT,d0
 	beq.s	.select
 	bra.s	.x
-.edit:	move.l	a5,g_EditField(a4)
+.edit:	move.l	g_EditField(a4),d0	; (another field: it shows no
+	move.l	a5,g_EditField(a4)	;  cursor any more)
 	move.l	fs_Len(a3),fs_Cursor(a3)
-	bra.s	.paint
+	tst.l	d0
+	beq.s	.node
+	cmp.l	a5,d0
+	beq.s	.node
+	move.l	d0,a0
+	jsr	GuiPaintNode
+	bra.s	.node
 .check:	not.b	fs_Checked(a3)
-	bra.s	.paint
+	bra.s	.node
 .radio:	move.l	a5,a0			; uncheck the group, check this one
 	bsr	UncheckGroup
 	st	fs_Checked(a3)
@@ -530,6 +537,9 @@ FormActivate:
 	moveq	#0,d1			; after the last: wrap around
 .s2:	move.w	d1,fs_Sel(a3)
 	bsr	SelectLabel
+.node:	move.l	a5,a0			; this control only
+	jsr	GuiPaintNode
+	bra.s	.x
 .paint:	jsr	GuiPaintAll
 .x:	movem.l	(sp)+,d2/a2-a3/a5
 	rts
@@ -627,10 +637,11 @@ ForControls:
 ; FormLeave - stop editing the field
 ;--------------------------------------------------------------------
 FormLeave:
-	tst.l	g_EditField(a4)
+	move.l	g_EditField(a4),d0
 	beq.s	.x
 	clr.l	g_EditField(a4)
-	jmp	GuiPaintAll
+	move.l	d0,a0
+	jmp	GuiPaintNode
 .x:	rts
 
 ;--------------------------------------------------------------------
@@ -656,7 +667,7 @@ FormEditKey:
 	bra	.yes
 .n1:	cmp.w	#$42,d2			; Tab: leave, let the caller move on
 	bne.s	.n2
-	clr.l	g_EditField(a4)
+	bsr	FormLeave
 	bra	.no
 .n2:	cmp.w	#$44,d2			; Return / Enter
 	beq.s	.ret
@@ -731,7 +742,8 @@ FormEditKey:
 .chn:	subq.l	#1,d4
 	bne.s	.ch
 .changed:
-	jsr	GuiPaintAll
+	move.l	a5,a0			; just the field: typing is instant
+	jsr	GuiPaintNode
 .yes:	moveq	#1,d0
 	bra.s	.x
 .no:	moveq	#0,d0

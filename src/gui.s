@@ -15,7 +15,7 @@
 	include	"lvo/diskfont_lib.i"
 	include	"lvo/asl_lib.i"
 
-	xdef	GuiOpen,GuiClose,GuiEventLoop,GuiPaintAll,GuiStatus
+	xdef	GuiOpen,GuiClose,GuiEventLoop,GuiPaintAll,GuiStatus,GuiPaintNode
 	xdef	GuiSetUrl,GuiSetTitle,GuiScrollTo,GuiNetHook,GuiBusy
 	xdef	BusyEvents,GuiRelayout,GuiRefresh,GuiPageWidth,GuiAbout,DrawStatus,ImgNetHook,GuiProgress
 	xref	FindStart,FindKey,FindHighlight,KeyToChars,NavRefresh
@@ -1162,6 +1162,45 @@ PaintRange:
 	move.l	a5,a0
 	GFX	DisposeRegion
 .x:	movem.l	(sp)+,d2-d7/a2-a3/a5
+	rts
+
+; GuiPaintNode - repaint only the lines of element a0's runs (a link or
+; a form control whose state changed: typing, focus, a click), not the
+; whole view
+GuiPaintNode:
+	movem.l	d2-d5/a2,-(sp)
+	move.l	a0,a2
+	move.l	#$7fffffff,d4		; d4/d5 = top/bottom of its runs
+	moveq	#-1,d5
+	jsr	RunCount
+	move.l	d0,d3
+	moveq	#0,d2
+.l:	cmp.l	d3,d2
+	bhs.s	.done
+	move.l	d2,d0
+	jsr	RunPtr
+	addq.l	#1,d2
+	cmp.l	ru_Link(a0),a2
+	bne.s	.l
+	move.l	ru_Y(a0),d0
+	cmp.l	d4,d0
+	bge.s	.t
+	move.l	d0,d4
+.t:	moveq	#0,d1
+	move.w	ru_H(a0),d1
+	add.l	d1,d0
+	cmp.l	d5,d0
+	ble.s	.l
+	move.l	d0,d5
+	bra.s	.l
+.done:	cmp.l	d4,d5
+	ble.s	.x
+	move.l	d4,d0			; (2 lines more: the focus outline)
+	subq.l	#2,d0
+	move.l	d5,d1
+	addq.l	#2,d1
+	bsr	PaintRange
+.x:	movem.l	(sp)+,d2-d5/a2
 	rts
 
 ; CollectRuns - note the runs over document lines [d6, d7) in g_Vis
@@ -2606,6 +2645,7 @@ FocusNext:
 	cmp.l	g_FocusLink(a4),d0
 	beq.s	.l
 	move.l	a0,a2
+	move.l	g_FocusLink(a4),-(sp)	; (the old one: repainted too)
 	move.l	d0,g_FocusLink(a4)
 	move.l	d4,g_FocusIdx(a4)
 	; scroll it into view
@@ -2623,9 +2663,16 @@ FocusNext:
 	move.l	g_PageH(a4),d1
 	lsr.l	#2,d1
 	sub.l	d1,d0
+	addq.l	#4,sp
 	bsr	GuiScrollTo
-.paint:	bsr	GuiPaintAll
-	move.l	g_FocusLink(a4),a0
+	bra.s	.pd
+.paint:	move.l	(sp)+,d0		; in view: just the two links
+	beq.s	.p1
+	move.l	d0,a0
+	bsr	GuiPaintNode
+.p1:	move.l	g_FocusLink(a4),a0
+	bsr	GuiPaintNode
+.pd:	move.l	g_FocusLink(a4),a0
 	lea	AnHref(pc),a1
 	jsr	DomGetAttr
 	tst.l	d0
@@ -2644,10 +2691,14 @@ FocusNext:
 	move.l	(sp)+,a0
 	bsr	GuiStatus
 	bra.s	.x
-.none:	clr.l	g_FocusLink(a4)
-	moveq	#-1,d0
-	move.l	d0,g_FocusIdx(a4)
-	bsr	GuiPaintAll
+.none:	move.l	g_FocusLink(a4),d0
+	clr.l	g_FocusLink(a4)
+	moveq	#-1,d1
+	move.l	d1,g_FocusIdx(a4)
+	tst.l	d0
+	beq.s	.x
+	move.l	d0,a0
+	bsr	GuiPaintNode
 .x:	movem.l	(sp)+,d2-d4/a2
 	rts
 

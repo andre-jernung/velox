@@ -28,6 +28,11 @@ try:
     a.type(" amiga")
     time.sleep(0.5)
     a.shot(os.path.join(r, "forms-edit.png"))
+    # typing repaints the field only, never the whole view
+    typed = open(log).read().split("focus q", 1)[1]
+    if "\npaint " in typed:
+        raise AssertionError("typing repainted the whole view")
+    step("typing repaints only the field")
     a.key("Return")            # submit from the field
     want = U + "echo?q=hello+amiga&c1=on&s=g&h=x+y"
     wait_log(log, "page " + want)
