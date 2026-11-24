@@ -86,6 +86,23 @@ ERR_NOAMISSL	equ	14		; https without AmiSSL 6 or a proxy
 ERR_CERT	equ	15		; certificate not trusted
 ERR_COUNT	equ	16
 
+; disk cache entry (diskcache.s): the header of an entry file
+	RSRESET
+dh_Magic	rs.l	1
+dh_Time		rs.l	1		; when it was fetched (seconds)
+dh_MaxAge	rs.l	1		; fresh for that long (-1: unknown)
+dh_Len		rs.l	1		; the data (bytes)
+dh_StrLen	rs.l	1		; the strings after the header
+dh_W		rs.l	1		; images: the size shown,
+dh_H		rs.l	1
+dh_Mode		rs.l	1		; the screen's colours (DcImgMode)
+dh_Mask		rs.l	1		; the mask after the pixels (bytes)
+dh_Hash		rs.l	1		; images: DcHash of the file they came from
+DH_SIZEOF	rs.b	0
+	IFNE	DH_SIZEOF-40
+	FAIL	"DH_SIZEOF changed: g_DcHdr in velox.i too"
+	ENDC
+
 ;--------------------------------------------------------------------
 ; Buf - growable byte buffer, always NUL terminated when allocated
 ;--------------------------------------------------------------------
@@ -439,7 +456,7 @@ g_DcUsed	rs.l	1		; bytes it takes
 g_DcImg		rs.l	1		; an image's pixels (DcLoadImg)
 g_DcOldMin	rs.l	1		; (Scan: the oldest's minute,
 g_DcOldSize	rs.l	1		;  its size)
-g_DcHdr		rs.b	36		; an entry's header (DH_SIZEOF)
+g_DcHdr		rs.b	40		; an entry's header (DH_SIZEOF)
 g_DcName	rs.b	12		; its file name
 g_DcOld		rs.b	32		; (Scan: the oldest file)
 g_DcDir		rs.b	DCPATH_MAX	; the directory
@@ -838,6 +855,12 @@ g_PbmXMap	rs.l	1		; source x for each column,
 g_PbmBuf	rs.l	1		; a row of pens,
 g_PbmHoles	rs.l	1		; (first byte: transparent pixels seen)
 g_PbmPlanar	rs.l	1		; a standard planar bitmap: own c2p
+g_PbmKeep	rs.l	1		; keep the pixels (g_PbmSave) for the cache
+g_PbmSave	rs.l	1		; the pixels (pens or ARGB), AllocVec
+g_PalSig	rs.l	1		; the screen's colours (cache key)
+g_ImgKeyOk	rs.l	1		; img.s: g_ImgKey is the image's
+g_ImgHash	rs.l	1		; the cached image's file hash
+g_DecDcImg	rs.l	1		; cached pixels an orphan decoder reads
 g_PbmRP		rs.b	rp_SIZEOF	; RastPort on the bitmap
 g_Cube		rs.b	216		; the pens of the colour cube
 g_BandsOk	rs.l	1		; g_Bands tells what is on the screen
@@ -879,6 +902,8 @@ g_C2pHi		rs.l	256		; ... 4-7 (just after)
 g_PngAbs	rs.b	1022		; |v| of -510..510, 255 at most
 g_RespSave	rs.b	RESP_SIZEOF	; the page's response (IncCss)
 g_DcStr		rs.b	DCSTR_MAX	; diskcache.s: an entry's strings
+g_ImgUrl	rs.b	URL_MAX		; img.s: the image's URL (the loader's)
+g_ImgKey	rs.b	URL_MAX+80	; its disk cache key
 g_SIZEOF	rs.b	0
 
 ;--------------------------------------------------------------------

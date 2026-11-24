@@ -38,7 +38,9 @@ fi
 # default: every test whose script is not marked "(manual)" on line 1
 TESTS=${*:-$(cd "$ROOT/test/amiga" && for f in *.script; do
 	head -1 "$f" | grep -q '(manual)' || basename "$f" .script; done)}
-TIMEOUT=${TIMEOUT:-300}
+# the whole run's time limit: 40 s a test (at least 300 s)
+set -- $TESTS
+TIMEOUT=${TIMEOUT:-$(( $# * 40 > 300 ? $# * 40 : 300 ))}
 
 make -s -C "$ROOT" ${PROFILE:+PROFILE=$PROFILE}	# (PROFILE=1: the profiling build)
 

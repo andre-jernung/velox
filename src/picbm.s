@@ -16,7 +16,7 @@
 	include	"graphics/gfx.i"
 	include	"graphics/view.i"
 
-	xdef	PalInit,PalFree,PicToBitMap
+	xdef	PalInit,PalFree,PicToBitMap,PicFromCache,PbmKeepFree
 	IFD	PROFILE
 	xref	ProfRead
 	ENDC
@@ -143,6 +143,21 @@ PalInit:
 	addq.l	#1,d1
 	cmp.w	#256,d1
 	blo.s	.c2
+	; the colours' signature (for images in the disk cache): the pens of
+	; the cube and the depth, or ARGB on screens of 15 bits and more
+	move.l	#'ARGB',d0
+	tst.l	g_CgxBase(a4)
+	bne.s	.sig
+	move.l	g_PalDepth(a4),d0
+	lea	g_Cube(a4),a0
+	move.l	g_PalCount(a4),d1
+	bra.s	.se
+.sl:	mulu.l	#$01000193,d0
+	moveq	#0,d2
+	move.b	(a0)+,d2
+	eor.l	d2,d0
+.se:	dbf	d1,.sl
+.sig:	move.l	d0,g_PalSig(a4)
 .ready:	moveq	#1,d0
 	move.l	d0,g_PalReady(a4)
 	movem.l	(sp)+,d2-d7/a2
@@ -205,6 +220,7 @@ PicToBitMap:
 	clr.l	g_PbmMask(a4)
 	clr.l	g_PbmXMap(a4)
 	clr.l	g_PbmBuf(a4)
+	clr.l	g_PbmSave(a4)
 	move.l	d0,g_PbmW(a4)
 	move.l	d1,g_PbmH(a4)
 	move.l	g_PalDepth(a4),d2	; the bitmap
@@ -243,7 +259,18 @@ PicToBitMap:
 	jsr	PicAlloc
 	move.l	d0,g_PbmBuf(a4)
 	beq	.fail
-	move.l	g_PbmW(a4),d0		; the mask (freed if not needed)
+	clr.l	g_PbmSave(a4)		; the disk cache wants the pixels
+	tst.l	g_PbmKeep(a4)
+	beq.s	.nk
+	move.l	g_PbmW(a4),d0
+	mulu.l	g_PbmH(a4),d0
+	tst.l	g_CgxBase(a4)
+	beq.s	.k1
+	lsl.l	#2,d0
+.k1:	move.l	#MEMF_ANY,d1
+	EXEC	AllocVec
+	move.l	d0,g_PbmSave(a4)	; (none: not kept)
+.nk:	move.l	g_PbmW(a4),d0		; the mask (freed if not needed)
 	move.l	g_PbmH(a4),d1
 	GFX	AllocRaster
 	move.l	d0,g_PbmMask(a4)
@@ -360,6 +387,7 @@ PicToBitMap:
 	bra.s	.n3
 .rowd:
 	PROFE	0
+	bsr	PbmKeepRow		; (kept for the disk cache)
 	PROFB	1
 	tst.l	g_PbmPlanar(a4)		; planes: Velox's own c2p
 	beq.s	.wcp
@@ -389,6 +417,7 @@ PicToBitMap:
 .tn:	move.l	d0,(a2)+
 	subq.l	#1,d2
 	bne.s	.tp
+	bsr	PbmKeepRow
 	movem.l	d2-d7/a2-a3,-(sp)	; WritePixelArray(buf, 0, 0, mod,
 	move.l	g_PbmBuf(a4),a0		; rp, 0, row, width, 1, ARGB)
 	moveq	#0,d0
@@ -411,6 +440,7 @@ PicToBitMap:
 	bsr	FreeMask
 	bra.s	.free
 .fail:	bsr	FreeMask
+	bsr	PbmKeepFree
 	GFX	WaitBlit
 	move.l	d7,a0
 	GFX	FreeBitMap
@@ -421,6 +451,127 @@ PicToBitMap:
 	jsr	PicFreeMem
 .x:	move.l	d7,d0
 	movem.l	(sp)+,d2-d7/a2-a3/a5-a6
+	rts
+
+; PbmKeepRow - with g_PbmSave (the disk cache wants the image), copy
+; row d3 of g_PbmBuf there: W pens, or W ARGB longs (d0-d1/a0-a1 kept)
+PbmKeepRow:
+	tst.l	g_PbmSave(a4)
+	beq.s	.x
+	movem.l	d0-d1/a0-a1,-(sp)
+	move.l	g_PbmW(a4),d1
+	tst.l	g_CgxBase(a4)
+	beq.s	.b
+	lsl.l	#2,d1
+.b:	move.l	d3,d0
+	mulu.l	d1,d0
+	move.l	g_PbmSave(a4),a1
+	add.l	d0,a1
+	move.l	g_PbmBuf(a4),a0
+	bra.s	.ce
+.c:	move.b	(a0)+,(a1)+
+.ce:	subq.l	#1,d1
+	bpl.s	.c
+	movem.l	(sp)+,d0-d1/a0-a1
+.x:	rts
+
+; PbmKeepFree - free g_PbmSave
+PbmKeepFree:
+	move.l	g_PbmSave(a4),d0
+	beq.s	.x
+	clr.l	g_PbmSave(a4)
+	move.l	d0,a1
+	EXEC	FreeVec
+.x:	rts
+
+;--------------------------------------------------------------------
+; PicFromCache - the bitmap of an image kept in the disk cache: d0 x d1
+; pixels at a0 (pens, or ARGB longs on screens of 15 bits and more),
+; mask a1 (the bytes of a raster) or 0
+; Out: d0 = bitmap or 0, g_PbmMask = its mask (a raster) or 0
+;--------------------------------------------------------------------
+PicFromCache:
+	movem.l	d2-d7/a2-a3/a5-a6,-(sp)
+	move.l	a0,a3			; a3 = pixels, a5 = mask
+	move.l	a1,a5
+	move.l	d0,g_PbmW(a4)
+	move.l	d1,g_PbmH(a4)
+	clr.l	g_PbmMask(a4)
+	move.l	g_PalDepth(a4),d2	; the bitmap
+	moveq	#BMF_CLEAR,d3
+	move.l	g_PalFriend(a4),a0
+	GFX	AllocBitMap
+	move.l	d0,d7
+	beq	.x
+	lea	g_PbmRP(a4),a1
+	GFX	InitRastPort
+	move.l	d7,g_PbmRP+rp_BitMap(a4)
+	tst.l	g_CgxBase(a4)
+	bne.s	.true
+	clr.l	g_PbmPlanar(a4)		; planar: Velox's c2p, a row at a time
+	move.l	d7,a0
+	moveq	#BMA_FLAGS,d1
+	GFX	GetBitMapAttr
+	and.l	#BMF_STANDARD,d0
+	beq.s	.wcp
+	moveq	#0,d3
+.row:	cmp.l	g_PbmH(a4),d3
+	bhs.s	.mask
+	move.l	d3,d0
+	mulu.l	g_PbmW(a4),d0
+	add.l	a3,d0
+	move.l	d0,g_PbmBuf(a4)
+	move.l	d3,d0
+	move.l	d7,a0
+	bsr	C2PRow
+	addq.l	#1,d3
+	bra.s	.row
+.wcp:	lea	g_PbmRP(a4),a0		; else all at once
+	moveq	#0,d0
+	moveq	#0,d1
+	move.l	g_PbmW(a4),d2
+	subq.l	#1,d2
+	move.l	g_PbmH(a4),d3
+	subq.l	#1,d3
+	move.l	a3,a2
+	move.l	g_PbmW(a4),d4
+	GFX	WriteChunkyPixels
+	bra.s	.mask
+.true:	move.l	a3,a0			; WritePixelArray(pixels, 0, 0, mod,
+	moveq	#0,d0			; rp, 0, 0, w, h, ARGB)
+	moveq	#0,d1
+	move.l	g_PbmW(a4),d2
+	lsl.l	#2,d2
+	lea	g_PbmRP(a4),a1
+	moveq	#0,d3
+	moveq	#0,d4
+	move.l	g_PbmW(a4),d5
+	move.l	g_PbmH(a4),d6
+	moveq	#RECTFMT_ARGB,d7	; (the bitmap: in the RastPort)
+	move.l	g_CgxBase(a4),a6
+	jsr	_LVOWritePixelArray(a6)
+	move.l	g_PbmRP+rp_BitMap(a4),d7
+.mask:	clr.l	g_PbmBuf(a4)
+	move.l	a5,d0			; the mask: a raster of its own
+	beq.s	.done
+	move.l	g_PbmW(a4),d0
+	move.l	g_PbmH(a4),d1
+	GFX	AllocRaster
+	move.l	d0,g_PbmMask(a4)
+	beq.s	.done
+	move.l	d0,a1
+	move.l	g_PbmW(a4),d0
+	add.l	#15,d0
+	lsr.l	#4,d0
+	add.l	d0,d0
+	mulu.l	g_PbmH(a4),d0
+	move.l	a5,a0
+	bra.s	.me
+.m:	move.b	(a0)+,(a1)+
+.me:	subq.l	#1,d0
+	bpl.s	.m
+.done:	move.l	d7,d0
+.x:	movem.l	(sp)+,d2-d7/a2-a3/a5-a6
 	rts
 
 ; PbmHole - a hole (less than half opaque) at the pixel d2 from the end

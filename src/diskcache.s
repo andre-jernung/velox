@@ -17,24 +17,12 @@
 
 	include	"velox.i"
 
-	xdef	DcInit,DcLoad,DcStore,DcFresh,DcLoadImg,DcStoreImg,DcImgFree,DcCond
+	xdef	DcInit,DcLoad,DcStore,DcFresh,DcLoadImg,DcStoreImg,DcImgFree,DcCond,DcHash
 	xref	StrCopyN,StrLen,StrIPrefix,BufClear,BufReserve,ParseDec
 
 DC_MAGIC	equ	'VXC1'
 DC_DEFKB	equ	4096
 
-; the header of an entry file
-	RSRESET
-dh_Magic	rs.l	1
-dh_Time		rs.l	1		; when it was fetched (seconds)
-dh_MaxAge	rs.l	1		; fresh for that long (-1: unknown)
-dh_Len		rs.l	1		; the data (bytes)
-dh_StrLen	rs.l	1		; the strings after the header
-dh_W		rs.l	1		; images: the size shown,
-dh_H		rs.l	1
-dh_Mode		rs.l	1		; the screen's colours (DcImgMode)
-dh_Mask		rs.l	1		; the mask after the pixels (bytes)
-DH_SIZEOF	rs.b	0
 ; then: the key, the content type, the ETag, Last-Modified (each NUL
 ; terminated), then the data
 
@@ -420,6 +408,7 @@ DcStore:
 	clr.l	g_DcHdr+dh_H(a4)
 	clr.l	g_DcHdr+dh_Mode(a4)
 	clr.l	g_DcHdr+dh_Mask(a4)
+	clr.l	g_DcHdr+dh_Hash(a4)
 	lea	g_Resp+r_Url(a4),a0
 	moveq	#0,d0
 	move.l	g_Resp+r_Body+buf_Data(a4),a1
@@ -569,6 +558,24 @@ DcCond:
 	lea	g_CondLM(a4),a1
 	moveq	#LASTMOD_MAX-1,d0
 	jmp	StrCopyN
+
+; DcHash - In: a0 = data, d0 = length; Out: d0 = a hash of it (the
+; same file again: no need to decode it again)
+;--------------------------------------------------------------------
+DcHash:
+	move.l	d2,-(sp)
+	move.l	d0,d1
+	moveq	#0,d0
+	moveq	#0,d2
+	bra.s	.e
+.l:	rol.l	#5,d0
+	move.b	(a0)+,d2
+	add.l	d2,d0
+	eor.l	d1,d0
+.e:	subq.l	#1,d1
+	bpl.s	.l
+	move.l	(sp)+,d2
+	rts
 
 ; DcImgFree - free the pixels DcLoadImg read
 DcImgFree:

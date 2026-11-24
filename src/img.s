@@ -32,6 +32,7 @@ bmh_Height		equ	2
 	include	"lvo/timer_lib.i"
 
 	xdef	BgFind,ImagesLoad,ImagesReap,ImagesReapNow,ImagesQuit
+	xref	DcLoadImg,DcImgFree,DcFresh,DcCond,DcHash,DcStoreImg,PicFromCache,PbmKeepFree,HttpGet,StrCopy,StrCopyN,FmtDec
 	xref	TaskPoll,TaskWaitSig
 	IFD	PROFILE
 	xdef	ProfRead,ProfLog
@@ -414,13 +415,46 @@ ImagesStep:
 	jsr	UrlResolve
 	tst.l	d0
 	beq	.done
-	; fetch (window events and Ctrl-C can stop it)
+	lea	g_LinkUrl(a4),a0	; (the loader's own copy: the window
+	lea	g_ImgUrl(a4),a1		;  uses g_LinkUrl meanwhile)
+	move.l	#URL_MAX-1,d0
+	jsr	StrCopyN
+	; in the disk cache, as shown?  Then at once, checked after
+	bsr	ImgKey
+	tst.l	g_NoCache(a4)
+	bne.s	.fetch
+	lea	g_ImgKey(a4),a0
+	jsr	DcLoadImg
+	beq.s	.fetch
+	bsr	ImgCached
+	move.l	d0,-(sp)
+	jsr	DcImgFree
+	move.l	(sp)+,d0
+	beq.s	.fetch
+	addq.l	#1,g_ImgLoaded(a4)
+	bsr	ShareImage
+	jsr	DcFresh			; fresh: nothing to ask
+	bne	.done
+	jsr	DcCond			; changed since?  (304: no)
+	lea	g_ImgUrl(a4),a0
+	jsr	HttpGet
+	cmp.l	#200,d0
+	bne	.free
+	move.l	g_Resp+r_Body+buf_Data(a4),a0	; the same file again (no
+	move.l	g_Resp+r_Body+buf_Len(a4),d0	;  validators): as it is
+	jsr	DcHash
+	cmp.l	g_ImgHash(a4),d0
+	beq	.free
+	subq.l	#1,g_ImgLoaded(a4)	; (another: shown instead)
+	move.l	#200,d0
+	bra.s	.got
+.fetch:	; fetch (window events and Ctrl-C can stop it)
 	move.l	g_WinSigMask(a4),d0
 	or.l	#SIGBREAKF_CTRL_C,d0
 	move.l	d0,g_AbortMask(a4)
 	lea	ImgNetHook,a0
 	move.l	a0,g_NetSigHook(a4)
-	lea	g_LinkUrl(a4),a0
+	lea	g_ImgUrl(a4),a0
 	jsr	HttpGetCached
 	clr.l	g_NetSigHook(a4)
 	tst.l	d0			; (the clr changed the flags)
@@ -611,6 +645,8 @@ BgRun:
 	move.l	d2,g_DecSigBit(a4)
 	moveq	#1,d0
 	move.l	d0,g_DecOrphan(a4)
+	move.l	g_DcImg(a4),g_DecDcImg(a4)	; (cached pixels it reads)
+	clr.l	g_DcImg(a4)
 	lea	g_Resp+r_Body(a4),a0
 	lea	g_DecBody(a4),a1
 	move.l	(a0),(a1)+
@@ -696,6 +732,13 @@ DecReap:
 	jsr	_LVODisposeDTObject(a6)
 .nobj:	lea	g_DecBody(a4),a0
 	jsr	BufFree
+	jsr	PbmKeepFree
+	move.l	g_DecDcImg(a4),d0
+	beq.s	.ni
+	clr.l	g_DecDcImg(a4)
+	move.l	d0,a1
+	EXEC	FreeVec
+.ni:
 	move.l	g_DecSigBit(a4),d0
 	EXEC	FreeSignal
 .x:	rts
@@ -736,6 +779,141 @@ ImagesReapNow:
 
 ImagesQuit:
 	bra	DecReapWait
+
+;--------------------------------------------------------------------
+; ImgKey - g_ImgKey = the disk cache key of <img> a5 (URL g_ImgUrl): the
+; URL, its width= and height=, the widest it may be and the screen's
+; colours: what decides how it is shown
+;--------------------------------------------------------------------
+ImgKey:
+	movem.l	a2,-(sp)
+	clr.l	g_ImgKeyOk(a4)
+	jsr	PalInit			; (g_PalSig)
+	lea	g_ImgUrl(a4),a0
+	lea	g_ImgKey(a4),a1
+	jsr	StrCopy
+	move.l	a1,a2
+	move.l	a5,a0
+	lea	AnWidth(pc),a1
+	bsr.s	.attr
+	move.l	a5,a0
+	lea	AnHeight(pc),a1
+	bsr.s	.attr
+	move.b	#'|',(a2)+
+	jsr	GuiPageWidth
+	move.l	a2,a0
+	jsr	FmtDec
+	move.b	#'|',(a0)+
+	move.l	g_PalSig(a4),d0
+	jsr	FmtDec
+	clr.b	(a0)
+	moveq	#1,d0
+	move.l	d0,g_ImgKeyOk(a4)
+	movem.l	(sp)+,a2
+	rts
+.attr:	move.b	#'|',(a2)+		; "|value" (16 characters at most)
+	jsr	DomGetAttr
+	tst.l	d0
+	beq.s	.ax
+	move.l	d0,a0
+	moveq	#16-1,d1
+.ac:	move.b	(a0)+,d0
+	beq.s	.ax
+	move.b	d0,(a2)+
+	dbf	d1,.ac
+.ax:	rts
+
+;--------------------------------------------------------------------
+; ImgCached - give <img> a5 the image DcLoadImg read (shown as it was:
+; the bitmap is made in the decoder process)
+; Out: d0 = 1 if it got it (CCR set)
+;--------------------------------------------------------------------
+ImgCached:
+	movem.l	d2-d7,-(sp)
+	move.l	g_DcHdr+dh_Hash(a4),g_ImgHash(a4)
+	move.l	g_DcHdr+dh_W(a4),d4
+	move.l	g_DcHdr+dh_H(a4),d5
+	move.l	d4,g_DecW(a4)
+	move.l	d5,g_DecH(a4)
+	moveq	#1,d6			; width= and height=: the layout stays
+	move.l	a5,a0
+	lea	AnWidth(pc),a1
+	jsr	DomGetAttr
+	tst.l	d0
+	beq.s	.d6
+	move.l	a5,a0
+	lea	AnHeight(pc),a1
+	jsr	DomGetAttr
+	tst.l	d0
+	beq.s	.d6
+	moveq	#0,d6
+.d6:	lea	PicCacheWork(pc),a0
+	bsr	BgRun
+	move.l	d0,d7
+	beq.s	.x
+	move.l	g_PbmMask(a4),a0
+	bsr	AddImage
+	beq.s	.x
+	lea	LogImgCache(pc),a0	; (for tests)
+	lea	g_ImgUrl(a4),a1
+	move.l	#$80000000,d0
+	jsr	LogEvent
+	moveq	#1,d0
+.x:	movem.l	(sp)+,d2-d7
+	rts
+
+; PicCacheWork - (a job for BgRun) the bitmap of the cached pixels
+PicCacheWork:
+	move.l	g_DcImg(a4),a0
+	suba.l	a1,a1
+	tst.l	g_DcHdr+dh_Mask(a4)
+	beq.s	.nm
+	move.l	a0,a1
+	add.l	g_DcHdr+dh_Len(a4),a1
+.nm:	move.l	g_DecW(a4),d0
+	move.l	g_DecH(a4),d1
+	jsr	PicFromCache
+	move.l	d0,g_DecObj(a4)
+	rts
+
+;--------------------------------------------------------------------
+; ImgStore - after a decode: keep the image as shown (g_PbmSave, the
+; mask) in the disk cache, with the hash of the file it came from
+;--------------------------------------------------------------------
+ImgStore:
+	movem.l	a2,-(sp)
+	tst.l	g_PbmSave(a4)
+	beq.s	.x
+	tst.l	g_ImgKeyOk(a4)
+	beq.s	.x
+	move.l	g_PbmW(a4),g_DcHdr+dh_W(a4)
+	move.l	g_PbmH(a4),g_DcHdr+dh_H(a4)
+	move.l	g_PalSig(a4),g_DcHdr+dh_Mode(a4)
+	clr.l	g_DcHdr+dh_Mask(a4)
+	move.l	g_PbmMask(a4),a2
+	move.l	a2,d0
+	beq.s	.nm
+	move.l	g_PbmMaskBPR(a4),d0
+	mulu.l	g_PbmH(a4),d0
+	move.l	d0,g_DcHdr+dh_Mask(a4)
+.nm:	move.l	g_Resp+r_Body+buf_Data(a4),a0
+	move.l	g_Resp+r_Body+buf_Len(a4),d0
+	jsr	DcHash
+	move.l	d0,g_DcHdr+dh_Hash(a4)
+	move.l	g_PbmW(a4),d1		; the pixels: pens or ARGB
+	mulu.l	g_PbmH(a4),d1
+	tst.l	g_CgxBase(a4)
+	beq.s	.p
+	lsl.l	#2,d1
+.p:	lea	g_ImgKey(a4),a0
+	move.l	g_PbmSave(a4),a1
+	jsr	DcStoreImg
+.x:	jsr	PbmKeepFree
+	movem.l	(sp)+,a2
+	rts
+
+LogImgCache:	dc.b	"imgcache",0
+	even
 
 ; DecodeChild - the decoder process
 DecodeChild:
@@ -800,9 +978,15 @@ DecodeOwn:
 .ww:	move.l	d1,g_DecWant(a4)
 	bsr	Ticks			; (the time it takes: logged for tests)
 	move.l	d0,g_DecT0(a4)
+	move.l	g_DcOn(a4),g_PbmKeep(a4)	; (the pixels: for the disk cache)
 	lea	PicWork(pc),a0
 	bsr	BgRun			; d0 = bitmap
 	move.l	d0,d7
+	clr.l	g_PbmKeep(a4)
+	tst.l	d7
+	beq.s	.nokeep
+	bsr	ImgStore
+.nokeep:
 	bsr	Ticks
 	move.l	d0,-(sp)
 	move.l	g_DecT1(a4),d0		; decoding,

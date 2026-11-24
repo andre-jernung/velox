@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Host side of cache.script: /cached has an ETag.  Visited again, it is
 shown from the disk cache and checked (304); once it changed, the copy
-is shown and then the newer version; a new Velox finds it on disk."""
+is shown and then the newer version; a new Velox finds it on disk, and
+the images of a page as they were shown (no decoding)."""
 import os
 import sys
 import time
@@ -57,6 +58,8 @@ try:
     if "title Cached v1" not in text[:i][-8:]:
         raise AssertionError("the cached copy was not shown first")
     step("changed: the copy first, then the newer version")
+    go(a, "cacheimg.html")
+    wait_log(log, "images 2")
     a.key("ctrl+q")
     log2 = os.path.join(r, "cache2.log")
     lines = wait_log(log2, "page " + U + "cached", timeout=60)
@@ -64,6 +67,14 @@ try:
         raise AssertionError("a new Velox did not find it on disk")
     step("a new Velox finds it on disk")
     time.sleep(1)
+    go(a, "cacheimg.html")
+    lines = wait_log(log2, "images 2")
+    seg = lines[lines.index("go " + U + "cacheimg.html"):]
+    if len([l for l in seg if l.startswith("imgcache ")]) != 2 or any(l.startswith("imgtime ") for l in seg):
+        raise AssertionError("images not from the disk cache: %r" % seg)
+    time.sleep(1)
+    a.shot(os.path.join(r, "cache-img.png"))
+    step("its images too, as shown, without decoding")
     a.key("ctrl+q")
     step("ok")
 except Exception as e:
