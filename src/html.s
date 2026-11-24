@@ -543,7 +543,7 @@ ParseAttrs:
 	bra	.x
 .name:	; name: up to a blank, '/', '>' or '=' (a leading '=' belongs to it)
 	lea	g_AttrName(a4),a1
-	moveq	#30,d1
+	moveq	#94,d1
 	bra.s	.nc
 .nl:	move.b	(a2),d0
 	beq.s	.ne
@@ -660,8 +660,13 @@ AttrName:
 .next:	tst.b	(a2)+
 	bne.s	.next
 	bra.s	.l
-.copy:	moveq	#32,d0
-	jsr	PageAlloc
+.copy:	lea	g_AttrName(a4),a0	; its length + 1
+	moveq	#1,d0
+.len:	tst.b	(a0)+
+	beq.s	.al
+	addq.l	#1,d0
+	bra.s	.len
+.al:	jsr	PageAlloc
 	beq.s	.x
 	move.l	d0,a3
 	lea	g_AttrName(a4),a0

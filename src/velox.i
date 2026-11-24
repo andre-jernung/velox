@@ -357,7 +357,7 @@ g_BaseHref	rs.l	1		; <base href> value or 0
 g_Depth		rs.l	1		; open element stack depth
 g_PreDepth	rs.l	1		; open elements that preserve blanks
 g_TagName	rs.b	32		; current tag name, lower case
-g_AttrName	rs.b	32		; current attribute name, lower case
+g_AttrName	rs.b	96		; current attribute name, lower case
 g_OpenStack	rs.l	MAX_DEPTH
 ; fonts and text measuring (set up by the GUI or the test driver)
 g_MeasureFn	rs.l	1		; d0=font|soft<<8, a0=text, d1=len -> d0=width
@@ -455,7 +455,7 @@ g_CssBox	rs.l	8		; CSS margins, paddings (t r b l), -1 unset
 g_CssMatch	rs.l	CSS_MAXMATCH	; matching scratch
 g_CssNMatch	rs.l	1
 g_CssName	rs.b	256		; parsing scratch (CSS_NAMEBUF)
-g_CssTag	rs.b	32
+g_CssTag	rs.b	96		; tag / attribute names in selectors
 g_CssNameTop	rs.l	1		; free part of g_CssName (nesting)
 g_CssTmp	rs.b	4096		; declarations being parsed (DECL_TMP)
 ; TLS (AmiSSL)

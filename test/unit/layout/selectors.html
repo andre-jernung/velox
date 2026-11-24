@@ -15,6 +15,7 @@ option:disabled { display: none }
 .l :is(:hover) { display: none }
 .m :not(:first-child):not(:last-child) { display: none }
 .n a[href$=".pdf"], .n a[href$="zzz"] { display: none }
+.o [data-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx] { display: none }
 </style>
 <div class="a"><span class="keep">ok1</span><span>bad1</span></div>
 <ul class="b"><li>ok2</li><li>bad2</li></ul>
@@ -31,3 +32,4 @@ option:disabled { display: none }
 <div class="l"><b>ok14 (never hovered)</b></div>
 <div class="m"><s>ok15a</s><s>bad15</s><s>ok15b</s></div>
 <div class="n"><a href="doc.pdf">bad16</a> <a href="page.html">ok16 ($= once matched anything)</a></div>
+<div class="o"><span data-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx>bad17</span><span>ok17 (long attribute names)</span></div>

@@ -423,7 +423,7 @@ AddMargin:
 	move.l	d0,g_PendMargin(a4)
 .x:	rts
 
-; ApplyPendingMargin - move y past the pending margin
+; ApplyPendingMargin - move y past the pending margin (a1 kept)
 ApplyPendingMargin:
 	move.l	g_PendMargin(a4),d0
 	add.l	d0,g_LayY(a4)

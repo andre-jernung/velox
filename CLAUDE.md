@@ -9,6 +9,10 @@ and a single event dispatch point.
 
 - `make`: assembles `src/*.s` into `build/velox` (Amiga hunk executable)
 - `make size`: size against the 64 KB budget
+- `make lint`: static checks of the register conventions below (d1/a1
+  used after a call, routines whose callers test flags not set from d0).
+  It must stay clean. A routine that keeps or returns d1/a1 says so in
+  its header ("Out: ... d1 = ...", "(d1 kept)"), which the lint reads.
 - `make test`: headless golden tests. `build/vtest` runs each
   `test/unit/*.vt` script under vamos, and the output is diffed against
   `.expected`. It's fast, so use it for parser and logic code.

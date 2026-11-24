@@ -24,7 +24,7 @@ INCS    := $(wildcard src/*.i)
 TARGET  := build/velox
 VTEST   := build/vtest
 
-.PHONY: all clean size test dist
+.PHONY: all clean size test dist lint
 
 all: $(TARGET) build/wbrun
 
@@ -50,6 +50,10 @@ build:
 
 test: $(VTEST)
 	test/unit.sh
+
+# register convention checks (see tools/lint.py)
+lint:
+	python3 tools/lint.py
 
 # build/dist/Velox: the program, its icon, the proxy and the read-me
 dist: $(TARGET)

@@ -290,7 +290,7 @@ Store:
 	rts
 
 ; Trim - In: a0 = NUL terminated string (writable)
-; Out: a0 = first non-blank; trailing blanks cut
+; Out: a0 = first non-blank; trailing blanks cut (d1 kept)
 Trim:
 .l:	move.b	(a0),d0
 	beq.s	.e

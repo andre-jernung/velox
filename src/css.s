@@ -1007,8 +1007,9 @@ PropId:
 	movem.l	(sp)+,d2/a2-a3
 	rts
 
-; IsAlnumC - In: d0.b; Out: Z clear if a letter or digit (d0 kept)
+; IsAlnumC - In: d0.b; Out: Z clear if a letter or digit (d0, d1 kept)
 IsAlnumC:
+	move.l	d1,-(sp)		; (callers count in d1)
 	move.b	d0,d1
 	sub.b	#'0',d1
 	cmp.b	#9,d1
@@ -1020,9 +1021,11 @@ IsAlnumC:
 	bls.s	.y
 	cmp.b	#$80,d0			; Latin-1 letters in identifiers
 	bhs.s	.y
-	moveq	#0,d1
+	movem.l	(sp)+,d1
+	or.b	#4,ccr			; Z set: no
 	rts
-.y:	moveq	#1,d1
+.y:	movem.l	(sp)+,d1
+	and.b	#$fb,ccr		; Z clear: yes
 	rts
 
 PN	MACRO
@@ -1372,7 +1375,7 @@ ParseSelector:
 .p5:	bsr	IsIdentChar		; a type selector
 	beq	.bad
 	lea	g_CssTag(a4),a1
-	moveq	#30,d1
+	moveq	#94,d1
 .tl:	cmp.l	d7,a2
 	bhs.s	.te
 	move.b	(a2),d0
@@ -1460,14 +1463,14 @@ PsNever:	dc.b	"hover",0,"active",0,"focus",0,"focus-within",0
 	even
 
 ; IsIdentChar - In: d0.b; Out: Z clear for letters, digits, - _ (and
-; Latin-1); d0 kept
+; Latin-1); d0, d1 and a1 kept
 IsIdentChar:
 	cmp.b	#'-',d0
 	beq.s	.y
 	cmp.b	#'_',d0
 	beq.s	.y
 	bra	IsAlnumC
-.y:	moveq	#1,d1
+.y:	and.b	#$fb,ccr		; Z clear: yes
 	rts
 
 ; Ident - copy an identifier at a2 (up to d7) to the page pool
@@ -1513,7 +1516,7 @@ AttrSel:
 	bsr	SkipWsA2
 	move.l	a2,a0
 	lea	g_CssTag(a4),a1
-	moveq	#30,d1
+	moveq	#94,d1
 .nl:	cmp.l	d7,a2
 	bhs	.no
 	move.b	(a2),d0
@@ -1852,7 +1855,7 @@ CssMatch:
 	addq.l	#1,a2
 	bra.s	.cl
 .word:	lea	g_CssTag(a4),a1		; the class name, NUL terminated
-	moveq	#30,d1
+	moveq	#94,d1
 .wl:	move.b	(a2),d0
 	cmp.b	#' ',d0
 	bls.s	.we
