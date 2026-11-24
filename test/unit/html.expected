@@ -106,3 +106,323 @@ html build/html/nul.html =>
     "a b"
 
 html test/unit/html/missing.html => ERROR File error
+
+# the same pages parsed as they come in: N bytes at a time
+htmlinc test/unit/html/basic.html 1 => 
+#document
+  <html>
+    <head>
+      <meta charset="utf-8">
+      <title>
+        "Basic & simple"
+    <body>
+      " "
+      <h1 class="title">
+        "Hello, "
+        <em>
+          "world"
+        "!"
+      " "
+      <p>
+        "First paragraph with blanks. "
+      <p>
+        "Second <b> \xa9 2026 ... A\xa0B "
+
+htmlinc test/unit/html/basic.html 5 => 
+#document
+  <html>
+    <head>
+      <meta charset="utf-8">
+      <title>
+        "Basic & simple"
+    <body>
+      " "
+      <h1 class="title">
+        "Hello, "
+        <em>
+          "world"
+        "!"
+      " "
+      <p>
+        "First paragraph with blanks. "
+      <p>
+        "Second <b> \xa9 2026 ... A\xa0B "
+
+htmlinc test/unit/html/basic.html 64 => 
+#document
+  <html>
+    <head>
+      <meta charset="utf-8">
+      <title>
+        "Basic & simple"
+    <body>
+      " "
+      <h1 class="title">
+        "Hello, "
+        <em>
+          "world"
+        "!"
+      " "
+      <p>
+        "First paragraph with blanks. "
+      <p>
+        "Second <b> \xa9 2026 ... A\xa0B "
+
+htmlinc test/unit/html/implied.html 1 => 
+#document
+  <ul>
+    <li>
+      "one"
+    <li>
+      "two"
+      <ul>
+        <li>
+          "nested"
+    <li>
+      "three"
+  <dl>
+    <dt>
+      "term"
+    <dd>
+      "def"
+    <dt>
+      "term2"
+  <table>
+    <tr>
+      <td>
+        "a"
+      <td>
+        "b"
+    <tr>
+      <td>
+        "c"
+  <p>
+    "para"
+  <div>
+    "block"
+  <a href="/x">
+    "one"
+  <a href="/y">
+    "two"
+  <select>
+    <option>
+      "A"
+    <option selected="">
+      "B"
+  <h2>
+    "head"
+  <h3>
+    "sub"
+
+htmlinc test/unit/html/implied.html 5 => 
+#document
+  <ul>
+    <li>
+      "one"
+    <li>
+      "two"
+      <ul>
+        <li>
+          "nested"
+    <li>
+      "three"
+  <dl>
+    <dt>
+      "term"
+    <dd>
+      "def"
+    <dt>
+      "term2"
+  <table>
+    <tr>
+      <td>
+        "a"
+      <td>
+        "b"
+    <tr>
+      <td>
+        "c"
+  <p>
+    "para"
+  <div>
+    "block"
+  <a href="/x">
+    "one"
+  <a href="/y">
+    "two"
+  <select>
+    <option>
+      "A"
+    <option selected="">
+      "B"
+  <h2>
+    "head"
+  <h3>
+    "sub"
+
+htmlinc test/unit/html/implied.html 64 => 
+#document
+  <ul>
+    <li>
+      "one"
+    <li>
+      "two"
+      <ul>
+        <li>
+          "nested"
+    <li>
+      "three"
+  <dl>
+    <dt>
+      "term"
+    <dd>
+      "def"
+    <dt>
+      "term2"
+  <table>
+    <tr>
+      <td>
+        "a"
+      <td>
+        "b"
+    <tr>
+      <td>
+        "c"
+  <p>
+    "para"
+  <div>
+    "block"
+  <a href="/x">
+    "one"
+  <a href="/y">
+    "two"
+  <select>
+    <option>
+      "A"
+    <option selected="">
+      "B"
+  <h2>
+    "head"
+  <h3>
+    "sub"
+
+htmlinc test/unit/html/raw.html 1 => 
+#document
+  <script>
+    "if (a < b && c > d) { x = "</p>"; }"
+  <style>
+    "p > a { color: red }"
+  <pre>
+    "  line 1\n    line 2"
+  <textarea name="t">
+    " keep  & this"
+  <img src="a.png" alt="x & y" width="10" data-x="1&copy=2" checked="">
+  <p title="a&b">
+    "5 < 6 and 7 > 3 &unknown; \xacit \xa92026"
+  <br>
+  <br>
+  <?>
+  "bar "
+
+htmlinc test/unit/html/raw.html 5 => 
+#document
+  <script>
+    "if (a < b && c > d) { x = "</p>"; }"
+  <style>
+    "p > a { color: red }"
+  <pre>
+    "  line 1\n    line 2"
+  <textarea name="t">
+    " keep  & this"
+  <img src="a.png" alt="x & y" width="10" data-x="1&copy=2" checked="">
+  <p title="a&b">
+    "5 < 6 and 7 > 3 &unknown; \xacit \xa92026"
+  <br>
+  <br>
+  <?>
+  "bar "
+
+htmlinc test/unit/html/raw.html 64 => 
+#document
+  <script>
+    "if (a < b && c > d) { x = "</p>"; }"
+  <style>
+    "p > a { color: red }"
+  <pre>
+    "  line 1\n    line 2"
+  <textarea name="t">
+    " keep  & this"
+  <img src="a.png" alt="x & y" width="10" data-x="1&copy=2" checked="">
+  <p title="a&b">
+    "5 < 6 and 7 > 3 &unknown; \xacit \xa92026"
+  <br>
+  <br>
+  <?>
+  "bar "
+
+htmlinc build/html/utf8.html 1 => 
+#document
+  <p>
+    "Gr\xfc\xdfe - "quotes" ... EUR l"
+
+htmlinc build/html/utf8.html 5 => 
+#document
+  <p>
+    "Gr\xfc\xdfe - "quotes" ... EUR l"
+
+htmlinc build/html/utf8.html 64 => 
+#document
+  <p>
+    "Gr\xfc\xdfe - "quotes" ... EUR l"
+
+htmlinc build/html/latin1.html 1 => 
+#document
+  <p>
+    "caf\xe9 "hi""
+
+htmlinc build/html/latin1.html 5 => 
+#document
+  <p>
+    "caf\xe9 "hi""
+
+htmlinc build/html/latin1.html 64 => 
+#document
+  <p>
+    "caf\xe9 "hi""
+
+htmlinc build/html/metalatin1.html 1 => 
+#document
+  <meta charset="iso-8859-1">
+  <p>
+    "\xc3\xa9"
+
+htmlinc build/html/metalatin1.html 5 => 
+#document
+  <meta charset="iso-8859-1">
+  <p>
+    "\xc3\xa9"
+
+htmlinc build/html/metalatin1.html 64 => 
+#document
+  <meta charset="iso-8859-1">
+  <p>
+    "\xc3\xa9"
+
+htmlinc build/html/nul.html 1 => 
+#document
+  <p>
+    "a b"
+
+htmlinc build/html/nul.html 5 => 
+#document
+  <p>
+    "a b"
+
+htmlinc build/html/nul.html 64 => 
+#document
+  <p>
+    "a b"
+
+htmlinc test/unit/html/missing.html 1 => ERROR File error
+htmlinc test/unit/html/missing.html 5 => ERROR File error
+htmlinc test/unit/html/missing.html 64 => ERROR File error

@@ -8,3 +8,29 @@ html build/html/latin1.html
 html build/html/metalatin1.html
 html build/html/nul.html
 html test/unit/html/missing.html
+
+# the same pages parsed as they come in: N bytes at a time
+htmlinc test/unit/html/basic.html 1
+htmlinc test/unit/html/basic.html 5
+htmlinc test/unit/html/basic.html 64
+htmlinc test/unit/html/implied.html 1
+htmlinc test/unit/html/implied.html 5
+htmlinc test/unit/html/implied.html 64
+htmlinc test/unit/html/raw.html 1
+htmlinc test/unit/html/raw.html 5
+htmlinc test/unit/html/raw.html 64
+htmlinc build/html/utf8.html 1
+htmlinc build/html/utf8.html 5
+htmlinc build/html/utf8.html 64
+htmlinc build/html/latin1.html 1
+htmlinc build/html/latin1.html 5
+htmlinc build/html/latin1.html 64
+htmlinc build/html/metalatin1.html 1
+htmlinc build/html/metalatin1.html 5
+htmlinc build/html/metalatin1.html 64
+htmlinc build/html/nul.html 1
+htmlinc build/html/nul.html 5
+htmlinc build/html/nul.html 64
+htmlinc test/unit/html/missing.html 1
+htmlinc test/unit/html/missing.html 5
+htmlinc test/unit/html/missing.html 64

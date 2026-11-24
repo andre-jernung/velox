@@ -26,8 +26,8 @@
 	xref	MemInit,MemExit,UrlParse,UrlResolve,UrlFixup
 	xref	ConnOpenFile,ConnClose,ConnReadLine,HttpReadResponse
 	xref	PutStr,PutBuf,PutNum,PutNL,PutChar,FlushOut,ErrorText
-	xref	PageNew,BufReserve,BufClear,CharsetDetect,DecodeCharset
-	xref	HtmlParse,TagNameOf,LayoutDocument,RunCount,RunPtr,ParseDec,CssLoad
+	xref	PageNew,BufAppend,BufReserve,BufClear,CharsetDetect,DecodeCharset
+	xref	HtmlParse,HtmlBegin,HtmlMore,TagNameOf,LayoutDocument,RunCount,RunPtr,ParseDec,CssLoad
 	xref	Inflate,PicInfo,PicDecode,PicFree,PicAlloc,PicFreeMem
 	xref	CookieSet,CookieHeader,UrlParse,BufFree,PageFixups
 
@@ -174,6 +174,7 @@ Commands:
 	dc.w	CnHttp-Commands,CmdHttp-Commands
 	dc.w	CnHttpInfo-Commands,CmdHttpInfo-Commands
 	dc.w	CnHtml-Commands,CmdHtml-Commands
+	dc.w	CnHtmlInc-Commands,CmdHtmlInc-Commands
 	dc.w	CnLayout-Commands,CmdLayout-Commands
 	dc.w	CnSetCookie-Commands,CmdSetCookie-Commands
 	dc.w	CnCookies-Commands,CmdCookies-Commands
@@ -187,6 +188,7 @@ CnFixup:	dc.b	"fixup",0
 CnHttp:		dc.b	"http",0
 CnHttpInfo:	dc.b	"httpinfo",0
 CnHtml:		dc.b	"html",0
+CnHtmlInc:	dc.b	"htmlinc",0
 CnLayout:	dc.b	"layout",0
 CnSetCookie:	dc.b	"setcookie",0
 CnCookies:	dc.b	"cookies",0
@@ -591,6 +593,59 @@ CmdHtml:
 	move.l	d0,a0
 	moveq	#0,d0
 	bra.s	DumpNode
+
+; htmlinc FILE N - the same DOM, the text given to the parser N bytes
+; at a time (HtmlMore), in a buffer that moves as it grows
+CmdHtmlInc:
+	movem.l	d2-d4,-(sp)
+	move.l	T_Words+4,a0
+	bsr	LoadPage
+	beq.s	.err
+	jsr	PutNL
+	move.l	T_Words+8,a0
+	jsr	ParseDec
+	move.l	d0,d3			; d3 = N
+	beq.s	.err
+	jsr	HtmlBegin
+	beq.s	.err
+	lea	g_Resp+r_Body(a4),a0
+	jsr	BufClear
+	moveq	#0,d2			; given so far
+.l:	move.l	g_PageSrc+buf_Len(a4),d4
+	sub.l	d2,d4
+	ble.s	.end
+	cmp.l	d3,d4
+	bls.s	.n
+	move.l	d3,d4
+.n:	lea	g_Resp+r_Body(a4),a0
+	move.l	g_PageSrc+buf_Data(a4),a1
+	add.l	d2,a1
+	move.l	d4,d0
+	jsr	BufAppend
+	beq.s	.err
+	add.l	d4,d2
+	lea	g_Resp+r_Body(a4),a0
+	moveq	#1,d0
+	jsr	BufReserve
+	beq.s	.err
+	move.l	g_Resp+r_Body+buf_Data(a4),a0
+	add.l	g_Resp+r_Body+buf_Len(a4),a0
+	clr.b	(a0)
+	move.l	g_Resp+r_Body+buf_Data(a4),a0
+	moveq	#0,d0
+	jsr	HtmlMore
+	bra.s	.l
+.end:	move.l	g_Resp+r_Body+buf_Data(a4),a0
+	moveq	#1,d0
+	jsr	HtmlMore
+	tst.l	d0
+	beq.s	.err
+	movem.l	(sp)+,d2-d4
+	move.l	d0,a0
+	moveq	#0,d0
+	bra.s	DumpNode
+.err:	movem.l	(sp)+,d2-d4
+	bra	PutError
 
 ; DumpNode - print a node and its subtree
 ; In: a0 = node, d0 = depth

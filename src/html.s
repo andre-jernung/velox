@@ -18,33 +18,80 @@
 
 	include	"velox.i"
 
-	xdef	HtmlParse
+	xdef	HtmlParse,HtmlBegin,HtmlMore
+	xref	TaskPoll
 	xref	PageAlloc,DomNewNode,DomAppend,DomAddAttr,DomGetAttr
 	xref	TagLookup,TagFlagsOf,DecodeEntities,ToLower,StrIPrefix
 
 	section	code,code
 
 ;--------------------------------------------------------------------
-; HtmlParse - build the DOM
+; HtmlParse - build the DOM of a whole document
 ; In:  a0 = Latin-1 text, NUL terminated, writable
 ; Out: d0 = document node or 0 (g_Doc is set too)
 ;--------------------------------------------------------------------
 HtmlParse:
-	movem.l	d2-d7/a2-a3/a5,-(sp)
-	move.l	a0,a2
+	move.l	a0,-(sp)
+	bsr.s	HtmlBegin
+	move.l	(sp)+,a0
+	beq.s	.x
+	moveq	#1,d0
+	bra.s	HtmlMore
+.x:	rts
+
+;--------------------------------------------------------------------
+; HtmlBegin - start a document that comes in pieces (HtmlMore)
+; Out: d0 = document node or 0 (CCR set)
+;--------------------------------------------------------------------
+HtmlBegin:
 	moveq	#DN_DOCUMENT,d0
 	moveq	#0,d1
 	jsr	DomNewNode
 	move.l	d0,g_Doc(a4)
-	beq	.x
+	beq.s	.x
 	move.l	d0,g_OpenStack(a4)
 	clr.l	g_Depth(a4)
 	clr.l	g_PreDepth(a4)
 	clr.l	g_Title(a4)
 	clr.l	g_BaseHref(a4)
+	clr.l	g_ParsePos(a4)
+	clr.l	g_ParseBody(a4)
+	tst.l	d0
+.x:	rts
+
+;--------------------------------------------------------------------
+; HtmlMore - parse what has come of the text since the last call.  A
+; token that is not complete yet (a tag without its '>', a <script>
+; without its end tag, text not followed by a tag) waits for the next
+; call, unless this is the end (d0 = 1).  Gives the window a turn now
+; and then (TaskPoll) and stops when the load does.  g_ParseBody is set
+; once the body's content begins.
+; In:  a0 = the text so far (Latin-1, NUL terminated, writable; it may
+;      move between calls), d0 = 1 at the end of the document
+; Out: d0 = document node or 0
+;--------------------------------------------------------------------
+HtmlMore:
+	movem.l	d2-d7/a2-a3/a5,-(sp)
+	move.l	a0,g_ParseBase(a4)
+	move.l	d0,g_ParseFinal(a4)
+	move.l	a0,a2
+	add.l	g_ParsePos(a4),a2
+	moveq	#0,d4			; (tokens until the next TaskPoll)
 
 .loop:	move.b	(a2),d0
 	beq	.done
+	move.l	a2,g_TokStart(a4)
+	tst.l	g_ParseFinal(a4)
+	bne.s	.go
+	move.l	a2,a0			; all of it there yet?
+	bsr	TokenComplete
+	beq	.done
+	addq.l	#1,d4
+	and.w	#31,d4
+	bne.s	.go
+	jsr	TaskPoll		; the window first
+	bne	.done
+.go:	move.b	(a2),d0
 	cmp.b	#'<',d0
 	bne.s	.text
 	move.b	1(a2),d0
@@ -119,7 +166,17 @@ HtmlParse:
 	move.l	d0,d6
 	jsr	TagFlagsOf
 	move.l	d0,d7
-	moveq	#DN_ELEMENT,d0
+	bsr	BodyTag
+	and.w	#TF_RAW|TF_RCDATA,d0	; raw text: its end tag must be
+	beq.s	.mk			; there too
+	tst.l	g_ParseFinal(a4)
+	bne.s	.mk
+	move.l	g_TokEnd(a4),a0
+	bsr	RawComplete
+	bne.s	.mk
+	move.l	g_TokStart(a4),a2	; not yet
+	bra	.done
+.mk:	moveq	#DN_ELEMENT,d0
 	move.l	d6,d1
 	jsr	DomNewNode
 	tst.l	d0
@@ -157,8 +214,201 @@ HtmlParse:
 	bsr	Push
 	bra	.loop
 
-.done:	move.l	g_Doc(a4),d0
-.x:	movem.l	(sp)+,d2-d7/a2-a3/a5
+.done:	sub.l	g_ParseBase(a4),a2	; where to go on
+	move.l	a2,g_ParsePos(a4)
+	move.l	g_Doc(a4),d0
+	movem.l	(sp)+,d2-d7/a2-a3/a5
+	rts
+
+; BodyTag - start tag d6: is the body's content beginning?
+; (d0, d7 kept)
+BodyTag:
+	tst.l	g_ParseBody(a4)
+	bne.s	.x
+	lea	HeadTags(pc),a0
+.l:	move.w	(a0)+,d1
+	bmi.s	.body
+	cmp.w	d1,d6
+	bne.s	.l
+.x:	rts
+.body:	st	g_ParseBody(a4)
+	rts
+
+HeadTags:	dc.w	TAG_HTML,TAG_HEAD,TAG_TITLE,TAG_META,TAG_LINK
+		dc.w	TAG_STYLE,TAG_SCRIPT,TAG_BASE,TAG_NOSCRIPT,-1
+
+;--------------------------------------------------------------------
+; TokenComplete - is the token at a0 all there (not cut by the end of
+; what has come so far)?  As the parser reads them: text up to a '<'
+; that starts a tag; a comment up to "-->"; other markup up to '>'; a
+; start tag up to its '>', quoted values included (its end in
+; g_TokEnd)
+; Out: d0 = 1 if so (CCR set)
+;--------------------------------------------------------------------
+TokenComplete:
+	cmp.b	#'<',(a0)
+	bne.s	.text
+	move.b	1(a0),d0
+	beq.s	.no
+	cmp.b	#'!',d0
+	beq.s	.bang
+	cmp.b	#'/',d0
+	beq.s	.gt
+	cmp.b	#'?',d0
+	beq.s	.gt
+	bsr	IsLetter
+	bne.s	.start
+.text:	addq.l	#1,a0			; up to a tag-like '<'
+.tl:	move.b	(a0)+,d0
+	beq.s	.no
+	cmp.b	#'<',d0
+	bne.s	.tl
+	move.b	(a0),d0
+	beq.s	.no
+	cmp.b	#'/',d0
+	beq.s	.yes
+	cmp.b	#'!',d0
+	beq.s	.yes
+	cmp.b	#'?',d0
+	beq.s	.yes
+	bsr	IsLetter
+	beq.s	.tl
+.yes:	moveq	#1,d0
+	rts
+.no:	moveq	#0,d0
+	rts
+.bang:	cmp.b	#'-',2(a0)
+	bne.s	.gt
+	cmp.b	#'-',3(a0)
+	bne.s	.gt
+	addq.l	#4,a0			; a comment: "-->"
+.cm:	move.b	(a0)+,d0
+	beq.s	.no
+	cmp.b	#'-',d0
+	bne.s	.cm
+	cmp.b	#'-',(a0)
+	bne.s	.cm
+	cmp.b	#'>',1(a0)
+	bne.s	.cm
+	bra.s	.yes
+.gt:	move.b	(a0)+,d0		; up to '>'
+	beq.s	.no
+	cmp.b	#'>',d0
+	bne.s	.gt
+	bra.s	.yes
+.start:	addq.l	#1,a0			; the name
+.sn:	move.b	(a0),d0
+	beq.s	.no
+	cmp.b	#' ',d0
+	bls.s	.at
+	cmp.b	#'/',d0
+	beq.s	.at
+	cmp.b	#'>',d0
+	beq.s	.at
+	addq.l	#1,a0
+	bra.s	.sn
+.at:	bsr	BlankA0			; attributes (as ParseAttrs)
+	beq.s	.no
+	cmp.b	#'>',d0
+	beq.s	.end
+	addq.l	#1,a0			; '/' or the name's first character
+	cmp.b	#'/',d0
+	beq.s	.at
+.an:	move.b	(a0),d0
+	beq.s	.no
+	cmp.b	#' ',d0
+	bls.s	.ae
+	cmp.b	#'/',d0
+	beq.s	.ae
+	cmp.b	#'>',d0
+	beq.s	.ae
+	cmp.b	#'=',d0
+	beq.s	.ae
+	addq.l	#1,a0
+	bra.s	.an
+.ae:	bsr	BlankA0
+	beq.s	.no
+	cmp.b	#'=',d0
+	bne.s	.at
+	addq.l	#1,a0
+	bsr	BlankA0
+	beq.s	.no
+	cmp.b	#'"',d0
+	beq.s	.q
+	cmp.b	#39,d0
+	beq.s	.q
+.uv:	move.b	(a0),d0			; unquoted value
+	beq.s	.no
+	cmp.b	#'>',d0
+	beq.s	.at
+	cmp.b	#' ',d0
+	bls.s	.at
+	addq.l	#1,a0
+	bra.s	.uv
+.q:	move.b	d0,d1			; quoted value
+	addq.l	#1,a0
+.ql:	move.b	(a0)+,d0
+	beq.s	.no
+	cmp.b	d1,d0
+	bne.s	.ql
+	bra.s	.at
+.end:	addq.l	#1,a0
+	move.l	a0,g_TokEnd(a4)
+	bra.s	.yes
+
+; BlankA0 - skip blanks at a0
+; Out: d0 = the next character, 0 at the end (CCR set)
+BlankA0:
+	moveq	#0,d0
+.l:	move.b	(a0),d0
+	beq.s	.x
+	cmp.b	#' ',d0
+	beq.s	.n
+	cmp.b	#9,d0
+	blo.s	.x
+	cmp.b	#13,d0
+	bhi.s	.x
+.n:	addq.l	#1,a0
+	bra.s	.l
+.x:	tst.l	d0
+	rts
+
+;--------------------------------------------------------------------
+; RawComplete - is the end tag of raw text element g_TagName (as
+; RawText finds it) there after a0, with its '>'?
+; Out: d0 = 1 if so (CCR set)
+;--------------------------------------------------------------------
+RawComplete:
+.l:	move.b	(a0)+,d0
+	beq.s	.no
+	cmp.b	#'<',d0
+	bne.s	.l
+	cmp.b	#'/',(a0)
+	bne.s	.l
+	move.l	a0,-(sp)
+	addq.l	#1,a0
+	lea	g_TagName(a4),a1
+	jsr	StrIPrefix
+	beq.s	.n
+	move.b	(a0),d0
+	beq.s	.no4
+	cmp.b	#'>',d0
+	beq.s	.gt
+	cmp.b	#'/',d0
+	beq.s	.gt
+	cmp.b	#' ',d0
+	bls.s	.gt
+.n:	move.l	(sp)+,a0
+	bra.s	.l
+.gt:	addq.l	#4,sp			; and its '>'
+.g:	move.b	(a0)+,d0
+	beq.s	.no
+	cmp.b	#'>',d0
+	bne.s	.g
+	moveq	#1,d0
+	rts
+.no4:	addq.l	#4,sp
+.no:	moveq	#0,d0
 	rts
 
 ;--------------------------------------------------------------------
@@ -415,17 +665,50 @@ AddText:
 	jsr	TagFlagsOf
 	btst	#6,d0			; TF_NOWS
 	bne.s	.x
-.add:	moveq	#DN_TEXT,d0
+.add:	cmp.b	#DN_DOCUMENT,n_Type(a3)	; text in the body: it begins
+	beq.s	.nb
+	move.w	n_Tag(a3),d0
+	cmp.w	#TAG_HTML,d0
+	beq.s	.nb
+	cmp.w	#TAG_HEAD,d0
+	beq.s	.nb
+	st	g_ParseBody(a4)
+.nb:	move.l	a2,a0
+	move.l	d2,d0
+	bsr	TextNode
+	beq.s	.x
+	move.l	a3,a0
+	jsr	DomAppend
+.x:	movem.l	(sp)+,d2-d3/a2-a3
+	rts
+
+; TextNode - a text node with its own copy of text a0, d0 bytes (the
+; source may move while the page comes in)
+; Out: d0 = a1 = the node, 0 when out of memory (CCR set)
+TextNode:
+	movem.l	d2/a2-a3,-(sp)
+	move.l	a0,a2
+	move.l	d0,d2
+	jsr	PageAlloc
+	beq.s	.x
+	move.l	d0,a3
+	move.l	a2,a0
+	move.l	a3,a1
+	move.l	d2,d0
+	bra.s	.ce
+.c:	move.b	(a0)+,(a1)+
+.ce:	subq.l	#1,d0
+	bpl.s	.c
+	moveq	#DN_TEXT,d0
 	moveq	#0,d1
 	jsr	DomNewNode
 	tst.l	d0
 	beq.s	.x
 	move.l	d0,a1
-	move.l	a2,n_Data(a1)
+	move.l	a3,n_Data(a1)
 	move.l	d2,n_Data2(a1)
-	move.l	a3,a0
-	jsr	DomAppend
-.x:	movem.l	(sp)+,d2-d3/a2-a3
+	move.l	a1,d0
+.x:	movem.l	(sp)+,d2/a2-a3
 	rts
 
 ;--------------------------------------------------------------------
@@ -730,14 +1013,10 @@ RawText:
 	addq.l	#1,a3
 	subq.l	#1,d2
 	beq.s	.close
-.node:	moveq	#DN_TEXT,d0
-	moveq	#0,d1
-	jsr	DomNewNode
-	tst.l	d0
+.node:	move.l	a3,a0
+	move.l	d2,d0
+	bsr	TextNode
 	beq.s	.close
-	move.l	d0,a1
-	move.l	a3,n_Data(a1)
-	move.l	d2,n_Data2(a1)
 	move.l	a5,a0
 	jsr	DomAppend
 	cmp.w	#TAG_TITLE,d6

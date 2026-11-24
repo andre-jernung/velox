@@ -405,6 +405,12 @@ g_FontBase	rs.w	FONT_COUNT	; baseline per font index
 g_Runs		rs.b	BUF_SIZEOF	; display list (Run records)
 g_Anchors	rs.b	BUF_SIZEOF	; id=/name= values and their y (layout)
 g_FragPend	rs.l	1		; scroll to g_FragName once it is there
+g_ParsePos	rs.l	1		; html.s: where HtmlMore goes on
+g_ParseBase	rs.l	1		; the text (this call)
+g_ParseFinal	rs.l	1		; 1: the end of the document
+g_ParseBody	rs.l	1		; the body's content has begun
+g_TokStart	rs.l	1		; the token being parsed
+g_TokEnd	rs.l	1		; after a complete start tag
 g_LoadPhase	rs.l	1		; 1: a new page loads, 2: the shown one
 g_LayWidth	rs.l	1		; width laid out for
 g_DocHeight	rs.l	1
