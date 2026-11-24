@@ -144,3 +144,32 @@ text 10 8 32 10 8 f1 s0 c000000 "para"
 text 30 28 48 10 8 f1 s0 c000000 "quoted"
 text 50 70 96 10 8 f1 s0 c000000 "indented div"
 
+# floated images (align=left/right, CSS float), <br clear>, floats in cells
+layout test/unit/layout/floats.html 300 => 
+height 298
+img  10 8 80 40 40 f1 s0 c000000
+text 10 94 176 10 8 f1 s0 c000000 "Text that flows around"
+text 20 94 184 10 8 f1 s0 c000000 "the left floated image,"
+text 30 94 192 10 8 f1 s0 c000000 "wrapping beside it until"
+text 40 94 192 10 8 f1 s0 c000000 "it reaches the bottom of"
+text 50 94 144 10 8 f1 s0 c000000 "the image and then"
+text 60 8 272 10 8 f1 s0 c000000 "continuing at the full width below"
+text 70 8 24 10 8 f1 s0 c000000 "it."
+img  90 232 60 30 30 f1 s0 c000000
+text 90 8 192 10 8 f1 s0 c000000 "Right float with text on"
+text 100 8 184 10 8 f1 s0 c000000 "its left side that also"
+text 110 8 216 10 8 f1 s0 c000000 "wraps over several lines of"
+text 120 8 80 10 8 f1 s0 c000000 "text here."
+text 140 8 48 10 8 f1 s0 c000000 "Before"
+img  150 8 30 20 20 f1 s0 c000000
+text 150 44 240 10 8 f1 s0 c000000 "inline continues after a float"
+text 160 44 96 10 8 f1 s0 c000000 "in mid line."
+text 174 8 128 10 8 f1 s0 c000000 "After the clear."
+box  194 8 208 74 0 f0 s0 c000000
+box  197 11 124 68 0 f0 s0 c000000
+img  199 13 40 60 60 f1 s0 c000000
+text 199 59 72 10 8 f1 s0 c000000 "cell text"
+box  197 137 76 68 0 f0 s0 c000000
+text 199 139 72 10 8 f1 s0 c000000 "next cell"
+text 278 8 128 10 8 f1 s0 c000000 "After the table."
+

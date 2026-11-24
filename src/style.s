@@ -47,7 +47,7 @@ StyleCompute:
 	clr.l	st_MTop(a3)
 	clr.l	st_MLeft(a3)
 	clr.l	st_Width(a3)
-	bclr	#1,st_Flags(a3)		; SF_MAUTO
+	and.b	#~(SF_MAUTO|SF_FLOATL|SF_FLOATR),st_Flags(a3)
 
 	; user agent defaults
 	moveq	#0,d0
@@ -257,8 +257,21 @@ StyleCompute:
 	jsr	DomGetAttr
 	tst.l	d0
 	beq.s	.noalign
-	cmp.b	#DISP_IBLOCK,st_Display(a3)	; img/table align = floats
-	beq.s	.noalign
+	cmp.w	#TAG_IMG,n_Tag(a5)	; <img align=left|right>: floats
+	bne.s	.notimg
+	move.l	d0,a0
+	move.b	(a0),d0
+	or.b	#$20,d0
+	cmp.b	#'l',d0
+	bne.s	.ir
+	bset	#2,st_Flags(a3)		; SF_FLOATL
+.ir:	cmp.b	#'r',d0
+	bne.s	.noalign
+	bset	#3,st_Flags(a3)		; SF_FLOATR
+	bra.s	.noalign
+.notimg:
+	cmp.b	#DISP_IBLOCK,st_Display(a3)	; (other replaced elements and
+	beq.s	.noalign			;  tables align themselves)
 	cmp.w	#TAG_TABLE,n_Tag(a5)
 	beq.s	.noalign
 	move.l	d0,a0

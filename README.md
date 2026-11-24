@@ -19,7 +19,8 @@ A small, fast web browser for classic AmigaOS 3.x, written entirely in
 - CSS subset: selectors (including `:not()`, `:is()`, attribute and
   structural ones) with specificity, colors, fonts, margins, padding,
   borders, widths, alignment, display, media queries
-- Tables, lists, preformatted text, headings, horizontal rules
+- Tables, lists, preformatted text, headings, horizontal rules, images
+  floated left or right with the text flowing around them
 - Forms: text, password, checkboxes, radio buttons, selects, text areas;
   GET and POST
 - Images through datatypes.library, scaled and remapped to the screen,

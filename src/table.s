@@ -15,6 +15,7 @@
 	xref	StyleCompute,CssApply,LayoutBlockContent,LayoutNode
 	xref	LineReset,AddRun,RunPtr,RunCount,ApplyPendingMargin
 	xref	Measure,DomGetAttr,ParseDec,FormIsControl,FormControlSize
+	xref	ClearFloats
 
 MAXCOLS		equ	48
 MAXSPANS	equ	32		; colspan cells applied after the others
@@ -482,7 +483,21 @@ LayoutTable:
 	move.l	g_Squeeze(a4),-(sp)	; squeezed: nowrap wraps
 	move.l	tb_Squeezed(a3),d0
 	or.l	d0,g_Squeeze(a4)
+	move.l	g_FlREdge(a4),-(sp)	; a cell has its own floats
+	move.l	g_FlRBot(a4),-(sp)
+	move.l	g_FlLEdge(a4),-(sp)
+	move.l	g_FlLBot(a4),-(sp)
+	clr.l	g_FlLBot(a4)
+	clr.l	g_FlRBot(a4)
+	jsr	LineReset
+	move.l	d6,a0
+	lea	tb_CellStyle(a3),a1
 	jsr	LayoutBlockContent
+	jsr	ClearFloats		; and contains them
+	move.l	(sp)+,g_FlLBot(a4)
+	move.l	(sp)+,g_FlLEdge(a4)
+	move.l	(sp)+,g_FlRBot(a4)
+	move.l	(sp)+,g_FlREdge(a4)
 	move.l	(sp)+,g_Squeeze(a4)
 	move.l	g_LayY(a4),d0
 	add.l	tb_Pad(a3),d0

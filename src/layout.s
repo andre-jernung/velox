@@ -14,7 +14,7 @@
 
 	xdef	LayoutDocument,LayoutChildren,LayoutNode,LayoutBlockContent
 	xdef	FlushLine,LineReset,AddMargin,AddRun,RunCount,RunPtr,Measure
-	xdef	ApplyPendingMargin,IntAttr
+	xdef	ApplyPendingMargin,IntAttr,ClearFloats
 	xref	StyleRoot,StyleCompute,BufClear,BufReserve,PageAlloc,FmtDec
 	xref	DomGetAttr,ParseDec,LayoutTable,CssApply
 	xref	FormIsControl,FormControlSize,CssInvalidate
@@ -56,6 +56,8 @@ LayoutDocument:
 	clr.l	g_LayWhite(a4)
 	clr.l	g_Marker(a4)
 	clr.l	g_LayDepth(a4)
+	clr.l	g_FlLBot(a4)
+	clr.l	g_FlRBot(a4)
 	moveq	#1,d0
 	move.l	d0,g_ListNum(a4)
 	moveq	#PAGE_MARGIN,d0
@@ -80,6 +82,7 @@ LayoutDocument:
 	bsr	LayoutChildren
 	bsr	FlushLine
 .done:	lea	STYLE_SIZEOF(sp),sp
+	bsr	ClearFloats		; (floats reach down too)
 	move.l	g_LayY(a4),d0
 	add.l	g_PendMargin(a4),d0
 	move.l	d0,g_DocHeight(a4)
@@ -168,6 +171,14 @@ LayoutNode:
 	bra.s	.pop
 .br:	move.l	a3,a1
 	bsr	LineBreak
+	move.l	a5,a0			; <br clear=...>: below the floats
+	lea	AnClear(pc),a1
+	jsr	DomGetAttr
+	tst.l	d0
+	beq.s	.pop
+	bsr	FlushLine
+	bsr	ClearFloats
+	bsr	LineReset
 	bra.s	.pop
 .hr:	move.l	a3,a1
 	bsr	Rule
@@ -411,6 +422,7 @@ IntAttr:
 .x:	rts
 
 AnStart:	dc.b	"start",0
+AnClear:	dc.b	"clear",0
 AnValue:	dc.b	"value",0
 AnAlt:		dc.b	"alt",0
 	even
@@ -418,6 +430,56 @@ AnAlt:		dc.b	"alt",0
 ;--------------------------------------------------------------------
 ; Vertical space and lines
 ;--------------------------------------------------------------------
+
+; LineBounds - g_LineL/g_LineR for a line at the current y: the block
+; bounds, narrowed by floats beside it.  Where floats leave too little
+; room the line goes below them.
+LineBounds:
+	movem.l	d2-d3,-(sp)
+.again:	move.l	g_LayY(a4),d2
+	add.l	g_PendMargin(a4),d2	; y of the line
+	move.l	g_LayLeft(a4),d0
+	move.l	g_LayRight(a4),d1
+	cmp.l	g_FlLBot(a4),d2		; a left float beside it?
+	bge.s	.r
+	cmp.l	g_FlLEdge(a4),d0
+	bge.s	.r
+	move.l	g_FlLEdge(a4),d0
+.r:	cmp.l	g_FlRBot(a4),d2		; a right one?
+	bge.s	.set
+	cmp.l	g_FlREdge(a4),d1
+	ble.s	.set
+	move.l	g_FlREdge(a4),d1
+.set:	move.l	d1,d3
+	sub.l	d0,d3
+	cmp.l	#MIN_WIDTH,d3		; too narrow: below the floats
+	bge.s	.ok
+	cmp.l	g_LayLeft(a4),d0
+	bne.s	.clr
+	cmp.l	g_LayRight(a4),d1
+	beq.s	.ok			; (the block itself is narrow)
+.clr:	bsr	ClearFloats
+	bra.s	.again
+.ok:	move.l	d0,g_LineL(a4)
+	move.l	d1,g_LineR(a4)
+	movem.l	(sp)+,d2-d3
+	rts
+
+; ClearFloats - move y below the floats and forget them
+ClearFloats:
+	move.l	g_LayY(a4),d0
+	add.l	g_PendMargin(a4),d0
+	cmp.l	g_FlLBot(a4),d0
+	bge.s	.r
+	move.l	g_FlLBot(a4),d0
+.r:	cmp.l	g_FlRBot(a4),d0
+	bge.s	.s
+	move.l	g_FlRBot(a4),d0
+.s:	sub.l	g_PendMargin(a4),d0
+	move.l	d0,g_LayY(a4)
+	clr.l	g_FlLBot(a4)
+	clr.l	g_FlRBot(a4)
+	rts
 
 ; AddMargin - In: d0 = margin; collapses with the pending margin
 AddMargin:
@@ -433,9 +495,10 @@ ApplyPendingMargin:
 	clr.l	g_PendMargin(a4)
 	rts
 
-; LineReset - start an empty line at the left edge
+; LineReset - start an empty line at the left edge (beside floats)
 LineReset:
-	move.l	g_LayLeft(a4),g_LineX(a4)
+	bsr	LineBounds
+	move.l	g_LineL(a4),g_LineX(a4)
 	bsr	RunCount
 	move.l	d0,g_LineStart(a4)
 	clr.l	g_LineAsc(a4)
@@ -456,7 +519,7 @@ FlushLine:
 	moveq	#0,d4			; horizontal shift
 	move.l	g_LayAlign(a4),d0
 	beq.s	.place
-	move.l	g_LayRight(a4),d4
+	move.l	g_LineR(a4),d4
 	sub.l	g_LineX(a4),d4
 	bpl.s	.pos
 	moveq	#0,d4
@@ -498,7 +561,7 @@ LineBreak:
 	lea	g_FontH(a4),a0
 	move.w	(a0,d0.w),d0
 	add.l	d0,g_LayY(a4)
-	rts
+	bra	LineReset
 
 ; Rule - <hr>
 ; In: a1 = style
@@ -609,11 +672,11 @@ LayoutChars:
 	tst.l	g_PendSpace(a4)
 	beq.s	.nsp
 	add.l	g_SpaceW(a4),d0
-.nsp:	cmp.l	g_LayRight(a4),d0
+.nsp:	cmp.l	g_LineR(a4),d0
 	ble.s	.place
 	bsr	FlushLine
 .fit:	; a word longer than the whole line is split
-	move.l	g_LayRight(a4),d0
+	move.l	g_LineR(a4),d0
 	sub.l	g_LineX(a4),d0
 	cmp.l	d0,d3
 	ble.s	.place
@@ -715,7 +778,7 @@ Space:	dc.b	" "
 FitChars:
 	movem.l	d2-d5/a2,-(sp)
 	move.l	a0,a2
-	move.l	g_LayRight(a4),d5
+	move.l	g_LineR(a4),d5
 	sub.l	g_LineX(a4),d5		; room
 	moveq	#1,d2			; lo: always fits
 	move.l	d1,d3			; hi
@@ -965,7 +1028,12 @@ LayoutReplaced:
 	lsl.w	#8,d6
 	move.b	st_Font(a3),d6
 	moveq	#RT_IMAGE,d5
-	bsr	PlaceBox
+	move.b	st_Flags(a3),d0
+	and.b	#SF_FLOATL|SF_FLOATR,d0
+	beq.s	.inl
+	bsr	PlaceFloat
+	bra	.x
+.inl:	bsr	PlaceBox
 	bra	.x
 .alt:	; unknown size: show the alt text instead
 	move.l	a5,a0
@@ -1022,13 +1090,69 @@ LayoutReplaced:
 .x:	movem.l	(sp)+,d2-d6/a2-a3/a5
 	rts
 
+; PlaceFloat - an image floated to the left or right: it goes at the
+; edge at the next line, and the lines beside it are made narrower
+; In: d2 = width, d3 = height, d5 = run type, d6 = font code,
+;     a5 = element, a3 = style
+PlaceFloat:
+	movem.l	d2-d7,-(sp)
+	bsr	FlushLine		; (it starts a new line)
+	bsr	ApplyPendingMargin
+	bsr	LineReset
+	move.l	g_LineR(a4),d0		; never wider than the line
+	sub.l	g_LineL(a4),d0
+	cmp.l	d0,d2
+	ble.s	.w
+	move.l	d0,d2
+.w:	move.l	g_LineL(a4),d7		; x: at the left ...
+	btst	#3,st_Flags(a3)
+	beq.s	.x
+	move.l	g_LineR(a4),d7		; ... or the right edge
+	sub.l	d2,d7
+.x:	bsr	AddRun
+	beq	.done
+	move.l	d0,a0
+	move.b	d5,ru_Type(a0)
+	move.l	g_LayY(a4),ru_Y(a0)
+	move.w	d7,ru_X(a0)
+	move.w	d2,ru_W(a0)
+	move.w	d3,ru_H(a0)
+	move.w	d3,ru_Base(a0)
+	move.b	d6,ru_Font(a0)
+	move.w	d6,d0
+	lsr.w	#8,d0
+	move.b	d0,ru_Soft(a0)
+	move.l	a5,ru_Text(a0)
+	move.l	st_Color(a3),ru_Color(a0)
+	move.l	st_Link(a3),ru_Link(a0)
+	move.l	g_LayY(a4),d0		; remember it: bottom and edge
+	add.l	d3,d0
+	addq.l	#4,d0
+	btst	#3,st_Flags(a3)
+	bne.s	.right
+	cmp.l	g_FlLBot(a4),d0
+	ble.s	.lb
+	move.l	d0,g_FlLBot(a4)
+.lb:	add.l	d2,d7
+	addq.l	#6,d7
+	move.l	d7,g_FlLEdge(a4)
+	bra.s	.done
+.right:	cmp.l	g_FlRBot(a4),d0
+	ble.s	.rb
+	move.l	d0,g_FlRBot(a4)
+.rb:	subq.l	#6,d7
+	move.l	d7,g_FlREdge(a4)
+.done:	bsr	LineReset		; (the float is not on the line)
+	movem.l	(sp)+,d2-d7
+	rts
+
 ; PlaceBox - put an inline box on the line (wrapping first if needed)
 ; In: d2 = width, d3 = height, d4 = baseline offset, d5 = run type,
 ;     d6 = font code, a5 = element, a3 = style
 PlaceBox:
 	movem.l	d2-d7,-(sp)
-	move.l	g_LayRight(a4),d0
-	sub.l	g_LayLeft(a4),d0
+	move.l	g_LineR(a4),d0
+	sub.l	g_LineL(a4),d0
 	cmp.l	d0,d2
 	ble.s	.wok
 	move.l	d0,d2			; never wider than the line
@@ -1039,7 +1163,7 @@ PlaceBox:
 	tst.l	g_PendSpace(a4)
 	beq.s	.ns
 	add.l	g_SpaceW(a4),d0
-.ns:	cmp.l	g_LayRight(a4),d0
+.ns:	cmp.l	g_LineR(a4),d0
 	ble.s	.room
 	bsr	FlushLine
 .room:	move.l	g_LineX(a4),d7

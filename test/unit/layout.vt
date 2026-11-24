@@ -11,3 +11,5 @@ layout test/unit/layout/imgalt.html 300
 layout test/unit/layout/align.html 300
 # the first line of an indented block starts at its edge
 layout test/unit/layout/indent.html 400
+# floated images (align=left/right, CSS float), <br clear>, floats in cells
+layout test/unit/layout/floats.html 300

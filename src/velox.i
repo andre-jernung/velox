@@ -183,6 +183,8 @@ LIST_DECIMAL	equ	3
 LIST_NONE	equ	4
 SF_INLIST	equ	1		; st_Flags: inside a list (inherited)
 SF_MAUTO	equ	2		; st_Flags: margin-left/right auto
+SF_FLOATL	equ	4		; st_Flags: float: left (images)
+SF_FLOATR	equ	8		; st_Flags: float: right
 
 	RSRESET
 st_Display	rs.b	1		; DISP_xxx
@@ -516,6 +518,12 @@ g_ProxyHost	rs.b	HOST_MAX
 g_VarBuf	rs.b	256
 g_PressLink	rs.l	1
 g_Squeeze	rs.l	1		; laying out a squeezed table
+g_FlLBot	rs.l	1		; left float: bottom (0 = none) ...
+g_FlLEdge	rs.l	1		; ... and its right edge
+g_FlRBot	rs.l	1		; right float: bottom ...
+g_FlREdge	rs.l	1		; ... and its left edge
+g_LineL		rs.l	1		; the current line's bounds (floats
+g_LineR		rs.l	1		;  taken into account)
 TYPEAHEAD	equ	32
 g_TaCount	rs.l	1		; keys typed while loading
 g_TaKeys	rs.l	TYPEAHEAD*2	; code.w, qualifier.w, dead keys.l

@@ -68,6 +68,7 @@ CP_POSITION	rs.b	1
 CP_LEFT		rs.b	1
 CP_TOP		rs.b	1
 CP_OPACITY	rs.b	1
+CP_FLOAT	rs.b	1
 CP_COUNT	rs.b	0
 
 	section	code,code
@@ -1067,6 +1068,7 @@ PropNames:
 	PN	CP_LEFT,"left"
 	PN	CP_TOP,"top"
 	PN	CP_OPACITY,"opacity"
+	PN	CP_FLOAT,"float"
 	dc.b	0
 	even
 
@@ -2370,7 +2372,7 @@ PropJump:
 	dc.w	PMaxWidth-PropJump,PListType-PropJump,PListType-PropJump
 	dc.w	PVisibility-PropJump,PHeight-PropJump,PClip-PropJump
 	dc.w	PPosition-PropJump,PLeftTop-PropJump,PLeftTop-PropJump
-	dc.w	POpacity-PropJump
+	dc.w	POpacity-PropJump,PFloat-PropJump
 
 ; Kw - is the value (a0) the keyword a1 (lower case), as a whole word?
 ; Out: Z clear if yes; a0 kept
@@ -2946,6 +2948,20 @@ POpacity:				; opacity: 0 counts as "clipped away"
 	bset	#1,g_CssHidden+3(a4)
 .x:	rts
 
+PFloat:					; float: left/right (used for images)
+	and.b	#~(SF_FLOATL|SF_FLOATR),st_Flags(a3)
+	move.l	a2,a0
+	lea	KwLeft(pc),a1
+	bsr	Kw
+	beq.s	.r
+	bset	#2,st_Flags(a3)		; SF_FLOATL
+	rts
+.r:	lea	KwRight(pc),a1
+	bsr	Kw
+	beq.s	.x
+	bset	#3,st_Flags(a3)		; SF_FLOATR
+.x:	rts
+
 PLeftTop:
 	move.l	a2,a0
 	moveq	#CSS_EM,d0
@@ -3072,6 +3088,7 @@ SCourier:	dc.b	"courier",0
 SMonoPart:	dc.b	"mono",0
 KwCenter:	dc.b	"center",0
 KwRight:	dc.b	"right",0
+KwLeft:		dc.b	"left",0
 KwEnd:		dc.b	"end",0
 KwNowrap:	dc.b	"nowrap",0
 KwPre:		dc.b	"pre",0
