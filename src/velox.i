@@ -259,6 +259,15 @@ CSS_MAXMATCH	equ	64		; matched rules kept per element
 ;--------------------------------------------------------------------
 ; Run - one item of the display list made by layout
 ;--------------------------------------------------------------------
+; painting: the view is compared in bands of BAND_H lines, and painted
+; through an off-screen strip of STRIP_H lines
+BAND_SHIFT	equ	2
+BAND_H		equ	1<<BAND_SHIFT
+BANDS_MAX	equ	320
+BAND_GAP	equ	6		; unchanged bands painted to join two
+STRIP_H		equ	32
+VIS_MAX		equ	1024
+
 RT_TEXT		equ	1
 RT_RECT		equ	2		; filled background
 RT_RULE		equ	3		; <hr>
@@ -544,6 +553,15 @@ g_SelB		rs.l	1		; end: run, offset
 g_SelBOff	rs.l	1
 g_SelFrom	rs.l	1		; scratch
 g_PaintIdx	rs.l	1		; index of the run being painted
+g_PageGen	rs.l	1		; counts the pages shown
+g_BandsOk	rs.l	1		; g_Bands tells what is on the screen
+g_BandN		rs.l	1		; bands in the view
+g_BandView	rs.l	5		; ViewKey (gui.s) of g_Bands
+g_StripBM	rs.l	1		; off-screen strip for painting
+g_StripLI	rs.l	1		; its LayerInfo
+g_StripLayer	rs.l	1		; its layer (0: no strip)
+g_StripW	rs.l	1		; its width
+g_VisN		rs.l	1		; runs in g_Vis, -1: too many
 g_FindOn	rs.l	1		; find in page active
 g_FindRun	rs.l	1		; run with the match, or 0
 g_FindIdx	rs.l	1		; its index (-1 none)
@@ -562,6 +580,10 @@ g_Hist		rs.l	HIST_ENTRIES*2	; URL, scroll position
 g_PageUrl	rs.b	URL_MAX		; URL of the page shown
 g_NavUrl	rs.b	URL_MAX		; URL being loaded
 g_LinkUrl	rs.b	URL_MAX
+; (large arrays last: the rest stays in reach of 16-bit offsets)
+g_Bands		rs.l	BANDS_MAX	; signature of each band on the screen
+g_BandsNew	rs.l	BANDS_MAX	; ... and of the runs now
+g_Vis		rs.l	VIS_MAX		; indexes of the runs being painted
 g_SIZEOF	rs.b	0
 
 ;--------------------------------------------------------------------

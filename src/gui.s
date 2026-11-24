@@ -7,6 +7,8 @@
 	include	"graphics/text.i"
 	include	"graphics/gfx.i"
 	include	"graphics/view.i"
+	include	"graphics/clip.i"
+	include	"graphics/layers.i"
 	include	"devices/inputevent.i"
 	include	"lvo/gadtools_lib.i"
 	include	"lvo/layers_lib.i"
@@ -15,7 +17,7 @@
 
 	xdef	GuiOpen,GuiClose,GuiEventLoop,GuiPaintAll,GuiStatus
 	xdef	GuiSetUrl,GuiSetTitle,GuiScrollTo,GuiNetHook,GuiBusy
-	xdef	GuiRelayout,GuiPageWidth,GuiAbout,DrawStatus,ImgNetHook,GuiProgress
+	xdef	GuiRelayout,GuiRefresh,GuiPageWidth,GuiAbout,DrawStatus,ImgNetHook,GuiProgress
 	xref	FindStart,FindKey,FindHighlight,KeyToChars,NavRefresh
 	xref	CopyAddress,ViewSource,SelPress,SelMove,SelRelease,SelHighlight,ParseDec,FmtDec,StrCopy
 	xref	LayoutDocument,RunCount,RunPtr,StrLen,StrCopyN
@@ -181,6 +183,7 @@ MenuTags:	dc.l	GTMN_NewLookMenus,1,TAG_DONE
 ; GuiClose - close everything GuiOpen opened (safe on partial opens)
 ;--------------------------------------------------------------------
 GuiClose:
+	bsr	StripFree
 	move.l	g_Window(a4),d0
 	beq.s	.nowin
 	tst.l	g_Menu(a4)
@@ -658,35 +661,287 @@ GuiPageWidth:
 
 ; GuiPaintAll - repaint page, status line and scroller
 GuiPaintAll:
-	move.l	g_ScrollY(a4),d0
-	move.l	d0,d1
-	add.l	g_PageH(a4),d1
-	bsr	PaintRange
-	bsr	DrawStatus
-	bra	UpdateScroller
+	clr.l	g_BandsOk(a4)
+	; fall through
 
-; PaintRange - repaint document lines [d0, d1) (clipped to the view)
+;--------------------------------------------------------------------
+; GuiRefresh - bring the view up to date after the runs changed:
+; only the bands (BAND_H lines) whose runs look different from what is
+; on the screen are painted (all of them if that is not known)
+;--------------------------------------------------------------------
+GuiRefresh:
+	movem.l	d2-d6/a2-a3,-(sp)
+	tst.l	g_Window(a4)
+	beq	.x
+	moveq	#0,d6			; lines painted (logged for tests)
+	move.l	g_PageH(a4),d2
+	addq.l	#BAND_H-1,d2
+	lsr.l	#BAND_SHIFT,d2		; d2 = bands
+	cmp.l	#BANDS_MAX,d2
+	bls.s	.fits
+	clr.l	g_BandsOk(a4)		; too tall to keep track of
+	bra.s	.all
+.fits:	move.l	d2,g_BandN(a4)
+	lea	ViewKey(pc),a0		; the same view as on the screen?
+	lea	g_BandView(a4),a1
+.k:	move.w	(a0)+,d0
+	beq.s	.samev
+	move.l	(a4,d0.w),d0
+	cmp.l	(a1),d0
+	beq.s	.ks
+	clr.l	g_BandsOk(a4)
+	move.l	d0,(a1)
+.ks:	addq.l	#4,a1
+	bra.s	.k
+.samev:	lea	g_BandsNew(a4),a0
+	bsr	ViewBands
+	tst.l	g_BandsOk(a4)
+	beq.s	.all
+	lea	g_Bands(a4),a2
+	lea	g_BandsNew(a4),a3
+	moveq	#0,d3			; band
+.f:	cmp.l	d2,d3
+	bhs.s	.keep
+	move.l	(a2,d3.l*4),d0
+	cmp.l	(a3,d3.l*4),d0
+	bne.s	.diff
+	addq.l	#1,d3
+	bra.s	.f
+.diff:	move.l	d3,d4			; first changed band
+	move.l	d3,d5			; last changed band
+.g:	addq.l	#1,d3			; (close changes are painted together)
+	cmp.l	d2,d3
+	bhs.s	.p
+	move.l	(a2,d3.l*4),d0
+	cmp.l	(a3,d3.l*4),d0
+	beq.s	.eq
+	move.l	d3,d5
+.eq:	move.l	d3,d0
+	sub.l	d5,d0
+	cmp.l	#BAND_GAP,d0
+	blo.s	.g
+.p:	move.l	d4,d0
+	lsl.l	#BAND_SHIFT,d0
+	add.l	g_ScrollY(a4),d0
+	move.l	d5,d1
+	addq.l	#1,d1
+	lsl.l	#BAND_SHIFT,d1
+	add.l	g_ScrollY(a4),d1
+	add.l	d1,d6
+	sub.l	d0,d6
+	bsr	PaintRange
+	move.l	d5,d3
+	addq.l	#1,d3
+	bra.s	.f
+.all:	move.l	g_ScrollY(a4),d0
+	move.l	g_PageH(a4),d6
+	move.l	d0,d1
+	add.l	d6,d1
+	bsr	PaintRange
+	cmp.l	#BANDS_MAX,d2
+	bhi.s	.done
+.keep:	lea	g_BandsNew(a4),a0	; that is on the screen now
+	lea	g_Bands(a4),a1
+	move.l	d2,d0
+	bra.s	.ce
+.c:	move.l	(a0)+,(a1)+
+.ce:	dbf	d0,.c
+	moveq	#1,d0
+	move.l	d0,g_BandsOk(a4)
+.done:	lea	LogPaint(pc),a0
+	suba.l	a1,a1
+	move.l	d6,d0
+	jsr	LogEvent
+	bsr	DrawStatus
+	bsr	UpdateScroller
+.x:	movem.l	(sp)+,d2-d6/a2-a3
+	rts
+
+; what the bands depend on besides the runs (a highlight cleared by a
+; relayout, too)
+ViewKey:	dc.w	g_PageW,g_PageH,g_PageBg,g_FindRun,g_SelShown,0
+LogPaint:	dc.b	"paint",0
+	even
+
+; ViewBands - the signature of each band of the view, into a0
+; (g_BandN longs): a hash of the runs over it, in painting order
+ViewBands:
+	movem.l	d2-d7/a2-a3,-(sp)
+	move.l	a0,a3
+	move.l	g_BandN(a4),d0
+	bra.s	.ce
+.c:	clr.l	(a0)+
+.ce:	dbf	d0,.c
+	jsr	RunCount
+	move.l	d0,d7
+	moveq	#0,d6
+.l:	cmp.l	d7,d6
+	bhs.s	.x
+	move.l	d6,d0
+	jsr	RunPtr
+	move.l	a0,a2
+	move.l	ru_Y(a2),d4
+	sub.l	g_ScrollY(a4),d4	; view y of the top
+	moveq	#0,d5
+	move.w	ru_H(a2),d5
+	add.l	d4,d5			; ... and below the bottom
+	ble.s	.n
+	cmp.l	g_PageH(a4),d4
+	bge.s	.n
+	bsr	RunSig
+	tst.l	d4
+	bpl.s	.t
+	moveq	#0,d4
+.t:	cmp.l	g_PageH(a4),d5
+	ble.s	.b
+	move.l	g_PageH(a4),d5
+.b:	subq.l	#1,d5
+	lsr.l	#BAND_SHIFT,d4
+	lsr.l	#BAND_SHIFT,d5
+	lea	(a3,d4.l*4),a0
+.m:	move.l	(a0),d1
+	rol.l	#5,d1
+	add.l	d0,d1
+	move.l	d1,(a0)+
+	addq.l	#1,d4
+	cmp.l	d5,d4
+	bls.s	.m
+.n:	addq.l	#1,d6
+	bra.s	.l
+.x:	movem.l	(sp)+,d2-d7/a2-a3
+	rts
+
+; RunSig - a hash of how run a2 looks in the view
+; Out: d0
+RunSig:
+	movem.l	d2,-(sp)
+	move.l	ru_Y(a2),d0
+	sub.l	g_ScrollY(a4),d0
+	lea	ru_X(a2),a0		; X W H Base Type Font Soft Flags Color
+	moveq	#4-1,d2
+.f:	rol.l	#5,d0
+	add.l	(a0)+,d0
+	dbf	d2,.f
+	rol.l	#5,d0
+	add.l	ru_Len(a2),d0
+	move.l	ru_Link(a2),d1		; the keyboard focus is drawn
+	beq.s	.nf
+	cmp.l	g_FocusLink(a4),d1
+	bne.s	.nf
+	addq.l	#1,d0
+.nf:	cmp.b	#RT_TEXT,ru_Type(a2)
+	beq.s	.text
+	cmp.b	#RT_WIDGET,ru_Type(a2)	; controls and images: the same only
+	beq.s	.page			; on the same page
+	cmp.b	#RT_IMAGE,ru_Type(a2)
+	bne.s	.x
+	move.l	ru_Text(a2),a0		; loaded or not
+	rol.l	#5,d0
+	add.l	n_Data2(a0),d0
+.page:	rol.l	#5,d0
+	add.l	ru_Text(a2),d0
+	rol.l	#5,d0
+	add.l	g_PageGen(a4),d0
+	bra.s	.x
+.text:	move.l	ru_Text(a2),a0		; the characters
+	move.l	ru_Len(a2),d2
+	beq.s	.x
+.t:	rol.l	#5,d0
+	moveq	#0,d1
+	move.b	(a0)+,d1
+	add.l	d1,d0
+	subq.l	#1,d2
+	bne.s	.t
+.x:	movem.l	(sp)+,d2
+	rts
+
+;--------------------------------------------------------------------
+; PaintRange - repaint document lines [d0, d1) (clipped to the view).
+; The runs are drawn into an off-screen strip, STRIP_H lines at a time,
+; which is then copied to the window, so nothing is seen half drawn;
+; without the strip they are drawn in the window directly
+;--------------------------------------------------------------------
 PaintRange:
 	movem.l	d2-d7/a2-a3/a5,-(sp)
-	move.l	g_Window(a4),d2
+	tst.l	g_Window(a4)
 	beq	.x
+	move.l	g_ScrollY(a4),d2	; clip to the view
+	cmp.l	d2,d0
+	bge.s	.t
+	move.l	d2,d0
+.t:	add.l	g_PageH(a4),d2
+	cmp.l	d2,d1
+	ble.s	.b
+	move.l	d2,d1
+.b:	cmp.l	d0,d1
+	ble	.x
 	move.l	d0,d6			; doc top
 	move.l	d1,d7			; doc bottom
+	moveq	#-1,d0			; the font cache is for the window
+	move.l	d0,g_PaintFont(a4)	; RastPort, not the strip's
+	move.l	d0,g_PaintFont+4(a4)
+	bsr	CollectRuns
+	bsr	StripReady
+	beq	.direct
+	move.l	d0,a3			; a3 = the strip's RastPort
+.sl:	cmp.l	d7,d6
+	bge	.sdone
+	move.l	d6,d5			; strip bottom
+	add.l	#STRIP_H,d5
+	cmp.l	d7,d5
+	ble.s	.s1
+	move.l	d7,d5
+.s1:	move.l	g_PageX(a4),-(sp)	; draw with the strip as the view
+	move.l	g_PageY(a4),-(sp)
+	clr.l	g_PageX(a4)
+	move.l	g_ScrollY(a4),d0
+	sub.l	d6,d0
+	move.l	d0,g_PageY(a4)
+	move.l	g_PageBg(a4),d0
+	bsr	GetPen
+	move.l	a3,a1
+	GFX	SetAPen
+	move.l	a3,a1
+	moveq	#0,d0
+	moveq	#0,d1
+	move.l	g_PageW(a4),d2
+	subq.l	#1,d2
+	moveq	#STRIP_H-1,d3
+	GFX	RectFill
+	move.l	d6,d0
+	move.l	d5,d1
+	bsr	PaintRuns
+	move.l	(sp)+,g_PageY(a4)
+	move.l	(sp)+,g_PageX(a4)
+	move.l	d5,-(sp)		; copy it to the window
+	sub.l	d6,d5			; height
+	move.l	d6,d3
+	sub.l	g_ScrollY(a4),d3
+	add.l	g_PageY(a4),d3
+	move.l	g_PageX(a4),d2
+	move.l	g_PageW(a4),d4
+	move.l	g_StripBM(a4),a0
+	moveq	#0,d0
+	moveq	#0,d1
+	move.l	g_Window(a4),a1
+	move.l	wd_RPort(a1),a1
+	move.l	#$c0,d6
+	GFX	BltBitMapRastPort
+	move.l	(sp)+,d6
+	bra	.sl
+.sdone:	moveq	#-1,d0
+	move.l	d0,g_PaintFont(a4)
+	move.l	d0,g_PaintFont+4(a4)
+	bra	.x
+.direct:
 	; window rectangle of the range
 	move.l	d6,d0
 	sub.l	g_ScrollY(a4),d0
-	bpl.s	.t
-	moveq	#0,d0
-.t:	add.l	g_PageY(a4),d0
+	add.l	g_PageY(a4),d0
 	move.l	d7,d1
 	sub.l	g_ScrollY(a4),d1
-	cmp.l	g_PageH(a4),d1
-	ble.s	.b
-	move.l	g_PageH(a4),d1
-.b:	add.l	g_PageY(a4),d1
+	add.l	g_PageY(a4),d1
 	subq.l	#1,d1
-	cmp.l	d0,d1
-	blt	.x
 	lea	g_ClipRect(a4),a0
 	move.w	g_PageX+2(a4),ra_MinX(a0)
 	move.w	d0,ra_MinY(a0)
@@ -722,16 +977,68 @@ PaintRange:
 	ext.l	d2
 	ext.l	d3
 	GFX	RectFill
-	moveq	#-1,d0			; font cache of the window RastPort
-	move.l	d0,g_PaintFont(a4)
-	move.l	d0,g_PaintFont+4(a4)
-	; runs overlapping the range
+	move.l	d6,d0
+	move.l	d7,d1
+	bsr	PaintRuns
+	move.l	g_Window(a4),a0
+	move.l	wd_WLayer(a0),a0
+	move.l	(sp)+,a1
+	LAYERS	InstallClipRegion
+	move.l	a5,a0
+	GFX	DisposeRegion
+.x:	movem.l	(sp)+,d2-d7/a2-a3/a5
+	rts
+
+; CollectRuns - note the runs over document lines [d6, d7) in g_Vis
+; (g_VisN = -1 if there are more than VIS_MAX)
+CollectRuns:
+	movem.l	d2-d4/a2,-(sp)
+	jsr	RunCount
+	move.l	d0,d3
+	moveq	#0,d2			; run
+	moveq	#0,d4			; noted
+	lea	g_Vis(a4),a2
+.l:	cmp.l	d3,d2
+	bhs.s	.x
+	move.l	d2,d0
+	jsr	RunPtr
+	move.l	ru_Y(a0),d0
+	cmp.l	d7,d0
+	bge.s	.n
+	moveq	#0,d1
+	move.w	ru_H(a0),d1
+	add.l	d1,d0
+	cmp.l	d6,d0
+	ble.s	.n
+	cmp.l	#VIS_MAX,d4
+	bhs.s	.many
+	move.l	d2,(a2)+
+	addq.l	#1,d4
+.n:	addq.l	#1,d2
+	bra.s	.l
+.many:	moveq	#-1,d4
+.x:	move.l	d4,g_VisN(a4)
+	movem.l	(sp)+,d2-d4/a2
+	rts
+
+; PaintRuns - draw the runs over document lines [d0, d1) into a3, from
+; g_Vis (or all runs if it overflowed)
+PaintRuns:
+	movem.l	d2-d7/a2,-(sp)
+	move.l	d0,d6
+	move.l	d1,d7
+	move.l	g_VisN(a4),d5
+	bpl.s	.list
 	jsr	RunCount
 	move.l	d0,d5
-	moveq	#0,d4
+.list:	moveq	#0,d4
 .l:	cmp.l	d5,d4
-	bhs.s	.done
+	bhs.s	.x
 	move.l	d4,d0
+	tst.l	g_VisN(a4)
+	bmi.s	.i
+	move.l	g_Vis(a4,d4.l*4),d0
+.i:	move.l	d0,g_PaintIdx(a4)
 	jsr	RunPtr
 	move.l	a0,a2
 	move.l	ru_Y(a2),d0
@@ -742,18 +1049,88 @@ PaintRange:
 	add.l	d1,d0
 	cmp.l	d6,d0
 	ble.s	.n
-	move.l	d4,g_PaintIdx(a4)
 	bsr	PaintRun
 .n:	addq.l	#1,d4
 	bra.s	.l
-.done:	move.l	g_Window(a4),a0
-	move.l	wd_WLayer(a0),a0
-	move.l	(sp)+,a1
-	LAYERS	InstallClipRegion
-	move.l	a5,a0
-	GFX	DisposeRegion
-.x:	movem.l	(sp)+,d2-d7/a2-a3/a5
+.x:	movem.l	(sp)+,d2-d7/a2
 	rts
+
+; StripReady - the off-screen strip for the current page width
+; Out: d0 = its RastPort, or 0 if it cannot be had (CCR set)
+StripReady:
+	move.l	g_StripLayer(a4),d0
+	beq.s	.new
+	move.l	g_PageW(a4),d1
+	cmp.l	g_StripW(a4),d1
+	beq.s	.rp
+	bsr	StripFree
+.new:	movem.l	d2-d4/a2,-(sp)
+	move.l	g_PageW(a4),d0
+	ble.s	.fail
+	move.l	g_Screen(a4),a0		; like the screen's bitmap
+	move.l	sc_RastPort+rp_BitMap(a0),a2
+	move.l	a2,a0
+	moveq	#BMA_DEPTH,d1
+	GFX	GetBitMapAttr
+	move.l	d0,d2			; depth
+	move.l	g_PageW(a4),d0
+	moveq	#STRIP_H,d1
+	moveq	#0,d3
+	move.l	a2,a0
+	GFX	AllocBitMap
+	move.l	d0,g_StripBM(a4)
+	beq.s	.fail
+	LAYERS	NewLayerInfo
+	move.l	d0,g_StripLI(a4)
+	beq.s	.fail
+	move.l	d0,a0			; a layer, for clipping
+	move.l	g_StripBM(a4),a1
+	moveq	#0,d0
+	moveq	#0,d1
+	move.l	g_PageW(a4),d2
+	subq.l	#1,d2
+	moveq	#STRIP_H-1,d3
+	moveq	#LAYERSIMPLE,d4
+	suba.l	a2,a2
+	LAYERS	CreateUpfrontLayer
+	move.l	d0,g_StripLayer(a4)
+	beq.s	.fail
+	move.l	g_PageW(a4),g_StripW(a4)
+	move.l	d0,a0
+	move.l	lr_rp(a0),a1
+	moveq	#RP_JAM1,d0
+	GFX	SetDrMd
+	movem.l	(sp)+,d2-d4/a2
+	move.l	g_StripLayer(a4),d0
+.rp:	move.l	d0,a0
+	move.l	lr_rp(a0),d0
+	rts
+.fail:	bsr	StripFree
+	movem.l	(sp)+,d2-d4/a2
+	moveq	#0,d0
+	rts
+
+; StripFree - free the off-screen strip (if there is one)
+StripFree:
+	move.l	g_StripLayer(a4),d0
+	beq.s	.li
+	clr.l	g_StripLayer(a4)
+	move.l	d0,a1
+	suba.l	a0,a0
+	LAYERS	DeleteLayer
+.li:	move.l	g_StripLI(a4),d0
+	beq.s	.bm
+	clr.l	g_StripLI(a4)
+	move.l	d0,a0
+	LAYERS	DisposeLayerInfo
+.bm:	move.l	g_StripBM(a4),d0
+	beq.s	.x
+	clr.l	g_StripBM(a4)
+	move.l	d0,-(sp)
+	GFX	WaitBlit
+	move.l	(sp)+,a0
+	GFX	FreeBitMap
+.x:	rts
 
 ; PaintRun - draw run a2 into RastPort a3
 PaintRun:
@@ -1414,23 +1791,14 @@ AreaText:
 	move.b	ru_Font(a2),d0
 	bra	GuiMeasure
 
-; DrawStatus - draw g_StatusText in the status line
+; DrawStatus - draw g_StatusText in the status line (over the old
+; text, then clearing what is right of it, so that it does not flicker)
 DrawStatus:
-	movem.l	d2-d3/a2,-(sp)
+	movem.l	d2-d5/a2,-(sp)
 	move.l	g_Window(a4),d0
-	beq.s	.x
+	beq	.x
 	move.l	d0,a0
 	move.l	wd_RPort(a0),a2
-	move.l	a2,a1
-	moveq	#0,d0
-	GFX	SetAPen
-	move.l	a2,-(sp)
-	move.l	g_Window(a4),a2
-	bsr	InnerBox
-	movem.l	(sp)+,a2
-	move.l	g_StatusY(a4),d1
-	move.l	a2,a1
-	GFX	RectFill
 	move.l	a2,a1
 	move.l	g_ScreenFont(a4),a0
 	GFX	SetFont
@@ -1445,6 +1813,12 @@ DrawStatus:
 	moveq	#1,d0
 	GFX	SetAPen
 	move.l	a2,a1
+	moveq	#0,d0
+	GFX	SetBPen
+	move.l	a2,a1
+	moveq	#RP_JAM2,d0
+	GFX	SetDrMd
+	move.l	a2,a1
 	move.l	g_PageX(a4),d0
 	addq.l	#4,d0
 	move.l	g_StatusY(a4),d1
@@ -1457,7 +1831,24 @@ DrawStatus:
 	move.l	a2,a1
 	lea	g_StatusText(a4),a0
 	GFX	Text
-.x:	movem.l	(sp)+,d2-d3/a2
+	move.l	a2,a1
+	moveq	#RP_JAM1,d0
+	GFX	SetDrMd
+	move.l	a2,a1
+	moveq	#0,d0
+	GFX	SetAPen
+	moveq	#0,d4
+	move.w	rp_cp_x(a2),d4		; right of the text
+	move.l	a2,d5
+	move.l	g_Window(a4),a2
+	bsr	InnerBox		; to the right edge
+	move.l	d4,d0
+	move.l	g_StatusY(a4),d1
+	move.l	d5,a1
+	cmp.l	d0,d2
+	blt.s	.x
+	GFX	RectFill
+.x:	movem.l	(sp)+,d2-d5/a2
 	rts
 
 ; GuiStatus - set and show the status line
@@ -1505,6 +1896,7 @@ GuiScrollTo:
 	sub.l	g_ScrollY(a4),d2	; dy
 	beq	.x
 	move.l	d0,g_ScrollY(a4)
+	clr.l	g_BandsOk(a4)		; (the bands moved)
 	lea	LogScroll(pc),a0
 	suba.l	a1,a1
 	jsr	LogEvent
@@ -1557,6 +1949,7 @@ GuiScrollTo:
 	rts
 
 ; GuiRelayout - lay the page out for the current width and repaint
+; what changed
 GuiRelayout:
 	bsr	GuiPageWidth
 	jsr	LayoutDocument
@@ -1564,7 +1957,7 @@ GuiRelayout:
 	clr.l	g_ScrollY(a4)
 	bsr	ClampScroll
 	move.l	d0,g_ScrollY(a4)
-	bra	GuiPaintAll
+	bra	GuiRefresh
 
 ; ClampScroll - In/Out: d0 = scroll position kept in range
 ClampScroll:
@@ -2243,6 +2636,7 @@ OnResize:
 	clr.l	g_GadUrl(a4)
 	clr.l	g_GadScroll(a4)
 	bsr	CreateGadgets
+	clr.l	g_BandsOk(a4)
 	bra	GuiRelayout
 
 ;--------------------------------------------------------------------
@@ -2284,6 +2678,7 @@ GuiNetHook:
 	move.l	g_Window(a4),a0
 	moveq	#-1,d0
 	GT	GT_EndRefresh
+	clr.l	g_BandsOk(a4)		; (not repaired: paint it all later)
 	bra.s	.next
 .nr:	cmp.l	#IDCMP_RAWKEY,d2	; keys: kept for after the load
 	bne.s	.ng
@@ -2514,6 +2909,7 @@ ImgNetHook:
 	move.l	g_Window(a4),a0
 	moveq	#-1,d0
 	GT	GT_EndRefresh
+	clr.l	g_BandsOk(a4)		; (not repaired: paint it all later)
 	bra.s	.next
 .none:	moveq	#0,d0
 	bra.s	.x

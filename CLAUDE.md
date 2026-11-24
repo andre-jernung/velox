@@ -34,7 +34,8 @@ and a single event dispatch point.
   tool types). `build/mouse X Y [DOWN|DRAG|UP]` moves the Amiga pointer
   and uses the left button through input.device (host-side XTEST mouse
   moves are relative in FS-UAE); Velox logs `pagex`/`pagey`, the page
-  origin on the screen, for such tests.
+  origin on the screen, for such tests. `paint N` logs the lines each refresh
+  repainted.
 - FS-UAE turns cursor keys into a joystick unless `joystick_port_1 = none`
   is set, which the test config does.
 - `OS=3.2 test/emu.sh --auto` runs the same tests on AmigaOS 3.2 (Kickstart

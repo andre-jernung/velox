@@ -31,6 +31,26 @@ URL --> fetch (http / https via AmiSSL / proxy)
 Each stage is a separate module (`src/<stage>.s`) with a narrow
 interface, so stages can be unit-tested in isolation.
 
+### Painting
+
+Painting never shows a half-drawn page. `PaintRange` draws the runs into
+an off-screen strip (`STRIP_H` lines, a bitmap like the screen's with
+its own layer for clipping) and copies each strip into the window with
+one blit. If the strip can't be allocated, it draws into the window
+directly.
+
+When the runs change, for example after an image loads, a relayout or a
+new page, `GuiRefresh` repaints only what changed. It hashes the runs over
+each band of `BAND_H` view lines (position, size, colour, font, the
+characters, and for images and form controls whether they are loaded and
+the page they belong to). It compares the hashes with those of what is on
+the screen, and paints only the bands that differ. Unchanged parts of the
+view, such as a site's header on the next page, stay as they are.
+`GuiPaintAll` repaints everything. Scrolling, window damage and resizing
+make the next refresh paint everything too. This fits the JavaScript
+plan: a script that changes the DOM triggers a relayout, then
+`GuiRefresh`.
+
 ## Keeping the door open for JavaScript
 
 JS is not on the roadmap yet, but it must stay possible to add. That means:

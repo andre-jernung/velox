@@ -14,7 +14,7 @@
 	xref	HttpGetCached,CacheFlush,DomAddAttr,PageAlloc,ParseDec
 	xdef	NavRefresh,PageFixups,CopyAddress,ViewSource
 	xref	ClipCopy
-	xref	GuiStatus,GuiSetUrl,GuiSetTitle,GuiPaintAll,GuiBusy,GuiNetHook
+	xref	GuiStatus,GuiSetUrl,GuiSetTitle,GuiRefresh,GuiBusy,GuiNetHook
 	xref	GuiPageWidth,GuiScrollTo,LogEvent,CssLoad,BufFree,ImagesStart
 	xref	GuiProgress
 
@@ -1065,7 +1065,8 @@ ShowPage:
 	lea	g_StatusText(a4),a1
 	move.l	#STATUS_MAX-1,d0
 	jsr	StrCopyN
-	jsr	GuiPaintAll
+	addq.l	#1,g_PageGen(a4)	; paint what differs from the old page
+	jsr	GuiRefresh
 	lea	LogPage(pc),a0
 	lea	g_PageUrl(a4),a1
 	move.l	g_DocHeight(a4),d0

@@ -31,7 +31,7 @@ bmh_Height		equ	2
 
 	xdef	ImagesStart,ImagesStep,ImagesPending,ImagesFree,ImagePaint
 	xref	PageAlloc,DomGetAttr,UrlResolve,HttpGetCached,ParseDec,BufFree
-	xref	BufAppend,BufClear,GuiStatus,GuiRelayout,GuiPaintAll,GuiPageWidth
+	xref	BufAppend,BufClear,GuiStatus,GuiRelayout,GuiRefresh,GuiPageWidth
 	xref	FmtDec,StrCopy,LogEvent,ImgNetHook
 
 MAX_IMAGES	equ	64
@@ -230,7 +230,7 @@ ImagesStep:
 .relay:	clr.l	g_ImgRelayout(a4)
 	jsr	GuiRelayout
 	bra.s	.end
-.paint:	jsr	GuiPaintAll
+.paint:	jsr	GuiRefresh
 .end:	move.l	g_ImgNext(a4),d0
 	cmp.l	g_ImgCount(a4),d0
 	blo.s	.x

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Host side of images.script: wait for the images, screenshot, quit."""
 import os
+import subprocess
 import sys
 import time
 
@@ -16,6 +17,38 @@ try:
     time.sleep(2)
     a.shot(os.path.join(r, "images.png"))
     out.write([l for l in lines if l.startswith("images ")][-1] + "\n")
+    # images repaint only what changed: the page is painted whole once,
+    # then the image loads paint less
+    paints = [int(l.split()[1]) for l in lines if l.startswith("paint ")]
+    out.write("paints: %s\n" % " ".join(map(str, paints)))
+    if len(paints) < 2 or max(paints[1:]) >= paints[0]:
+        out.write("FAIL image loads repainted the whole page\n")
+    else:
+        out.write("image loads repaint only what changed\n")
+    out.flush()
+    # ... and that leaves the same picture as painting everything: find
+    # (highlight), Esc (a full repaint), compare, status line aside
+    a.shot(os.path.join(r, "images-inc.png"))
+    n = len(paints)
+    a.key("/")
+    a.type("imag")  # (the heading: in view, no scrolling)
+    wait_log(log, "find ", 4)
+    a.key("Escape")
+    wait_log(log, "paint ", n + 5)
+    time.sleep(1.5)
+    a.shot(os.path.join(r, "images-full.png"))
+    res = subprocess.run(
+        ["convert", os.path.join(r, "images-inc.png"),
+         os.path.join(r, "images-full.png"), "-compose", "difference",
+         "-composite", "-threshold", "0", "-trim", "-format", "%w %h %X %Y",
+         "info:"], capture_output=True, text=True)
+    out.write("difference: %s\n" % res.stdout.strip())
+    w, h = [int(v) for v in res.stdout.split()[:2]]
+    # (no difference trims to a 1x1 image; the status line is one row of
+    # text, at most 24 pixels high in the screenshot)
+    out.write("incremental painting %s\n" % (
+        "is exact" if h <= 24 else "differs from a full repaint"))
+    out.flush()
     # typing while slow images load: the keys reach the URL field
     a.key("ctrl+l")
     a.type("127.0.0.1:8080/slow.html")
