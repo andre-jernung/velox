@@ -16,6 +16,12 @@ VELOX:velox http://127.0.0.1:8080/missing INFO >VELOX:r/net-missing.out
 Echo >>VELOX:r/net.txt "missing rc=$RC"
 VELOX:velox "127.0.0.1:8080/echo/a b?q=ä" DUMP >VELOX:r/net-echo.out
 Echo >>VELOX:r/net.txt "echo rc=$RC"
+VELOX:velox http://user:pw@127.0.0.1:8080/auth DUMP >VELOX:r/net-auth.out
+Echo >>VELOX:r/net.txt "auth rc=$RC"
+VELOX:velox http://ab:c@127.0.0.1:8080/echo/b4 DUMP >VELOX:r/net-b4.out
+VELOX:velox http://ab:cd@127.0.0.1:8080/echo/b5 DUMP >VELOX:r/net-b5.out
+VELOX:velox http://127.0.0.1:8080/auth INFO >VELOX:r/net-noauth.out
+Echo >>VELOX:r/net.txt "noauth rc=$RC"
 VELOX:velox http://127.0.0.1:8080/setcookie DUMP >VELOX:r/net-cookie.out
 Echo >>VELOX:r/net.txt "cookie rc=$RC"
 VELOX:velox http://127.0.0.1:1/ INFO >VELOX:r/net-refused.out

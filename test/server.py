@@ -51,6 +51,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                                          ("Set-Cookie", "sess=2; Path=/"),
                                          ("Set-Cookie", "keep=1; Max-Age=86400; Path=/"),
                                          ("Set-Cookie", "far=3; Expires=Mon, 01 Jan 2060 00:00:00 GMT; Path=/")])
+        elif p == "/auth":
+            if self.headers.get("Authorization") == "Basic dXNlcjpwdw==":
+                self.send(200, b"auth ok\n")
+            else:
+                self.send(401, b"<title>Login</title><p>Who are you?",
+                          "text/html", headers=[("WWW-Authenticate", 'Basic realm="test"')])
         elif p == "/slowpage":
             time.sleep(12)
             self.send(200, b"<title>Slow</title><p>A slow page.", "text/html")

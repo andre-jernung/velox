@@ -27,6 +27,7 @@ A small, fast web browser for classic AmigaOS 3.x, written entirely in
   loaded while the page is already usable
 - http and https (AmiSSL with certificate checks, or through a proxy),
   keep-alive connections, redirects, chunked transfers, cookies
+- Password protected pages (HTTP Basic): `http://user:password@host/`
 - A memory cache: Back and Forward, style sheets and images do not
   fetch again (Reload does)
 - Downloads of anything that is not a page, with a file requester

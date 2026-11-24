@@ -33,6 +33,7 @@ NAV_REPLACE	equ	8		; replaces the current history entry
 NavGo:
 	movem.l	d2-d3/a2,-(sp)
 	clr.l	g_FindOn(a4)		; a new page ends finding
+	clr.l	g_PageStatus(a4)
 	clr.l	g_RefreshTicks(a4)	; and a pending meta refresh
 	move.l	d0,d3
 	moveq	#NAV_RELOAD,d1
@@ -118,7 +119,8 @@ NavGo:
 	bsr	ErrorPage
 	lea	g_NavUrl(a4),a0
 	bra.s	.built
-.ok:	bsr	TakeResponse
+.ok:	move.l	d0,g_PageStatus(a4)	; (401: see below)
+	bsr	TakeResponse
 	lea	g_Resp+r_Url(a4),a0
 .built:	lea	g_PageUrl(a4),a1
 	move.l	#URL_MAX-1,d0
@@ -130,6 +132,10 @@ NavGo:
 	tst.l	g_Quit(a4)
 	bne	.x
 	bsr	ShowPage
+	cmp.l	#401,g_PageStatus(a4)	; a password is needed
+	bne.s	.hist
+	lea	MsgAuth(pc),a0
+	jsr	GuiStatus
 .hist:	btst	#0,d3
 	beq.s	.nohist
 	btst	#3,d3			; NAV_REPLACE (a meta refresh)
@@ -153,6 +159,7 @@ LogPage:	dc.b	"page",0
 LogTitle:	dc.b	"title",0
 LogTop:		dc.b	"top",0
 MsgLoading:	dc.b	"Loading ",0
+MsgAuth:	dc.b	"Login needed: put user:password@ before the host name",0
 	even
 
 ; StatusWithUrl - status line "<a0>g_NavUrl"

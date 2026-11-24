@@ -46,6 +46,13 @@ rc("echo", 0)
 echo = out("echo").decode("latin-1")
 if not echo.startswith("GET /echo/a%20b?q=%E4 HTTP/1.1\n"):
     fail.append(f"echo request line: {echo.splitlines()[:1]}")
+if out("auth").strip() != b"auth ok":
+    fail.append(f"auth: {out('auth')[:80]!r}")
+for name, want in (("b4", b"Authorization: Basic YWI6Yw=="), ("b5", b"Authorization: Basic YWI6Y2Q=")):
+    if want not in out(name):
+        fail.append(f"{name}: no {want!r}")
+if b"401" not in out("noauth"):
+    fail.append(f"noauth: {out('noauth')[:80]!r}")
 for h in ("Host: 127.0.0.1:8080", "Connection: keep-alive", "User-Agent: Velox/"):
     if h not in echo:
         fail.append(f"echo: missing header {h}")

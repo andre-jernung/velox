@@ -43,6 +43,8 @@ UrlParse:
 	; a0 = start of authority.  Skip userinfo ("user:pw@").
 	move.l	a0,a2
 	move.l	a0,a1
+	move.l	a0,up_User(a3)
+	clr.l	up_UserLen(a3)
 .ui:	move.b	(a1)+,d0
 	beq.s	.host
 	cmp.b	#'/',d0
@@ -54,6 +56,10 @@ UrlParse:
 	cmp.b	#'@',d0
 	bne.s	.ui
 	move.l	a1,a2			; host starts after the '@'
+	move.l	a1,d0
+	sub.l	up_User(a3),d0
+	subq.l	#1,d0
+	move.l	d0,up_UserLen(a3)
 	bra.s	.ui
 .host:
 	lea	up_Host(a3),a1

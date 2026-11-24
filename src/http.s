@@ -184,6 +184,55 @@ Exchange:
 	bra.s	.x
 
 ;--------------------------------------------------------------------
+; AppendB64 - append d2 bytes at a2 to g_ReqBuf in base64
+; Out: d0 = 0 when out of memory
+;--------------------------------------------------------------------
+AppendB64:
+	movem.l	d2-d5/a2,-(sp)
+	subq.l	#4,sp			; four characters at a time
+.g:	tst.l	d2
+	ble.s	.ok
+	moveq	#0,d3			; three bytes (fewer at the end)
+	moveq	#0,d5
+	moveq	#2,d1
+.rb:	lsl.l	#8,d3
+	tst.l	d2
+	beq.s	.pad
+	move.b	(a2)+,d3
+	subq.l	#1,d2
+	addq.l	#1,d5
+.pad:	dbf	d1,.rb
+	lsl.l	#8,d3			; 24 bits at the top
+	move.l	sp,a1
+	moveq	#0,d4			; character k: '=' when k > bytes
+	moveq	#3,d1
+.oc:	rol.l	#6,d3
+	moveq	#63,d0
+	and.l	d3,d0
+	lea	B64(pc),a0
+	move.b	(a0,d0.w),d0
+	cmp.l	d5,d4
+	ble.s	.put
+	moveq	#'=',d0
+.put:	move.b	d0,(a1)+
+	addq.l	#1,d4
+	dbf	d1,.oc
+	lea	g_ReqBuf(a4),a0
+	move.l	sp,a1
+	moveq	#4,d0
+	jsr	BufAppend
+	bne.s	.g
+	bra.s	.x
+.ok:	moveq	#1,d0
+.x:	addq.l	#4,sp			; (CCR kept)
+	movem.l	(sp)+,d2-d5/a2
+	rts
+
+B64:	dc.b	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+RqAuth:	dc.b	13,10,"Authorization: Basic ",0
+	even
+
+;--------------------------------------------------------------------
 ; HttpCloseKept - close the kept-alive connection (before the socket
 ; library goes)
 ;--------------------------------------------------------------------
@@ -270,6 +319,13 @@ BuildRequest:
 	REQSTR	RqHost
 	bsr	AppendHostPort
 	beq	ReqNoMem
+	move.l	g_Parts+up_UserLen(a4),d2	; user:password@ -> Basic
+	beq.s	.noauth
+	REQSTR	RqAuth
+	move.l	g_Parts+up_User(a4),a2
+	bsr	AppendB64
+	beq	ReqNoMem
+.noauth:
 	lea	g_ReqBuf(a4),a0
 	jsr	CookieHeader
 	beq	ReqNoMem

@@ -96,6 +96,8 @@ up_Scheme	rs.l	1
 up_Port		rs.l	1
 up_Path		rs.l	1		; path + query, without fragment
 up_PathLen	rs.l	1
+up_User		rs.l	1		; "user:password" (in the string) ...
+up_UserLen	rs.l	1		; ... and its length, 0 = none
 up_Host		rs.b	HOST_MAX	; lower case, NUL terminated
 UP_SIZEOF	rs.b	0
 
@@ -511,6 +513,7 @@ g_StartUrl	rs.b	256		; URL tooltype
 g_PubScreen	rs.b	64		; PUBSCREEN / Velox/PubScreen, or empty
 g_ProgressHook	rs.l	1		; called while a body arrives
 g_ProgKB	rs.l	1
+g_PageStatus	rs.l	1		; HTTP status of the page
 g_LogName	rs.b	128		; LOG tooltype
 g_IconBase	rs.l	1
 g_ProxyPort	rs.l	1		; 0 = no proxy
