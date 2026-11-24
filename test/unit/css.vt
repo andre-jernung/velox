@@ -8,3 +8,5 @@ layout test/unit/layout/selectors.html 600
 layout test/unit/layout/mq4.html 600
 # <style media="print"> is not for the screen
 layout test/unit/layout/mediaattr.html 400
+# the ancestor filter (css.s) changes nothing: big.html with its sheet
+cssfilter test/www/big.html test/www/css/big.css 400

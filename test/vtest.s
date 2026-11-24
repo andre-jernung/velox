@@ -30,6 +30,7 @@
 	xref	HtmlParse,HtmlBegin,HtmlMore,TagNameOf,LayoutDocument,RunCount,RunPtr,ParseDec,CssLoad
 	xref	Inflate,PicInfo,PicDecode,PicFree,PicAlloc,PicFreeMem
 	xref	CookieSet,CookieHeader,UrlParse,BufFree,PageFixups,PfBuild,PfApply
+	xref	CssAddSheet,CssInvalidate,PageAlloc
 
 T_LINEMAX	equ	2048
 T_MAXWORDS	equ	4
@@ -181,6 +182,7 @@ Commands:
 	dc.w	CnDecode-Commands,CmdDecode-Commands
 	dc.w	CnInflate-Commands,CmdInflate-Commands
 	dc.w	CnPagefile-Commands,CmdPagefile-Commands
+	dc.w	CnCssFilter-Commands,CmdCssFilter-Commands
 	dc.w	0
 
 CnParse:	dc.b	"parse",0
@@ -196,6 +198,7 @@ CnCookies:	dc.b	"cookies",0
 CnDecode:	dc.b	"decode",0
 CnInflate:	dc.b	"inflate",0
 CnPagefile:	dc.b	"pagefile",0
+CnCssFilter:	dc.b	"cssfilter",0
 Empty:		dc.b	0
 ResultSep:	dc.b	" => ",0
 MsgUnknown:	dc.b	"unknown command",0
@@ -977,6 +980,77 @@ MsgPfNoLoad:	dc.b	" not loaded",0
 MsgPfSame:	dc.b	" same",0
 MsgPfDiff:	dc.b	" DIFFERENT",0
 MsgPfRelay:	dc.b	", laid out again:",0
+	even
+
+;--------------------------------------------------------------------
+; cssfilter HTML CSS WIDTH - lay out a page with a style sheet from a
+; file, then again with the rules matched without the ancestor filter
+; (css.s): the same page
+;--------------------------------------------------------------------
+CmdCssFilter:
+	movem.l	d2-d4,-(sp)
+	bsr	TestMetrics
+	move.l	T_Words+12,a0
+	jsr	ParseDec
+	move.l	d0,d3			; d3 = width
+	move.l	T_Words+4,a0
+	bsr	LoadPage
+	beq	.err
+	move.l	g_PageSrc+buf_Data(a4),a0
+	jsr	HtmlParse
+	tst.l	d0
+	beq	.err
+	jsr	PageFixups
+	jsr	CssLoad
+	move.l	T_Words+8,d1		; the sheet: into the page, added
+	move.l	#MODE_OLDFILE,d2
+	DOS	Open
+	move.l	d0,d4
+	beq	.err
+	move.l	#65536,d0
+	jsr	PageAlloc
+	beq	.err
+	move.l	d0,d2
+	move.l	d4,d1
+	move.l	#65535,d3
+	DOS	Read
+	move.l	d0,d3
+	move.l	d4,d1
+	DOS	Close
+	tst.l	d3
+	ble	.err
+	move.l	d2,a0
+	jsr	CssAddSheet
+	move.l	g_CssRules(a4),d0
+	jsr	PutNum
+	lea	MsgRules(pc),a0
+	jsr	PutStr
+	move.l	T_Words+12,a0
+	jsr	ParseDec
+	move.l	d0,d3
+	move.l	d3,d0
+	jsr	LayoutDocument
+	beq.s	.err
+	bsr	PageSum
+	move.l	d0,d4
+	moveq	#1,d0			; again without the filter
+	move.l	d0,g_CssNoAnc(a4)
+	jsr	CssInvalidate
+	move.l	d3,d0
+	jsr	LayoutDocument
+	clr.l	g_CssNoAnc(a4)
+	bsr	PageSum
+	lea	MsgPfSame+1(pc),a0
+	cmp.l	d4,d0
+	beq.s	.p
+	lea	MsgPfDiff+1(pc),a0
+.p:	jsr	PutStr
+	bra.s	.x
+.err:	bsr	PutError
+.x:	movem.l	(sp)+,d2-d4
+	rts
+
+MsgRules:	dc.b	" rules, without the filter: ",0
 	even
 
 ; Spoil - fill the page's memory (arena, source, runs, anchors) with

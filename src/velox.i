@@ -60,9 +60,10 @@ MAX_REDIRECTS	equ	8
 STATUS_MAX	equ	160		; status line / title buffers
 PEN_CACHE	equ	64		; colours with an allocated pen
 HIST_ENTRIES	equ	32
-PROF_SLOTS	equ	18		; profiling: 0-11 images, 12 page shown,
+PROF_SLOTS	equ	20		; profiling: 0-11 images, 12 page shown,
 				; 13 parse, 14 CSS, 15 layout, 16 page file
-				; read, 17 built (to save)
+				; read, 17 built (to save), 18 selectors
+				; matched, 19 declarations applied
 KEEP_PAGES	equ	4		; pages kept for Back/Forward
 KEEP_FREE	equ	384*1024	; memory left free when keeping one
 
@@ -185,7 +186,11 @@ n_Data		rs.l	1		; element: first Attr; text: text
 n_Data2		rs.l	1		; element: aux data; text: length
 n_Css		rs.l	1		; element: cached CSS matches or 0
 n_Style		rs.l	1		; element: its style as last computed (StyleOf)
+n_Anc		rs.l	2		; its tag, id, classes and its ancestors',
+					; a 63-bit Bloom filter (css.s), when
+					; n_Flags has NF_ANC
 NODE_SIZEOF	rs.b	0
+NF_ANC		equ	0		; n_Flags: n_Anc is there
 
 	RSRESET
 at_Next		rs.l	1
@@ -294,6 +299,8 @@ cs_Order	rs.l	1
 cs_MqMin	rs.w	1		; media query width range
 cs_MqMax	rs.w	1
 cs_Base		rs.l	1		; URL its sheet came from, 0: the page
+cs_Anc		rs.l	2		; what the element's ancestors must have
+					; (descendant / child compounds: n_Anc bits)
 CS_SIZEOF	rs.b	0
 
 CSS_IDBUCKETS	equ	64
@@ -603,6 +610,8 @@ g_CssHidden	rs.l	1		; "visually hidden" detection bits:
 g_CssBox	rs.l	8		; CSS margins, paddings (t r b l), -1 unset
 g_CssMatch	rs.l	CSS_MAXMATCH	; matching scratch
 g_CssNMatch	rs.l	1
+g_CssAncP	rs.l	2		; n_Anc of the element's parent (CssMatch)
+g_CssNoAnc	rs.l	1		; (tests) match without the ancestor filter
 g_CssName	rs.b	256		; parsing scratch (CSS_NAMEBUF)
 g_CssTag	rs.b	96		; tag / attribute names in selectors
 g_CssNameTop	rs.l	1		; free part of g_CssName (nesting)

@@ -71,6 +71,20 @@ most every 4 times the last layout took (at least 1 s), never within
 Elements keep their computed style (`StyleOf`), so laying out again
 costs much less than the first time.
 
+The first layout of big.html (53 KB, 80 rules) takes 2.8 s on a stock
+A1200 (it took 4.25 s): selectors 0.95 s, declarations 0.5 s, the rest
+(UA styles, measuring text, placing) 1.4 s. Two things made it so:
+- **An ancestor filter.** Each element has a 63-bit Bloom filter of
+  its tag, id and classes and its ancestors' (`n_Anc`, made once per
+  node: nodes never change parent), each rule the bits its descendant
+  and child compounds need (`cs_Anc`). A rule whose bits are not all
+  in the parent's filter is skipped without walking the ancestors
+  (`.side li a` on a link in the navigation). The `cssfilter` unit test
+  lays out big.html with and without it: the same page.
+- **Values parsed once.** Colours and lengths (not % or vw/vh) are
+  turned into their value when the style sheet is read (`DeclValue`),
+  not for every element.
+
 Host names that were already looked up are cached, because
 `gethostbyname` blocks. What still blocks: DNS for a new host, the
 crypto of the TLS handshake, and one layout of a big page.
@@ -96,7 +110,7 @@ default 4096, 0 for none; the oldest files go).
   is fetched again, but decoded only if its hash changed.
 
 - **Laid-out pages** (pagefile.s). Showing a 53 KB page from its HTML
-  takes 1.0 s to parse and 4.0 s to lay out on a stock A1200, so a page
+  takes 1.0 s to parse and 2.8 s to lay out on a stock A1200, so a page
   that has been shown (with its images) is also saved as it is in
   memory: its arena blocks (DOM, attributes, styles, CSS rules, form
   state), source, runs, anchors and globals. The next time it comes
@@ -233,8 +247,8 @@ JS is not on the roadmap yet, but it must stay possible to add. That means:
 12. [x] The loader as a coroutine of the event loop, pages shown while
    they come, instant in-page links, disk cache (pages, style sheets,
    images as shown), styles kept per element, painting rectangles.
-13. [ ] Pages kept in memory for Back/Forward; laid-out pages on disk;
-   faster layout.
+13. [x] Pages kept in memory for Back/Forward, laid-out pages on disk
+   (page files), an ancestor filter for selectors, values parsed once.
 
 ## Modules
 

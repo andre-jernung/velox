@@ -13,7 +13,8 @@ log = os.path.join(r, "pagespeed.log")
 out = open(os.path.join(r, "pagespeed.driver"), "w")
 U = "http://127.0.0.1:8080/"
 names = {"l": "relayout", "m": "page shown", "n": "parse", "o": "CSS", "p": "layout",
-         "q": "page file read", "r": "page file built"}
+         "q": "page file read", "r": "page file built", "s": "  selectors matched",
+         "t": "  declarations"}
 
 
 def go(a, path):

@@ -22,6 +22,9 @@
 	include	"velox.i"
 
 	xdef	CssReset,CssAddSheet,CssApply,CssInvalidate,CssLoad
+	IFD	PROFILE
+	xref	ProfRead
+	ENDC
 	xref	StyleStale
 	xref	PageAlloc,DomGetAttr,TagLookup,ToLower,ParseColor,ParseLength
 	xref	StrIPrefix,StrIFind,ParseDec,HttpGetCached,UrlResolve,DecodeCharset
@@ -949,7 +952,28 @@ ParseDecls:
 	bsr	Kw
 .kws:	movem.l	(sp)+,a1
 	bne	.skip
-	; append prop, important, value, NUL (if it fits)
+	; colours and lengths: their value now, once (DeclValue)
+	move.l	a1,-(sp)
+	move.l	d2,d0
+	bsr	DeclValue
+	movem.l	(sp)+,a1
+	beq.s	.text
+	lea	g_CssTmp+DECL_TMP-8(a4),a0	; prop, important | 2, the
+	cmp.l	a0,a3				; value (4 bytes)
+	bhs	.skip
+	move.b	d2,(a3)+
+	addq.b	#2,d4
+	move.b	d4,(a3)+
+	rol.l	#8,d1
+	move.b	d1,(a3)+
+	rol.l	#8,d1
+	move.b	d1,(a3)+
+	rol.l	#8,d1
+	move.b	d1,(a3)+
+	rol.l	#8,d1
+	move.b	d1,(a3)+
+	bra.s	.skip
+.text:	; append prop, important, value, NUL (if it fits)
 	move.l	a1,d0
 	sub.l	a2,d0
 	add.l	a3,d0
@@ -997,6 +1021,76 @@ ParseDecls:
 
 SImportant:	dc.b	"!important",0
 	even
+
+;--------------------------------------------------------------------
+; DeclValue - the value of a colour or a length, if it can be known
+; once for every element: colours, "transparent", lengths in px, em,
+; pt ... and auto (not %, vw/vh: they depend on the box or window)
+; In:  d0 = CP_xxx, a2 = value, a1 = its end
+; Out: d0 = 1 and d1 = the value (as ApplyProp takes it), or d0 = 0
+;--------------------------------------------------------------------
+DeclValue:
+	movem.l	d2/a2,-(sp)
+	move.l	d0,d2
+	cmp.w	#CP_COLOR,d2
+	beq.s	.ok
+	cmp.w	#CP_BGCOLOR,d2
+	beq.s	.ok
+	cmp.w	#CP_MARGINT,d2
+	blo.s	.no
+	cmp.w	#CP_PADDINGL,d2
+	bhi.s	.no
+	cmp.w	#CP_PADDING,d2
+	beq.s	.no
+.ok:	move.l	a1,d0			; a copy, NUL terminated (short ones)
+	sub.l	a2,d0
+	beq.s	.no
+	cmp.l	#46,d0
+	bhs.s	.no
+	lea	-48(sp),sp
+	move.l	sp,a0
+	subq.l	#1,d0
+.c:	move.b	(a2)+,d1
+	cmp.b	#'%',d1			; (lengths: not of the box or window;
+	beq.s	.nos			;  one word)
+	cmp.b	#' ',d1
+	bls.s	.nos
+	cmp.b	#'(',d1
+	beq.s	.nosc
+	move.b	d1,(a0)+
+	or.b	#$20,d1
+	cmp.b	#'v',d1
+	bne.s	.cn
+	cmp.w	#CP_BGCOLOR,d2		; (colour names have v: violet)
+	bls.s	.cn
+	bra.s	.nos
+.nosc:	cmp.w	#CP_BGCOLOR,d2		; (rgb() is fine)
+	bhi.s	.nos
+	move.b	-1(a2),(a0)+
+.cn:	dbf	d0,.c
+	clr.b	(a0)
+	move.l	sp,a0
+	cmp.w	#CP_BGCOLOR,d2
+	bhi.s	.len
+	bne.s	.col
+	lea	KwTransparent(pc),a1
+	bsr	Kw
+	beq.s	.col
+	moveq	#-1,d1
+	bra.s	.yes
+.col:	jsr	ParseColor
+	move.l	d0,d1
+	bmi.s	.nos
+	bra.s	.yes
+.len:	bsr	BoxValue
+	move.l	d0,d1
+.yes:	lea	48(sp),sp
+	moveq	#1,d0
+	bra.s	.x
+.nos:	lea	48(sp),sp
+.no:	moveq	#0,d0
+.x:	movem.l	(sp)+,d2/a2
+	rts
 
 ; PropId - property name at a0 -> d0 = CP_xxx (0 unknown); a0 after it
 PropId:
@@ -1696,6 +1790,9 @@ AddRule:
 	move.w	g_CssMqMin(a4),cs_MqMin(a2)
 	move.w	g_CssMqMax(a4),cs_MqMax(a2)
 	move.l	g_CssBase(a4),cs_Base(a2)
+	move.l	a3,a0			; what its ancestors must have
+	bsr	RuleAnc
+	movem.l	d0-d1,cs_Anc(a2)
 	tst.w	cs_MqMin(a2)
 	bne.s	.mq
 	cmp.w	#$7fff,cs_MqMax(a2)
@@ -1727,6 +1824,174 @@ AddRule:
 	add.l	d0,a0
 	move.l	(a0),cs_Next(a2)
 	move.l	a2,(a0)
+.x:	movem.l	(sp)+,d2-d3/a2-a3
+	rts
+
+;--------------------------------------------------------------------
+; Ancestor filters.  Each element has the bits of its tag, id and
+; classes and those of its ancestors (n_Anc: AncOf), each rule the
+; bits its descendant and child compounds need (cs_Anc: RuleAnc).  A
+; rule whose bits are not all in the element's parent's is skipped
+; without walking the ancestors (TryBucket).  Bits can collide, so a
+; rule that passes is still matched; one that fails cannot match.
+; (Nodes never move to another parent, and their attributes are set
+; when they are made: n_Anc stays right.)
+;--------------------------------------------------------------------
+
+; AncBit - set the bit of hash d0 in d2:d3 (bit 31 of d2 is not used)
+AncBit:
+	move.l	d0,d1
+	swap	d1
+	eor.w	d1,d0
+	and.l	#63,d0
+	cmp.w	#31,d0
+	beq.s	.r			; (bit 31 of d2: "there")
+	cmp.w	#32,d0
+	bhs.s	.hi
+	bset	d0,d2
+	rts
+.r:	moveq	#30,d0
+	bset	d0,d2
+	rts
+.hi:	bset	d0,d3			; (bset takes the bit mod 32)
+	rts
+
+; AncTag - the bit of tag d0 (nonzero) into d2:d3
+AncTag:
+	mulu.l	#$9e3779b1,d0
+	bra.s	AncBit
+
+; AncWords - the bits of the blank separated (or NUL separated, to an
+; empty one) words at a0 into d2:d3; Out: a0 after them
+AncWords:
+.l:	move.b	(a0),d0
+	beq.s	.x
+	cmp.b	#' ',d0
+	bhi.s	.w
+	addq.l	#1,a0
+	bra.s	.l
+.w:	bsr.s	AncWord
+	bra.s	.l
+.x:	rts
+
+; AncWord - the bit of the word at a0 (to a blank or NUL) into d2:d3;
+; Out: a0 after it
+AncWord:
+	moveq	#0,d0
+.l:	moveq	#0,d1
+	move.b	(a0),d1
+	cmp.b	#' ',d1
+	bls.s	.e
+	addq.l	#1,a0
+	mulu.l	#31,d0
+	add.l	d1,d0
+	bra.s	.l
+.e:	mulu.l	#$85ebca6b,d0
+	bra.s	AncBit
+
+; CompAnc - the bits of compound a0 (tag, id, classes) into d2:d3
+CompAnc:
+	move.l	a2,-(sp)
+	move.l	a0,a2
+	moveq	#0,d0
+	move.w	cm_Tag(a2),d0
+	beq.s	.nt
+	bsr.s	AncTag
+.nt:	move.l	cm_Id(a2),d0
+	beq.s	.ni
+	move.l	d0,a0
+	bsr.s	AncWord
+.ni:	move.l	cm_Classes(a2),d0
+	beq.s	.x
+	move.l	d0,a0
+.c:	tst.b	(a0)			; "a",0,"b",0,0
+	beq.s	.x
+	bsr.s	AncWord
+	addq.l	#1,a0
+	bra.s	.c
+.x:	move.l	(sp)+,a2
+	rts
+
+;--------------------------------------------------------------------
+; RuleAnc - what the ancestors must have for selector a0 (its subject
+; compound): the compounds to its left joined by descendant or child
+; combinators (up to a sibling combinator)
+; Out: d0:d1 = the bits
+;--------------------------------------------------------------------
+RuleAnc:
+	movem.l	d2-d3/a2,-(sp)
+	moveq	#0,d2
+	moveq	#0,d3
+	move.l	a0,a2
+.l:	move.l	cm_Prev(a2),d0
+	beq.s	.x
+	move.b	cm_Comb(a2),d1
+	cmp.b	#COMB_DESC,d1
+	beq.s	.a
+	cmp.b	#COMB_CHILD,d1
+	bne.s	.x
+.a:	move.l	d0,a2
+	move.l	a2,a0
+	bsr	CompAnc
+	bra.s	.l
+.x:	move.l	d2,d0
+	move.l	d3,d1
+	movem.l	(sp)+,d2-d3/a2
+	rts
+
+;--------------------------------------------------------------------
+; AncOf - the bits of node a0 and its ancestors (n_Anc), made when
+; first wanted
+; Out: d0:d1 = them (0 for none)
+;--------------------------------------------------------------------
+AncOf:
+	movem.l	d2-d3/a2-a3,-(sp)
+	move.l	a0,a3			; a3 = the node
+.again:	move.l	a3,d0
+	beq.s	.none
+	btst	#NF_ANC,n_Flags(a3)
+	bne.s	.have
+	move.l	a3,a2			; the highest one without them
+.up:	move.l	n_Parent(a2),d0
+	beq.s	.make
+	move.l	d0,a0
+	btst	#NF_ANC,n_Flags(a0)
+	bne.s	.make
+	move.l	a0,a2
+	bra.s	.up
+.make:	moveq	#0,d2			; its parent's bits (or none) and its
+	moveq	#0,d3			; own
+	move.l	n_Parent(a2),d0
+	beq.s	.own
+	move.l	d0,a0
+	movem.l	n_Anc(a0),d2-d3
+.own:	cmp.b	#DN_ELEMENT,n_Type(a2)
+	bne.s	.set
+	moveq	#0,d0
+	move.w	n_Tag(a2),d0
+	beq.s	.id
+	bsr	AncTag
+.id:	move.l	a2,a0
+	lea	AnId(pc),a1
+	jsr	DomGetAttr
+	tst.l	d0
+	beq.s	.cl
+	move.l	d0,a0
+	bsr	AncWord
+.cl:	move.l	a2,a0
+	lea	AnClass(pc),a1
+	jsr	DomGetAttr
+	tst.l	d0
+	beq.s	.set
+	move.l	d0,a0
+	bsr	AncWords
+.set:	movem.l	d2-d3,n_Anc(a2)
+	bset	#NF_ANC,n_Flags(a2)
+	bra.s	.again			; (down to the node)
+.have:	movem.l	n_Anc(a3),d0-d1
+	bra.s	.x
+.none:	moveq	#0,d0
+	moveq	#0,d1
 .x:	movem.l	(sp)+,d2-d3/a2-a3
 	rts
 
@@ -1782,11 +2047,14 @@ CssApply:
 	move.l	a1,a3
 	move.l	n_Css(a5),d0
 	bne.s	.have
+	PROFB	18
 	move.l	a5,a0
 	bsr	CssMatch
+	PROFE	18
 	move.l	d0,n_Css(a5)
 	beq	.x
-.have:	move.l	d0,a2			; MatchList: count.w, pad.w, inline.l,
+.have:	PROFB	19
+	move.l	d0,a2			; MatchList: count.w, pad.w, inline.l,
 	; reset the per-element state of the "visually hidden" heuristic
 	clr.l	g_CssHidden(a4)
 	lea	g_CssBox(a4),a0
@@ -1826,7 +2094,8 @@ CssApply:
 	cmp.b	#12,d0
 	bne.s	.x
 .hide:	move.b	#DISP_NONE,st_Display(a3)
-.x:	movem.l	(sp)+,d2-d3/a2-a3/a5
+.x:	PROFE	19
+	movem.l	(sp)+,d2-d3/a2-a3/a5
 	rts
 
 ; FinishBox - margins and paddings set by CSS into the style (a3):
@@ -1869,6 +2138,9 @@ CssMatch:
 	clr.l	g_CssNMatch(a4)
 	tst.l	g_CssRules(a4)
 	beq	.inline
+	move.l	n_Parent(a5),a0		; what its ancestors have (TryBucket)
+	bsr	AncOf
+	movem.l	d0-d1,g_CssAncP(a4)
 	; id bucket
 	move.l	a5,a0
 	lea	AnId(pc),a1
@@ -2009,7 +2281,16 @@ TryBucket:
 	blt.s	.n
 	cmp.w	cs_MqMax(a2),d0
 	bgt.s	.n
-	move.l	a5,a0
+	tst.l	g_CssNoAnc(a4)		; (tests: without the filter)
+	bne.s	.m
+	movem.l	g_CssAncP(a4),d0-d1	; what its ancestors must have:
+	not.l	d0			; there?  (needs & ~has = 0)
+	not.l	d1
+	and.l	cs_Anc(a2),d0
+	and.l	cs_Anc+4(a2),d1
+	or.l	d1,d0
+	bne.s	.n
+.m:	move.l	a5,a0
 	move.l	cs_Sel(a2),a1
 	bsr	MatchSelector
 	beq.s	.n
@@ -2356,11 +2637,16 @@ ApplyDecls:
 .l:	moveq	#0,d3
 	move.b	(a2)+,d3		; property
 	beq.s	.x
-	move.b	(a2)+,d0		; important
+	move.b	(a2)+,d0		; important, 2: a value (DeclValue)
 	move.l	a2,a0			; value
+	bclr	#1,d0
+	beq.s	.sk
+	addq.l	#4,a2
+	bset	#15,d3
+	bra.s	.imp
 .sk:	tst.b	(a2)+
 	bne.s	.sk
-	tst.l	d2
+.imp:	tst.l	d2
 	bmi.s	.apply
 	ext.w	d0
 	ext.l	d0
@@ -2382,6 +2668,8 @@ ApplyProp:
 	move.l	d0,d2			; property (Kw destroys d0)
 	move.l	a0,a2			; value
 	move.l	a1,a3			; style
+	bclr	#15,d2			; a value known when parsed
+	bne.s	.val
 	move.l	d2,d0			; ("inherit" and the like were dropped
 	cmp.w	#CP_COUNT,d0		;  when parsed)
 	bhs	.x
@@ -2390,6 +2678,25 @@ ApplyProp:
 	jsr	PropJump(pc,d0.w)
 .x:	movem.l	(sp)+,d2-d3/a2-a3
 	rts
+.val:	move.l	(a2),d0			; (DeclValue: 4 bytes, any alignment)
+	cmp.w	#CP_COLOR,d2
+	bne.s	.vb
+	move.l	d0,st_Color(a3)
+	bra.s	.x
+.vb:	cmp.w	#CP_BGCOLOR,d2
+	bne.s	.vm
+	move.l	d0,st_Bg(a3)
+	bra.s	.x
+.vm:	move.l	d2,d1			; margin / padding side
+	sub.w	#CP_MARGINT,d1
+	moveq	#0,d2
+	cmp.w	#4,d1
+	blo.s	.vs
+	sub.w	#CP_PADDINGT-CP_MARGINT,d1
+	moveq	#16,d2
+.vs:	ext.l	d1
+	bsr	BoxSide
+	bra.s	.x
 
 PropJump:
 	dc.w	PNop-PropJump,PDisplay-PropJump,PColor-PropJump

@@ -84,3 +84,5 @@ layout test/unit/layout/mediaattr.html 400 =>
 height 30
 text 10 8 216 10 8 f1 s0 c000000 "visible-print-sheet-ignored"
 
+# the ancestor filter (css.s) changes nothing: big.html with its sheet
+cssfilter test/www/big.html test/www/css/big.css 400 => 80 rules, without the filter: same
