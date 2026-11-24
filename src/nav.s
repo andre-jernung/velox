@@ -5,18 +5,19 @@
 	include	"velox.i"
 	include	"lvo/asl_lib.i"
 
-	xdef	NavGo,NavBack,NavForward,NavReload,NavHome,NavLink,NavExit,NavPost
+	xdef	NavGo,NavBack,NavForward,NavReload,NavHome,NavLink,NavExit,NavPost,NavStop
 	xdef	SaveDownload,BookmarkAdd,BookmarksShow
 	xref	HttpGet,UrlResolve,PageNew,BufReserve,BufAppend,BufAppendStr
 	xref	BufAppendByte,BufClear,CharsetDetect,DecodeCharset,HtmlParse
 	xref	DomNewNode,DomAppend,DomGetAttr,StrCopyN,StrCopy,StrIPrefix,StrLen
 	xref	Alloc,Free,ErrorText,FmtDec,LayoutDocument
 	xref	HttpGetCached,CacheFlush,DomAddAttr,PageAlloc,ParseDec
-	xdef	NavRefresh,PageFixups,CopyAddress,ViewSource
+	xdef	NavRefresh,PageFixups,CopyAddress,ViewSource,FragCheck
+	xref	FindAnchor
 	xref	ClipCopy
 	xref	GuiStatus,GuiSetUrl,GuiSetTitle,GuiRefresh,GuiBusy,GuiNetHook
 	xref	GuiPageWidth,GuiScrollTo,LogEvent,CssLoad,BufFree,ImagesStart
-	xref	GuiProgress
+	xref	GuiProgress,TaskAbort,TaskStart,ImagesLoad,TaskBusy
 
 HIST_MAX	equ	HIST_ENTRIES
 NAV_HISTORY	equ	1
@@ -27,43 +28,158 @@ NAV_REPLACE	equ	8		; replaces the current history entry
 	section	code,code
 
 ;--------------------------------------------------------------------
-; NavGo - load and show a URL
+; NavGo - load and show a URL.  At once, from the event loop: a load
+; in progress stops (this link wins), a #fragment of the page shown
+; just scrolls, anything else becomes the loader's job (NavLoad), which
+; shows the page while the event loop goes on.
 ; In: a0 = absolute URL, d0 = NAV_HISTORY to add it to the history
 ;--------------------------------------------------------------------
 NavGo:
 	movem.l	d2-d3/a2,-(sp)
+	move.l	d0,d3
+	lea	g_NavNext(a4),a1	; (a0 may be a buffer the load uses)
+	move.l	#URL_MAX-1,d0
+	jsr	StrCopyN
+	tst.l	g_TkIn(a4)		; from the loader itself: after it
+	beq.s	.main
+	move.l	d3,g_NavPending(a4)
+	bset	#31,g_NavPending(a4)
+	bra	.x0
+.main:	lea	g_NavNext(a4),a0	; "about:save": save the download,
+	lea	AboutSave(pc),a1	; stay on the page
+	jsr	StrIPrefix
+	beq.s	.go
+	lea	g_NavNext(a4),a0
+	bsr	SaveDownload
+	bra	.x0
+.go:	lea	g_NavNext(a4),a0	; a fragment of the page shown: just
+	bsr	SamePage		; scroll (what loads for it goes on)
+	beq.s	.other
+	cmp.l	#1,g_LoadPhase(a4)	; (but not a new page loading)
+	beq.s	.other
+	bsr	SaveScroll
+	lea	g_NavNext(a4),a0
+	lea	g_PageUrl(a4),a1
+	move.l	#URL_MAX-1,d0
+	jsr	StrCopyN
+	clr.l	g_RefreshTicks(a4)
+	bsr	NavFragment
+	bsr	NavHistory
+	bra.s	.x0
+.other:	jsr	TaskAbort		; what is loading stops
 	clr.l	g_FindOn(a4)		; a new page ends finding
 	clr.l	g_PageStatus(a4)
 	clr.l	g_RefreshTicks(a4)	; and a pending meta refresh
-	move.l	d0,d3
 	moveq	#NAV_RELOAD,d1
-	and.l	d0,d1
+	and.l	d3,d1
 	move.l	d1,g_NoCache(a4)
-	move.l	a0,-(sp)		; "about:save": save the download,
-	lea	AboutSave(pc),a1	; stay on the page
-	jsr	StrIPrefix
-	movem.l	(sp)+,a0
-	tst.l	d0
-	beq.s	.go
-	bsr	SaveDownload
-	bra	.x
-.go:
+	lea	g_NavNext(a4),a0
 	lea	g_NavUrl(a4),a1
 	move.l	#URL_MAX-1,d0
 	jsr	StrCopyN
 	bsr	SaveScroll
-	; a fragment of the page we are on: just scroll
-	bsr	SamePage
+	lea	g_NavUrl(a4),a0
+	bsr	SamePage		; (stopped a new page: the fragment)
 	beq.s	.load
 	lea	g_NavUrl(a4),a0
 	lea	g_PageUrl(a4),a1
 	move.l	#URL_MAX-1,d0
 	jsr	StrCopyN
+	bsr	NavFragment
+	bsr	NavHistory
+	bra.s	.x0
+.load:	move.l	d3,g_NavFlags(a4)
 	moveq	#-1,d0
-	move.l	d0,g_WantScroll(a4)
-	bsr	ShowPage
-	bra	.hist
-.load:	clr.l	g_AbortReq(a4)
+	move.l	d0,g_NavUndo(a4)
+	lea	NavLoad(pc),a0
+	jsr	TaskStart
+.x0:	movem.l	(sp)+,d2-d3/a2
+	rts
+
+;--------------------------------------------------------------------
+; NavStop - stop what is loading (Esc, Reload, Ctrl-C); the page shown
+; stays
+; Out: d0 = 1 if something was loading
+;--------------------------------------------------------------------
+NavStop:
+	jsr	TaskBusy
+	beq.s	.x
+	jsr	TaskAbort
+	moveq	#1,d0
+.x:	rts
+
+; FragSet - g_FragName = the #fragment of g_PageUrl, or 0
+FragSet:
+	clr.l	g_FragName(a4)
+	lea	g_PageUrl(a4),a0
+.f:	move.b	(a0)+,d0
+	beq.s	.x
+	cmp.b	#'#',d0
+	bne.s	.f
+	tst.b	(a0)
+	beq.s	.x
+	move.l	a0,g_FragName(a4)
+.x:	rts
+
+;--------------------------------------------------------------------
+; NavFragment - jump to g_PageUrl's #fragment at once (no layout: the
+; anchors were noted by the last one); if it is not there yet (the page
+; still loads), as soon as it comes (FragCheck after each layout),
+; unless the user scrolls first
+;--------------------------------------------------------------------
+NavFragment:
+	bsr	FragSet
+	clr.l	g_FragPend(a4)
+	move.l	g_FragName(a4),d0
+	beq.s	.top
+	move.l	d0,a0
+	jsr	FindAnchor
+	bpl.s	.go
+	jsr	TaskBusy		; not yet: maybe later
+	beq.s	.x
+	moveq	#1,d0
+	move.l	d0,g_FragPend(a4)
+.x:	rts
+.top:	moveq	#0,d0
+.go:	jmp	GuiScrollTo
+
+;--------------------------------------------------------------------
+; FragCheck - after a layout: the pending #fragment there now?  Then
+; scroll to it
+;--------------------------------------------------------------------
+FragCheck:
+	tst.l	g_FragPend(a4)
+	beq.s	.x
+	move.l	g_FragName(a4),d0
+	beq.s	.x
+	move.l	d0,a0
+	jsr	FindAnchor
+	bmi.s	.x
+	clr.l	g_FragPend(a4)
+	jmp	GuiScrollTo
+.x:	rts
+
+; NavHistory - add g_PageUrl to the history as flags d3 say
+NavHistory:
+	btst	#0,d3
+	beq.s	.x
+	btst	#3,d3			; NAV_REPLACE (a meta refresh)
+	beq.s	.push
+	bra	HistoryReplace
+.push:	lea	g_PageUrl(a4),a0
+	bra	HistoryPush
+.x:	rts
+
+;--------------------------------------------------------------------
+; NavLoad - (the loader's job) load g_NavUrl (g_NavFlags) and show it,
+; then its images
+;--------------------------------------------------------------------
+NavLoad:
+	movem.l	d2-d3/a2,-(sp)
+	moveq	#1,d0			; a new page (until it is shown)
+	move.l	d0,g_LoadPhase(a4)
+	move.l	g_NavFlags(a4),d3
+	clr.l	g_AbortReq(a4)
 	move.l	g_WinSigMask(a4),d0	; window events and Ctrl-C can stop
 	or.l	#SIGBREAKF_CTRL_C,d0	; the page and its style sheets
 	move.l	d0,g_AbortMask(a4)
@@ -117,9 +233,11 @@ NavGo:
 	bne.s	.ok
 	tst.l	g_Quit(a4)		; window closed while loading
 	bne	.x
-	tst.l	g_AbortReq(a4)		; stopped by the user: the page shown
-	beq.s	.err			; stays
-	tst.l	g_ViewLive(a4)
+	tst.l	g_TkAbort(a4)		; stopped by the user: the page shown
+	bne.s	.stop			; stays
+	tst.l	g_AbortReq(a4)
+	beq.s	.err
+.stop:	tst.l	g_ViewLive(a4)
 	beq.s	.err
 	clr.l	g_NetSigHook(a4)
 	clr.l	g_ProgressHook(a4)
@@ -129,8 +247,11 @@ NavGo:
 	jsr	LogEvent
 	lea	MsgStopped(pc),a0
 	jsr	GuiStatus
-	moveq	#2,d0			; (for NavStep)
+	moveq	#2,d0
 	move.l	d0,g_AbortReq(a4)
+	move.l	g_NavUndo(a4),d0	; Back/Forward stopped: the history
+	bmi.s	.nohist			; stays where it was
+	move.l	d0,g_HistPos(a4)
 	bra.s	.nohist
 .err:	bsr	ErrorPage
 	lea	g_NavUrl(a4),a0
@@ -152,18 +273,23 @@ NavGo:
 	bne.s	.hist
 	lea	MsgAuth(pc),a0
 	jsr	GuiStatus
-.hist:	btst	#0,d3
-	beq.s	.nohist
-	btst	#3,d3			; NAV_REPLACE (a meta refresh)
-	beq.s	.push
-	bsr	HistoryReplace
-	bra.s	.nohist
-.push:	lea	g_PageUrl(a4),a0
-	bsr	HistoryPush
+.hist:	bsr	NavHistory
+	moveq	#-1,d0
+	move.l	d0,g_NavUndo(a4)
+	moveq	#0,d0
+	jsr	GuiBusy
+	clr.l	g_NoCache(a4)
+	moveq	#2,d0			; then its images
+	move.l	d0,g_LoadPhase(a4)
+	jsr	ImagesLoad
+	bra.s	.x
 .nohist:
+	moveq	#-1,d0
+	move.l	d0,g_NavUndo(a4)
 	moveq	#0,d0
 	jsr	GuiBusy
 .x:	clr.l	g_NoCache(a4)
+	clr.l	g_LoadPhase(a4)
 	movem.l	(sp)+,d2-d3/a2
 	rts
 
@@ -190,12 +316,11 @@ StatusWithUrl:
 	lea	g_StatusBuf(a4),a0
 	jmp	GuiStatus
 
-; SamePage - is g_NavUrl a #fragment of the current page?
+; SamePage - is URL a0 a #fragment of the current page?
 ; Out: d0 = 1 if yes
 SamePage:
 	tst.l	g_Doc(a4)
 	beq.s	.no
-	lea	g_NavUrl(a4),a0
 	lea	g_PageUrl(a4),a1
 .l:	move.b	(a0)+,d0
 	move.b	(a1)+,d1
@@ -1020,30 +1145,23 @@ AslTitle:	dc.b	"Save file as",0
 ;--------------------------------------------------------------------
 ShowPage:
 	movem.l	a2,-(sp)
-	; fragment to jump to
-	clr.l	g_FragName(a4)
-	moveq	#-1,d0
-	move.l	d0,g_FragY(a4)
-	lea	g_PageUrl(a4),a0
-.f:	move.b	(a0)+,d0
-	beq.s	.nof
-	cmp.b	#'#',d0
-	bne.s	.f
-	tst.b	(a0)
-	beq.s	.nof
-	move.l	a0,g_FragName(a4)
-.nof:	clr.l	g_ScrollY(a4)
+	bsr	FragSet			; the fragment to jump to
+	clr.l	g_ScrollY(a4)
 	clr.l	g_EditField(a4)
 	clr.l	g_FocusLink(a4)
 	moveq	#-1,d0
 	move.l	d0,g_FocusIdx(a4)
 	jsr	GuiPageWidth
 	jsr	LayoutDocument
+	clr.l	g_FragPend(a4)
 	move.l	g_WantScroll(a4),d0	; back/forward: old position
 	bpl.s	.scr
-	move.l	g_FragY(a4),d0
+	move.l	g_FragName(a4),d0	; the #fragment, if it is there
+	beq.s	.top
+	move.l	d0,a0
+	jsr	FindAnchor
 	bpl.s	.scr
-	moveq	#0,d0
+.top:	moveq	#0,d0
 .scr:	moveq	#-1,d1
 	move.l	d1,g_WantScroll(a4)
 	move.l	g_DocHeight(a4),d1
@@ -1340,13 +1458,16 @@ NavBack:
 NavForward:
 	moveq	#1,d1
 NavStep:
+	move.l	d1,-(sp)
+	jsr	TaskAbort		; (a load in progress stops first)
+	move.l	(sp)+,d1
 	move.l	g_HistPos(a4),d0
 	add.l	d1,d0
 	bmi.s	.x
 	cmp.l	g_HistCount(a4),d0
 	bge.s	.x
-	move.l	g_HistPos(a4),-(sp)	; (where it was)
-	move.l	d0,-(sp)
+	move.l	g_HistPos(a4),-(sp)	; (where it was: if stopped, the
+	move.l	d0,-(sp)		;  history stays there)
 	bsr	SaveScroll
 	movem.l	(sp)+,d0
 	move.l	d0,g_HistPos(a4)
@@ -1355,10 +1476,7 @@ NavStep:
 	move.l	(a0,d0.l*8),a0
 	moveq	#NAV_CACHE,d0
 	bsr	NavGo
-	movem.l	(sp)+,d0
-	cmp.l	#2,g_AbortReq(a4)	; stopped, the page stayed: so did
-	bne.s	.x			; the history
-	move.l	d0,g_HistPos(a4)
+	move.l	(sp)+,g_NavUndo(a4)
 .x:	rts
 
 NavReload:

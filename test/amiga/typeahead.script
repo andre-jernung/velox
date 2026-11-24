@@ -1,4 +1,5 @@
-; typeahead: keys typed while a page loads are used afterwards
+; typeahead: keys typed while a page loads work at once: a new address
+; stops the load
 Echo >VELOX:r/typeahead.txt "typeahead"
 Echo >VELOX:r/typeahead.start ""
 VELOX:velox http://127.0.0.1:8080/index.html LOG=VELOX:r/typeahead.log

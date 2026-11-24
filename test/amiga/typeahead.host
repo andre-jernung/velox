@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Host side of typeahead.script: Ctrl-L and an address typed while a
-slow page loads are not lost; the address is opened after the load."""
+slow page loads are not lost: the window works while it loads, and the
+new address stops the slow page and is opened at once."""
 import os
 import sys
 import time
@@ -31,13 +32,16 @@ try:
     a.key("ctrl+l")                 # while the slow page loads
     a.type("127.0.0.1:8080/third.html")
     a.key("Return")
-    lines = wait_log(log, "page " + U + "slowpage", timeout=30)
-    step("the slow page loaded")
+    t0 = time.time()
     lines = wait_log(log, "page " + U + "third.html", timeout=30)
-    gos = [l for l in lines if l.startswith("go ")]
-    if gos[-1] != "go " + U + "third.html":
-        raise AssertionError("went to %r" % gos[-1])
-    step("the address typed meanwhile was opened after it")
+    took = time.time() - t0
+    if "stopped " + U + "slowpage" not in lines:
+        raise AssertionError("the slow page was not stopped")
+    if any(l.startswith("page " + U + "slowpage ") for l in lines):
+        raise AssertionError("the slow page was shown")
+    if took > 5:
+        raise AssertionError("the new address took %.1f s" % took)
+    step("the address typed meanwhile stopped the slow page and opened at once")
     a.key("ctrl+q")
     step("ok")
 except Exception as e:

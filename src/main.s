@@ -10,7 +10,7 @@
 	xref	MemInit,MemExit,NetExit,HttpGet,UrlFixup
 	xref	PutStr,PutBuf,PutNum,PutNL,FlushOut,ErrorText
 	xref	GuiOpen,GuiClose,GuiEventLoop,NavGo,NavExit,StrIPrefix,ParseDec
-	xref	StrCopyN,CacheInit,CookiesLoad,CookiesSave
+	xref	StrCopyN,CacheInit,CookiesLoad,CookiesSave,TaskInit,TaskExit
 
 STACK_SIZE	equ	65536
 
@@ -91,6 +91,7 @@ Main:
 	move.l	d0,g_HistPos(a4)
 	move.l	d0,g_WantScroll(a4)
 	move.l	d0,g_FocusIdx(a4)
+	move.l	d0,g_NavUndo(a4)
 	moveq	#RC_FAIL,d2
 	bsr	OpenLibs
 	beq	.cleanup
@@ -141,6 +142,8 @@ Main:
 	DOS	Open
 	move.l	d0,g_LogFH(a4)
 .nolog:	moveq	#RC_FAIL,d2
+	jsr	TaskInit
+	beq.s	.closegui
 	jsr	GuiOpen
 	beq.s	.closegui
 	move.l	g_ArgArray+ARG_URL(a4),d0	; URL argument, URL tooltype,
@@ -165,6 +168,7 @@ Main:
 .closegui:
 	jsr	GuiClose
 	jsr	NavExit
+	jsr	TaskExit
 .cleanup:
 	move.l	g_LogFH(a4),d1
 	beq.s	.nologf

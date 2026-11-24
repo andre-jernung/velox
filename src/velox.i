@@ -46,6 +46,10 @@ LINE_MAX	equ	1024		; max HTTP header line we keep
 HOST_MAX	equ	256
 CONN_BUFSIZE	equ	4096
 NET_TIMEOUT	equ	60		; seconds without data before giving up
+LS_IDLE		equ	0		; the loader (task.s): no job
+LS_RUN		equ	1		; ready to run
+LS_SOCK		equ	2		; waiting for a socket
+LS_SIG		equ	3		; waiting for signals
 MAX_REDIRECTS	equ	8
 STATUS_MAX	equ	160		; status line / title buffers
 PEN_CACHE	equ	64		; colours with an allocated pen
@@ -399,6 +403,9 @@ g_FontH		rs.w	FONT_COUNT	; height per font index
 g_FontBase	rs.w	FONT_COUNT	; baseline per font index
 ; layout
 g_Runs		rs.b	BUF_SIZEOF	; display list (Run records)
+g_Anchors	rs.b	BUF_SIZEOF	; id=/name= values and their y (layout)
+g_FragPend	rs.l	1		; scroll to g_FragName once it is there
+g_LoadPhase	rs.l	1		; 1: a new page loads, 2: the shown one
 g_LayWidth	rs.l	1		; width laid out for
 g_DocHeight	rs.l	1
 g_PageFg	rs.l	1		; default text colour
@@ -750,6 +757,26 @@ g_DecObj	rs.l	1		; ... with this result
 g_DecJob	rs.l	1		; ... of this job
 g_DecW		rs.l	1		; the size it is wanted at
 g_DecWant	rs.l	1		; the width to decode at least (0: all)
+g_DecOrphan	rs.l	1		; a stopped load's decoder still runs
+g_DecSigBit	rs.l	1		; its signal (bit)
+g_DecBody	rs.b	BUF_SIZEOF	; the body it reads
+g_NavNext	rs.b	URL_MAX		; NavGo's URL
+g_NavFlags	rs.l	1		; the load's NAV_xxx
+g_NavUndo	rs.l	1		; Back/Forward: the history before (-1)
+g_NavPending	rs.l	1		; bit 31: NavGo from the loader (flags)
+; the loader (task.s)
+g_TkStack	rs.l	1		; its stack
+g_TkSSS		rs.b	12		; StackSwapStruct: the other stack
+g_TkEntry	rs.l	1		; its job
+g_TkState	rs.l	1		; LS_xxx
+g_TkIn		rs.l	1		; 1 while the loader runs
+g_TkAbort	rs.l	1		; 1: stop (its waits fail)
+g_TkSock	rs.l	1		; LS_SOCK: the socket,
+g_TkDir		rs.l	1		; 0 read, 1 write,
+g_TkSince	rs.l	1		; since when (ticks)
+g_TkResult	rs.l	1		; 1 ready, 0 timeout, -1 error
+g_TkSigs	rs.l	1		; LS_SIG: the signals,
+g_TkGot		rs.l	1		; those received
 g_DecH		rs.l	1
 g_DecT0		rs.l	1		; (the time it began,
 g_DecT1		rs.l	1		; was decoded)
@@ -787,7 +814,6 @@ g_StatusBuf	rs.b	STATUS_MAX
 g_TitleText	rs.b	STATUS_MAX
 ; navigation
 g_FragName	rs.l	1		; #fragment of the page URL or 0
-g_FragY		rs.l	1		; its position after layout or -1
 g_WantScroll	rs.l	1		; scroll position to restore or -1
 g_HistPos	rs.l	1		; current history entry or -1
 g_HistCount	rs.l	1

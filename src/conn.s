@@ -27,6 +27,8 @@ FIONBIO		equ	$8004667e
 SOL_SOCKET	equ	$ffff
 SO_ERROR	equ	$1007
 
+	xref	TaskWaitSock
+
 	section	code,code
 
 ;--------------------------------------------------------------------
@@ -484,7 +486,16 @@ ConnClose:
 ;--------------------------------------------------------------------
 WaitSocket:
 	movem.l	d2-d4/a2-a3,-(sp)
-	move.l	d0,d2			; socket
+	tst.l	g_TkIn(a4)		; in the loader: the event loop waits
+	beq.s	.own			; for it (and serves the window)
+	jsr	TaskWaitSock
+	tst.l	d0
+	bgt	.ready
+	bmi	.err
+	tst.l	g_TkAbort(a4)
+	bne	.abort
+	bra	.timeout
+.own:	move.l	d0,d2			; socket
 	move.l	d1,d4
 .again:
 	lea	g_FdSet(a4),a0

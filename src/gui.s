@@ -25,6 +25,7 @@
 	xref	DomGetAttr,LogEvent,FormStateOf,FormIsControl,FormActivate
 	xref	FormEditKey,FormLeave,SaveDownload,BookmarkAdd,BookmarksShow
 	xref	PalFree,ImagesStop,ImagesPending,ImagesStep,ImagesFree,ImagePaint
+	xref	TaskResume,TaskLoopWait,TaskBusy,TaskAbort,NavStop,ImagesReap,ImagesReapNow,ImagesQuit,FragCheck
 
 PROP_FONT	equ	0
 SCROLL_W	equ	18
@@ -2201,7 +2202,8 @@ GuiRelayout:
 	clr.l	g_ScrollY(a4)
 	bsr	ClampScroll
 	move.l	d0,g_ScrollY(a4)
-	bra	GuiRefresh
+	bsr	GuiRefresh
+	jmp	FragCheck		; (a #fragment that just came)
 
 ; ClampScroll - In/Out: d0 = scroll position kept in range
 ClampScroll:
@@ -2263,31 +2265,45 @@ GuiBusy:
 ; Input
 ;--------------------------------------------------------------------
 
-; GuiEventLoop - run until the window is closed or Ctrl-C
+; GuiEventLoop - run until the window is closed or Ctrl-C.  The window's
+; messages always come first; then the loader (task.s) runs until it
+; yields; with nothing to do, sleep until a message or what the loader
+; waits for.  Ctrl-C stops a load, or quits when nothing loads.
 GuiEventLoop:
 	movem.l	d2-d7/a2,-(sp)
-.wait:	tst.l	g_Quit(a4)
-	bne.s	.x
-	jsr	ImagesPending		; images to load: no waiting, just
-	beq.s	.idle			; look at the messages in between
-	moveq	#0,d0
-	move.l	#SIGBREAKF_CTRL_C,d1
-	EXEC	SetSignal
-	btst	#SIGBREAKB_CTRL_C,d0
+.loop:	tst.l	g_Quit(a4)
 	bne.s	.x
 	bsr	HandleMessages
 	tst.l	g_Quit(a4)
 	bne.s	.x
-	jsr	ImagesStep
-	bra.s	.wait
-.idle:	move.l	g_WinSigMask(a4),d0
-	or.l	#SIGBREAKF_CTRL_C,d0
-	EXEC	Wait
-	btst	#SIGBREAKB_CTRL_C,d0
-	bne.s	.x
-	bsr	HandleMessages
-	bra.s	.wait
-.x:	movem.l	(sp)+,d2-d7/a2
+	cmp.l	#LS_RUN,g_TkState(a4)
+	bne.s	.idle
+	jsr	TaskResume
+	tst.l	g_TkState(a4)		; done: a NavGo it asked for?
+	bne.s	.loop
+	move.l	g_NavPending(a4),d0
+	bpl.s	.loop
+	clr.l	g_NavPending(a4)
+	bclr	#31,d0
+	lea	g_NavNext(a4),a0
+	jsr	NavGo
+	bra.s	.loop
+.idle:	jsr	ImagesReap		; (a stopped load's decoder)
+	move.l	d0,d2
+	jsr	TaskLoopWait
+	move.l	d0,d3
+	and.l	d2,d0
+	beq.s	.nr
+	jsr	ImagesReapNow
+.nr:	btst	#SIGBREAKB_CTRL_C,d3
+	beq.s	.loop
+	jsr	TaskBusy
+	beq.s	.x
+	jsr	NavStop
+	bra.s	.loop
+.x:	jsr	TaskAbort		; (a load unwinds: connections close)
+	jsr	ImagesQuit		; (and its decoder ends)
+	movem.l	(sp)+,d2-d7/a2
 	rts
 
 ; HandleMessages - process all pending window messages
@@ -2341,7 +2357,12 @@ HandleMessages:
 ; HandleEvent - d2 = class, d3 = code, d4 = qualifier, a2 = IAddress,
 ; d5/d6 = mouse position
 HandleEvent:
-	cmp.l	#IDCMP_CLOSEWINDOW,d2
+	cmp.l	#IDCMP_RAWKEY,d2	; the user scrolls or types: a pending
+	beq.s	.user			; jump to a #fragment is off
+	cmp.l	#IDCMP_GADGETDOWN,d2
+	bne.s	.nu
+.user:	clr.l	g_FragPend(a4)
+.nu:	cmp.l	#IDCMP_CLOSEWINDOW,d2
 	bne.s	.nc
 	moveq	#1,d0
 	move.l	d0,g_Quit(a4)
@@ -2404,8 +2425,12 @@ OnGadget:
 	beq	ToNavBack
 	cmp.w	#GID_FWD,d0
 	beq	ToNavForward
-	cmp.w	#GID_RELOAD,d0
+	cmp.w	#GID_RELOAD,d0		; (while loading: stops it)
+	bne.s	.nrl
+	jsr	TaskBusy
 	beq	ToNavReload
+	jmp	NavStop
+.nrl:
 	cmp.w	#GID_HOME,d0
 	beq	ToNavHome
 	cmp.w	#GID_URL,d0
@@ -2541,7 +2566,7 @@ ToNavBack:	jmp	NavBack
 ToNavForward:	jmp	NavForward
 ToNavReload:	jmp	NavReload
 ToNavHome:	jmp	NavHome
-ToImagesStop:	jmp	ImagesStop
+ToImagesStop:	jmp	NavStop
 ToNavLink:	jmp	NavLink
 ToFormActivate:	jmp	FormActivate
 

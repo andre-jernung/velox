@@ -14,7 +14,8 @@
 
 	xdef	LayoutDocument,LayoutChildren,LayoutNode,LayoutBlockContent
 	xdef	FlushLine,LineReset,AddMargin,AddRun,RunCount,RunPtr,Measure
-	xdef	ApplyPendingMargin,IntAttr,ClearFloats
+	xdef	ApplyPendingMargin,IntAttr,ClearFloats,FindAnchor
+	xref	BufAppend
 	xref	StyleRoot,StyleCompute,BufClear,BufReserve,PageAlloc,FmtDec
 	xref	DomGetAttr,ParseDec,LayoutTable,CssApply
 	xref	FormIsControl,FormControlSize,CssInvalidate
@@ -50,6 +51,8 @@ LayoutDocument:
 	jsr	CssInvalidate
 .nomq:
 	lea	g_Runs(a4),a0
+	jsr	BufClear
+	lea	g_Anchors(a4),a0
 	jsr	BufClear
 	clr.l	g_LayY(a4)
 	clr.l	g_PendMargin(a4)
@@ -141,14 +144,9 @@ LayoutNode:
 	move.b	st_Display(a3),d0
 	cmp.b	#DISP_NONE,d0
 	beq.s	.pop
-	tst.l	g_FragName(a4)		; the #fragment target?
-	beq.s	.nofrag
-	tst.l	g_FragY(a4)
-	bpl.s	.nofrag
-	move.l	a5,a0
-	bsr	CheckFragment
+	move.l	a5,a0			; id= and name=: #fragment targets
+	bsr	RecordAnchors
 	move.b	st_Display(a3),d0
-.nofrag:
 	move.w	n_Tag(a5),d1
 	cmp.w	#TAG_BR,d1
 	beq.s	.br
@@ -190,35 +188,61 @@ LayoutNode:
 .x:	movem.l	(sp)+,a2-a3/a5
 	rts
 
-; CheckFragment - set g_FragY if element a0 has id= or name= equal to
-; the fragment
-CheckFragment:
-	movem.l	a2-a3,-(sp)
-	move.l	a0,a3
+;--------------------------------------------------------------------
+; RecordAnchors - note element a0's id= and name= with where it is
+; (g_Anchors: value, y), so that a #fragment is found without laying
+; out again
+;--------------------------------------------------------------------
+RecordAnchors:
+	move.l	a2,-(sp)
+	move.l	a0,a2
 	lea	AnId(pc),a1
-	bsr	.cmp
-	beq.s	.hit
-	move.l	a3,a0
+	jsr	DomGetAttr
+	bsr.s	.add
+	move.l	a2,a0
 	lea	AnName(pc),a1
-	bsr	.cmp
-	bne.s	.x
-.hit:	move.l	g_LayY(a4),d0
-	add.l	g_PendMargin(a4),d0
-	move.l	d0,g_FragY(a4)
-.x:	movem.l	(sp)+,a2-a3
+	jsr	DomGetAttr
+	bsr.s	.add
+	move.l	(sp)+,a2
 	rts
-.cmp:	jsr	DomGetAttr		; Z set if the attribute matches
-	tst.l	d0
-	beq.s	.ne
-	move.l	d0,a0
-	move.l	g_FragName(a4),a1
+.add:	tst.l	d0
+	beq.s	.x
+	move.l	g_LayY(a4),d1
+	add.l	g_PendMargin(a4),d1
+	move.l	d1,-(sp)
+	move.l	d0,-(sp)
+	lea	g_Anchors(a4),a0
+	move.l	sp,a1
+	moveq	#8,d0
+	jsr	BufAppend
+	addq.l	#8,sp
+.x:	rts
+
+;--------------------------------------------------------------------
+; FindAnchor - where the element with id= or name= a0 is (the first)
+; Out: d0 = its document y, -1 if there is none (CCR set)
+;--------------------------------------------------------------------
+FindAnchor:
+	movem.l	d2/a2-a3,-(sp)
+	move.l	a0,a3
+	move.l	g_Anchors+buf_Data(a4),a2
+	move.l	g_Anchors+buf_Len(a4),d2
+	lsr.l	#3,d2
+	bra.s	.e
+.l:	move.l	(a2)+,a0
+	move.l	a3,a1
 .c:	move.b	(a0)+,d0
-	beq.s	.end
 	cmp.b	(a1)+,d0
-	beq.s	.c
-.ne:	moveq	#1,d0
-	rts
-.end:	tst.b	(a1)
+	bne.s	.n
+	tst.b	d0
+	bne.s	.c
+	move.l	(a2),d0
+	bra.s	.x
+.n:	addq.l	#4,a2
+.e:	subq.l	#1,d2
+	bpl.s	.l
+	moveq	#-1,d0
+.x:	movem.l	(sp)+,d2/a2-a3
 	rts
 
 AnId:	dc.b	"id",0

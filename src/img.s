@@ -31,7 +31,8 @@ bmh_Height		equ	2
 	include	"lvo/datatypes_lib.i"
 	include	"lvo/timer_lib.i"
 
-	xdef	BgFind
+	xdef	BgFind,ImagesLoad,ImagesReap,ImagesReapNow,ImagesQuit
+	xref	TaskPoll,TaskWaitSig
 	IFD	PROFILE
 	xdef	ProfRead
 	ENDC
@@ -599,6 +600,27 @@ BgRun:
 	DOS	CreateNewProc
 	tst.l	d0
 	beq.s	.noproc
+	tst.l	g_TkIn(a4)		; in the loader: the event loop runs
+	beq.s	.wait			; meanwhile
+	move.l	g_DecSig(a4),d0
+	jsr	TaskWaitSig
+	tst.l	d0
+	bne.s	.done
+	; stopped: the decoder goes on; what it makes is freed when it ends
+	; (DecReap), and the body it reads is its own until then
+	move.l	d2,g_DecSigBit(a4)
+	moveq	#1,d0
+	move.l	d0,g_DecOrphan(a4)
+	lea	g_Resp+r_Body(a4),a0
+	lea	g_DecBody(a4),a1
+	move.l	(a0),(a1)+
+	move.l	4(a0),(a1)+
+	move.l	8(a0),(a1)
+	clr.l	(a0)+
+	clr.l	(a0)+
+	clr.l	(a0)
+	moveq	#0,d0
+	bra.s	.x0
 .wait:	move.l	g_DecSig(a4),d0
 	tst.l	g_TaCount(a4)		; events kept for the event loop:
 	bne.s	.w			; the window waits for them
@@ -615,12 +637,105 @@ BgRun:
 	jsr	(a0)
 	bra.s	.x
 .done:	bsr.s	.free
-.x:	movem.l	(sp)+,d2
-	move.l	g_DecObj(a4),d0
+.x:	move.l	g_DecObj(a4),d0
+.x0:	movem.l	(sp)+,d2
 	rts
 .free:	move.l	d2,d0
 	EXEC	FreeSignal
 	rts
+
+;--------------------------------------------------------------------
+; DecReapWait - a decoder process left running by a stopped load: wait
+; for it (in the loader: the event loop runs meanwhile) and free what it
+; made.  Before the next decode, which uses the same globals.
+; Out: d0 = 0 if stopped while waiting (CCR set)
+;--------------------------------------------------------------------
+DecReapWait:
+	tst.l	g_DecOrphan(a4)
+	beq.s	.ok
+	move.l	g_DecSig(a4),d0
+	tst.l	g_TkIn(a4)
+	beq.s	.own
+	jsr	TaskWaitSig
+	tst.l	d0
+	beq.s	.x
+	bra.s	.reap
+.own:	EXEC	Wait
+.reap:	bsr.s	DecReap
+.ok:	moveq	#1,d0
+.x:	rts
+
+;--------------------------------------------------------------------
+; DecReap - the orphaned decoder has ended (its signal came): free its
+; bitmap or datatype object, the body it read and the signal
+;--------------------------------------------------------------------
+DecReap:
+	tst.l	g_DecOrphan(a4)
+	beq.s	.x
+	clr.l	g_DecOrphan(a4)
+	move.l	g_DecObj(a4),d0
+	beq.s	.nobj
+	clr.l	g_DecObj(a4)
+	lea	DecodeWork(pc),a0
+	cmp.l	g_DecJob(a4),a0
+	beq.s	.dt
+	move.l	d0,-(sp)		; Velox's decoders: a bitmap and its
+	GFX	WaitBlit		; mask
+	move.l	(sp)+,a0
+	GFX	FreeBitMap
+	move.l	g_PbmMask(a4),d0
+	beq.s	.nobj
+	clr.l	g_PbmMask(a4)
+	move.l	d0,a0
+	move.l	g_PbmW(a4),d0
+	move.l	g_PbmH(a4),d1
+	GFX	FreeRaster
+	bra.s	.nobj
+.dt:	move.l	d0,a0
+	move.l	g_DataTypesBase(a4),a6
+	jsr	_LVODisposeDTObject(a6)
+.nobj:	lea	g_DecBody(a4),a0
+	jsr	BufFree
+	move.l	g_DecSigBit(a4),d0
+	EXEC	FreeSignal
+.x:	rts
+
+;--------------------------------------------------------------------
+; ImagesLoad - (the loader) load the page's background images and
+; images, one after the other; the window comes first (TaskPoll)
+;--------------------------------------------------------------------
+ImagesLoad:
+.l:	jsr	TaskPoll
+	bne.s	.stop
+	bsr	DecReapWait		; (a decoder of a stopped load)
+	beq.s	.stop
+	bsr	ImagesPending
+	beq.s	.x
+	bsr	ImagesStep
+	tst.l	g_TkAbort(a4)
+	beq.s	.l
+.stop:	bra	ImagesStop
+.x:	rts
+
+;--------------------------------------------------------------------
+; ImagesReap - (event loop) Out: d0 = the signal of a decoder left
+; running while the loader is idle, to wait for (0: none);
+; ImagesReapNow - it came: free what it made
+;--------------------------------------------------------------------
+ImagesReap:
+	moveq	#0,d0
+	tst.l	g_DecOrphan(a4)
+	beq.s	.x
+	tst.l	g_TkState(a4)
+	bne.s	.x
+	move.l	g_DecSig(a4),d0
+.x:	rts
+
+ImagesReapNow:
+	bra	DecReap
+
+ImagesQuit:
+	bra	DecReapWait
 
 ; DecodeChild - the decoder process
 DecodeChild:
