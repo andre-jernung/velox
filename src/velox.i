@@ -266,6 +266,8 @@ BAND_H		equ	1<<BAND_SHIFT
 BANDS_MAX	equ	320
 BAND_GAP	equ	6		; unchanged bands painted to join two
 STRIP_H		equ	32
+PIC_MAXSIDE	equ	8192		; images decoded at most this wide/high
+PIC_MAXPIX	equ	2*1024*1024	; ... and this many pixels (8 MB)
 DNS_ENTRIES	equ	4		; (a power of two)
 DNS_NAME	equ	60
 DNS_SIZEOF	equ	4+DNS_NAME
@@ -330,7 +332,8 @@ FS_SIZEOF	rs.b	0
 ;--------------------------------------------------------------------
 	RSRESET
 im_Next		rs.l	1		; all images of the page
-im_BitMap	rs.l	1		; our bitmap, drawn as is
+im_BitMap	rs.l	1		; our bitmap
+im_Mask		rs.l	1		; its mask plane (set: drawn) or 0
 im_W		rs.w	1
 im_H		rs.w	1
 IMG_SIZEOF	rs.b	0
@@ -560,12 +563,45 @@ g_SelBOff	rs.l	1
 g_SelFrom	rs.l	1		; scratch
 g_PaintIdx	rs.l	1		; index of the run being painted
 g_PageGen	rs.l	1		; counts the pages shown
+; image decoders (pic.s, gif.s ...): one image at a time
+g_PicW		rs.l	1		; the decoded image: size,
+g_PicH		rs.l	1
+g_PicData	rs.l	1		; ARGB pixels (AllocVec) or 0
+g_PicWant	rs.l	1		; width wanted (0: natural)
+g_GifTrans	rs.l	1		; transparent colour or -1
+g_GifLeft	rs.l	1		; the image on the canvas
+g_GifTop	rs.l	1
+g_GifIW		rs.l	1
+g_GifIH		rs.l	1
+g_GifFlags	rs.l	1		; (first byte: image flags)
+g_GifX		rs.l	1		; pixels left in the row
+g_GifY		rs.l	1		; row being decoded
+g_GifPass	rs.l	1		; interlace pass
+g_GifStep	rs.l	1		; rows to the next one
+g_LzwClear	rs.l	1		; the clear code
 g_ViewLive	rs.l	1		; the runs are those of the page shown
 g_DnsNext	rs.l	1		; next g_DnsCache entry to replace
 g_DnsCache	rs.b	DNS_ENTRIES*DNS_SIZEOF	; address.l, host name
 g_DecSig	rs.l	1		; image decoder: signal when done,
 g_DecTask	rs.l	1		; ... to this task
-g_DecObj	rs.l	1		; ... with this datatype object
+g_DecObj	rs.l	1		; ... with this result
+g_DecJob	rs.l	1		; ... of this job
+g_DecW		rs.l	1		; the size it is wanted at
+g_DecH		rs.l	1
+g_PalReady	rs.l	1		; picbm.s: the colour cube is there
+g_PalLevels	rs.l	1		; levels of each colour
+g_PalCount	rs.l	1		; pens obtained
+g_PalDepth	rs.l	1		; of the screen
+g_PalFriend	rs.l	1		; the screen's bitmap
+g_PbmW		rs.l	1		; PicToBitMap: the size,
+g_PbmH		rs.l	1
+g_PbmMask	rs.l	1		; the mask plane,
+g_PbmMaskBPR	rs.l	1		; its bytes per row,
+g_PbmXMap	rs.l	1		; source x for each column,
+g_PbmBuf	rs.l	1		; a row of pens,
+g_PbmHoles	rs.l	1		; (first byte: transparent pixels seen)
+g_PbmRP		rs.b	rp_SIZEOF	; RastPort on the bitmap
+g_Cube		rs.b	216		; the pens of the colour cube
 g_BandsOk	rs.l	1		; g_Bands tells what is on the screen
 g_BandN		rs.l	1		; bands in the view
 g_BandView	rs.l	5		; ViewKey (gui.s) of g_Bands
@@ -596,6 +632,8 @@ g_LinkUrl	rs.b	URL_MAX
 g_Bands		rs.l	BANDS_MAX	; signature of each band on the screen
 g_BandsNew	rs.l	BANDS_MAX	; ... and of the runs now
 g_Vis		rs.l	VIS_MAX		; indexes of the runs being painted
+g_GifPal	rs.l	256		; colour table, as ARGB
+g_DitTab	rs.b	3*4*4*256	; dither tables (picbm.s)
 g_SIZEOF	rs.b	0
 
 ;--------------------------------------------------------------------

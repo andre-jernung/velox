@@ -32,7 +32,7 @@ bmh_Height		equ	2
 
 	xdef	ImagesStop,ImagesStart,ImagesStep,ImagesPending,ImagesFree,ImagePaint
 	xref	PageAlloc,DomGetAttr,UrlResolve,HttpGetCached,ParseDec,BufFree
-	xref	G,BusyEvents,BufAppend,BufClear,GuiStatus,GuiRelayout,GuiRefresh,GuiPageWidth
+	xref	G,BusyEvents,PicInfo,PicDecode,PicFree,PalInit,PicToBitMap,BufAppend,BufClear,GuiStatus,GuiRelayout,GuiRefresh,GuiPageWidth
 	xref	FmtDec,StrCopy,LogEvent,ImgNetHook
 
 MAX_IMAGES	equ	64
@@ -208,7 +208,17 @@ ImagesStep:
 	beq	.free
 	cmp.l	#MAX_IMAGE,d0
 	bhi	.free
-	; to a temporary file for the datatype
+	move.l	g_Resp+r_Body+buf_Data(a4),a0	; Velox's own decoders
+	jsr	PicInfo
+	tst.l	d0
+	beq.s	.dt
+	bsr	DecodeOwn
+	beq.s	.dt			; (not decoded: the datatypes may)
+	lea	g_Resp+r_Body(a4),a0
+	jsr	BufFree
+	addq.l	#1,g_ImgLoaded(a4)
+	bra	.done
+.dt:	; to a temporary file for the datatype
 	lea	TmpName(pc),a0
 	move.l	a0,d1
 	move.l	#MODE_NEWFILE,d2
@@ -272,14 +282,16 @@ MsgStopped:	dc.b	"Stopped",0
 	even
 
 ;--------------------------------------------------------------------
-; DecodeObject - the datatype object of TmpName, laid out (remapped)
-; for the screen.  That takes a while on a 68020, so a process of its
-; own (at a lower priority) does it, while this one keeps serving the
-; window (BusyEvents).  Without the process it is done here.
-; Out: d0 = object or 0
+; BgRun - run a decoding job: decoding takes a while on a 68020, so a
+; process of its own (at a lower priority) does it, while this one
+; keeps serving the window (BusyEvents).  Without the process the job
+; runs here.
+; In:  a0 = the job (sets g_DecObj)
+; Out: d0 = g_DecObj
 ;--------------------------------------------------------------------
-DecodeObject:
+BgRun:
 	movem.l	d2,-(sp)
+	move.l	a0,g_DecJob(a4)
 	clr.l	g_DecObj(a4)
 	moveq	#-1,d0
 	EXEC	AllocSignal
@@ -307,7 +319,8 @@ DecodeObject:
 	bra.s	.wait
 .noproc:
 	bsr.s	.free
-.here:	bsr	DecodeWork
+.here:	move.l	g_DecJob(a4),a0
+	jsr	(a0)
 	bra.s	.x
 .done:	bsr.s	.free
 .x:	movem.l	(sp)+,d2
@@ -320,7 +333,8 @@ DecodeObject:
 ; DecodeChild - the decoder process
 DecodeChild:
 	lea	G,a4
-	bsr.s	DecodeWork
+	move.l	g_DecJob(a4),a0
+	jsr	(a0)
 	EXEC	Forbid			; (gone before Velox can go on)
 	move.l	g_DecTask(a4),a1
 	move.l	g_DecSig(a4),d0
@@ -353,48 +367,56 @@ DecodeWork:
 	rts
 
 ;--------------------------------------------------------------------
-; Decode - make the image of <img> a5 from TmpName
-; Out: d0 = 1 on success
+; DecodeOwn - make the image of <img> a5 from the body (g_Resp) with
+; Velox's decoders
+; In:  d0/d1 = its natural size (PicInfo)
+; Out: d0 = 1 if a5 got an image (CCR set)
 ;--------------------------------------------------------------------
-Decode:
+DecodeOwn:
 	movem.l	d2-d7/a2-a3,-(sp)
-	move.l	g_DataTypesBase(a4),d0
-	beq	.fail
-	move.l	g_Screen(a4),DtTagScr+4
-	bsr	DecodeObject
-	move.l	d0,a3			; a3 = datatype object
-	tst.l	d0
-	beq	.fail
-	; the bitmap and its size
-	clr.l	g_DtBmhd(a4)
-	clr.l	g_DtBitMap(a4)
-	clr.l	g_DtDestBM(a4)
-	lea	g_DtBmhd(a4),a0		; where GetDTAttrs stores the values
-	move.l	a0,DtGetTags+4
-	lea	g_DtBitMap(a4),a0
-	move.l	a0,DtGetTags+12
-	lea	g_DtDestBM(a4),a0
-	move.l	a0,DtGetTags+20
-	move.l	a3,a0
-	lea	DtGetTags,a2
-	move.l	g_DataTypesBase(a4),a6
-	jsr	_LVOGetDTAttrsA(a6)
-	move.l	g_DtDestBM(a4),d0	; v43: the remapped bitmap
-	bne.s	.bm
-	move.l	g_DtBitMap(a4),d0
-	beq	.dispose
-.bm:	move.l	d0,a2			; a2 = source bitmap
-	move.l	g_DtBmhd(a4),d0
-	beq	.dispose
-	move.l	d0,a0
-	moveq	#0,d2
-	move.w	bmh_Width(a0),d2	; natural size
-	moveq	#0,d3
-	move.w	bmh_Height(a0),d3
-	tst.l	d2
-	beq	.dispose
-	tst.l	d3
-	beq	.dispose
+	move.l	d0,d2
+	move.l	d1,d3
+	bsr	WantedSize		; d4/d5 = the size, d6
+	beq.s	.fail
+	jsr	PalInit
+	move.l	d4,g_DecW(a4)
+	move.l	d5,g_DecH(a4)
+	lea	PicWork(pc),a0
+	bsr	BgRun			; d0 = bitmap
+	move.l	d0,d7
+	beq.s	.fail
+	move.l	g_PbmMask(a4),a0
+	bsr	AddImage
+	bra.s	.x
+.fail:	moveq	#0,d0
+.x:	movem.l	(sp)+,d2-d7/a2-a3
+	rts
+
+; PicWork - (a job for BgRun) decode the body, make the bitmap of
+; g_DecW x g_DecH: g_DecObj = bitmap (g_PbmMask its mask) or 0
+PicWork:
+	clr.l	g_DecObj(a4)
+	move.l	g_Resp+r_Body+buf_Data(a4),a0
+	move.l	g_Resp+r_Body+buf_Len(a4),d0
+	move.l	g_DecW(a4),d1
+	jsr	PicDecode
+	beq.s	.x
+	move.l	g_DecW(a4),d0
+	move.l	g_DecH(a4),d1
+	jsr	PicToBitMap
+	move.l	d0,g_DecObj(a4)
+	jsr	PicFree
+.x:	rts
+
+;--------------------------------------------------------------------
+; WantedSize - the size an image is shown at: width=/height= (one of
+; them keeps the aspect), never wider than the page; and is there chip
+; memory for it?
+; In:  d2/d3 = natural size, a5 = <img>
+; Out: d4/d5 = size, d6 = 1 if it depends on the image (the layout
+;      changes); d0 = 0 if it cannot be shown (CCR set); d7 changed
+;--------------------------------------------------------------------
+WantedSize:
 	; wanted size: width=/height= (one of them keeps the aspect)
 	move.l	d2,d4
 	move.l	d3,d5
@@ -437,11 +459,11 @@ Decode:
 	move.l	d1,d5
 	moveq	#1,d6
 .wok:	tst.l	d4
-	ble	.dispose
+	ble	.no
 	tst.l	d5
-	ble	.dispose
+	ble	.no
 	cmp.l	#4000,d5		; sanity
-	bhi	.dispose
+	bhi	.no
 	; chip memory for the copy?
 	move.l	#MEMF_CHIP|MEMF_LARGEST,d1
 	EXEC	AvailMem
@@ -452,7 +474,96 @@ Decode:
 	lsl.l	#3,d1			; up to 8 planes
 	add.l	#CHIP_RESERVE,d1
 	cmp.l	d1,d0
-	blo	.dispose
+	blo	.no
+	moveq	#1,d0
+	rts
+.no:	moveq	#0,d0
+	rts
+
+;--------------------------------------------------------------------
+; AddImage - give <img> a5 its image
+; In:  d7 = bitmap, a0 = its mask plane or 0, d4/d5 = size, d6 = 1 if
+;      the layout changes
+; Out: d0 = 1, or 0 if out of memory (bitmap and mask freed) (CCR set)
+;--------------------------------------------------------------------
+AddImage:
+	move.l	a0,-(sp)
+	moveq	#IMG_SIZEOF,d0
+	jsr	PageAlloc
+	movem.l	(sp)+,a1
+	beq.s	.nomem
+	move.l	d0,a0
+	move.l	d7,im_BitMap(a0)
+	move.l	a1,im_Mask(a0)
+	move.w	d4,im_W(a0)
+	move.w	d5,im_H(a0)
+	move.l	g_ImgList(a4),im_Next(a0)	; for ImagesFree
+	move.l	a0,g_ImgList(a4)
+	move.l	a0,n_Data2(a5)
+	tst.l	d6
+	beq.s	.ok
+	moveq	#1,d0			; its size changes the layout
+	move.l	d0,g_ImgRelayout(a4)
+.ok:	moveq	#1,d0
+	rts
+.nomem:	move.l	a1,d0
+	beq.s	.nm
+	move.l	d0,a0
+	move.l	d4,d0
+	move.l	d5,d1
+	GFX	FreeRaster
+.nm:	GFX	WaitBlit
+	move.l	d7,a0
+	GFX	FreeBitMap
+	moveq	#0,d0
+	rts
+
+;--------------------------------------------------------------------
+; Decode - make the image of <img> a5 from TmpName
+; Out: d0 = 1 on success
+;--------------------------------------------------------------------
+Decode:
+	movem.l	d2-d7/a2-a3,-(sp)
+	move.l	g_DataTypesBase(a4),d0
+	beq	.fail
+	move.l	g_Screen(a4),DtTagScr+4
+	lea	DecodeWork(pc),a0
+	bsr	BgRun
+	move.l	d0,a3			; a3 = datatype object
+	tst.l	d0
+	beq	.fail
+	; the bitmap and its size
+	clr.l	g_DtBmhd(a4)
+	clr.l	g_DtBitMap(a4)
+	clr.l	g_DtDestBM(a4)
+	lea	g_DtBmhd(a4),a0		; where GetDTAttrs stores the values
+	move.l	a0,DtGetTags+4
+	lea	g_DtBitMap(a4),a0
+	move.l	a0,DtGetTags+12
+	lea	g_DtDestBM(a4),a0
+	move.l	a0,DtGetTags+20
+	move.l	a3,a0
+	lea	DtGetTags,a2
+	move.l	g_DataTypesBase(a4),a6
+	jsr	_LVOGetDTAttrsA(a6)
+	move.l	g_DtDestBM(a4),d0	; v43: the remapped bitmap
+	bne.s	.bm
+	move.l	g_DtBitMap(a4),d0
+	beq	.dispose
+.bm:	move.l	d0,a2			; a2 = source bitmap
+	move.l	g_DtBmhd(a4),d0
+	beq	.dispose
+	move.l	d0,a0
+	moveq	#0,d2
+	move.w	bmh_Width(a0),d2	; natural size
+	moveq	#0,d3
+	move.w	bmh_Height(a0),d3
+	tst.l	d2
+	beq	.dispose
+	tst.l	d3
+	beq	.dispose
+	bsr	WantedSize
+	beq	.dispose
 	; our bitmap, like the screen's
 	move.l	g_Screen(a4),a0
 	lea	sc_RastPort(a0),a0
@@ -505,28 +616,14 @@ Decode:
 	move.l	d7,bsa_DestBitMap(a0)
 	GFX	BitMapScale
 .made:	GFX	WaitBlit
-	; the ImageInfo
-	moveq	#IMG_SIZEOF,d0
-	jsr	PageAlloc
-	beq.s	.nofo
-	move.l	d0,a0
-	move.l	d7,im_BitMap(a0)
-	move.w	d4,im_W(a0)
-	move.w	d5,im_H(a0)
-	move.l	g_ImgList(a4),im_Next(a0)	; for ImagesFree
-	move.l	a0,g_ImgList(a4)
-	move.l	a0,n_Data2(a5)
-	tst.l	d6
-	beq.s	.ok
-	moveq	#1,d0			; its size changes the layout
-	move.l	d0,g_ImgRelayout(a4)
-.ok:	move.l	a3,a0
+	suba.l	a0,a0			; (no mask)
+	bsr	AddImage
+.ok:	move.l	d0,-(sp)
+	move.l	a3,a0
 	move.l	g_DataTypesBase(a4),a6
 	jsr	_LVODisposeDTObject(a6)
-	moveq	#1,d0
+	movem.l	(sp)+,d0
 	bra.s	.x
-.nofo:	move.l	d7,a0
-	GFX	FreeBitMap
 .dispose:
 	move.l	a3,a0
 	move.l	g_DataTypesBase(a4),a6
@@ -566,7 +663,15 @@ ImagesFree:
 	beq.s	.x
 	move.l	im_BitMap(a2),a0
 	GFX	FreeBitMap
-	move.l	im_Next(a2),a2
+	move.l	im_Mask(a2),d0
+	beq.s	.nm
+	move.l	d0,a0
+	moveq	#0,d0
+	move.w	im_W(a2),d0
+	moveq	#0,d1
+	move.w	im_H(a2),d1
+	GFX	FreeRaster
+.nm:	move.l	im_Next(a2),a2
 	bra.s	.l
 .x:	move.l	(sp)+,a2
 	rts
@@ -608,8 +713,15 @@ ImagePaint:
 	moveq	#0,d4
 	move.w	im_W(a2),d4		; width
 	move.l	d6,d5			; height
+	move.l	im_Mask(a2),d6
+	bne.s	.mask
 	move.l	#$c0,d6
 	GFX	BltBitMapRastPort
+	moveq	#1,d0
+	bra.s	.x
+.mask:	move.l	d6,a2			; transparent parts: through a mask
+	move.l	#$e0,d6
+	GFX	BltMaskBitMapRastPort
 	moveq	#1,d0
 	bra.s	.x
 .no:	moveq	#0,d0

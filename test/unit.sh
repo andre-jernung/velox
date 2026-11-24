@@ -5,6 +5,8 @@
 set -u
 cd "$(dirname "$0")/.."
 python3 test/unit/mkhttp.py build/http
+rm -rf build/img
+python3 test/unit/mkimages.py build/img
 fail=0
 for t in test/unit/*.vt; do
 	name=$(basename "$t" .vt)
@@ -22,4 +24,10 @@ for t in test/unit/*.vt; do
 		echo "PASS $name"
 	fi
 done
+# the pixels of the decoded images, against PIL
+if python3 test/unit/cmpimages.py build/img >build/pixels.out; then
+	echo "PASS pixels ($(grep -c PASS build/pixels.out) images)"
+else
+	grep -v '^PASS' build/pixels.out; echo "FAIL pixels"; fail=1
+fi
 exit $fail

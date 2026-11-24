@@ -24,7 +24,7 @@
 	xref	NavGo,NavBack,NavForward,NavReload,NavHome,NavLink,UrlFixup
 	xref	DomGetAttr,LogEvent,FormStateOf,FormIsControl,FormActivate
 	xref	FormEditKey,FormLeave,SaveDownload,BookmarkAdd,BookmarksShow
-	xref	ImagesStop,ImagesPending,ImagesStep,ImagesFree,ImagePaint
+	xref	PalFree,ImagesStop,ImagesPending,ImagesStep,ImagesFree,ImagePaint
 
 PROP_FONT	equ	0
 SCROLL_W	equ	18
@@ -216,7 +216,8 @@ GuiClose:
 	clr.l	g_DataTypesBase(a4)
 	move.l	d0,a1
 	EXEC	CloseLibrary
-.nodt:	bsr	PensRelease
+.nodt:	jsr	PalFree			; (the image pens)
+	bsr	PensRelease
 	bsr	FontsExit
 	move.l	g_VisualInfo(a4),a0
 	clr.l	g_VisualInfo(a4)

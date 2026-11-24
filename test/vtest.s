@@ -14,6 +14,9 @@
 ;                        per character), dump the display list
 ;   setcookie URL VALUE  Set-Cookie VALUE ('|' = blank) from URL
 ;   cookies URL          the Cookie header for a request to URL
+;   decode FILE OUT [W]  decode an image file with Velox's decoders
+;                        (width W wanted); OUT gets width.l, height.l
+;                        and the ARGB pixels
 ;
 
 	include	"velox.i"
@@ -24,6 +27,7 @@
 	xref	PutStr,PutBuf,PutNum,PutNL,PutChar,FlushOut,ErrorText
 	xref	PageNew,BufReserve,BufClear,CharsetDetect,DecodeCharset
 	xref	HtmlParse,TagNameOf,LayoutDocument,RunCount,RunPtr,ParseDec,CssLoad
+	xref	PicInfo,PicDecode,PicFree,PicAlloc,PicFreeMem
 	xref	CookieSet,CookieHeader,UrlParse,BufFree,PageFixups
 
 T_LINEMAX	equ	2048
@@ -172,6 +176,7 @@ Commands:
 	dc.w	CnLayout-Commands,CmdLayout-Commands
 	dc.w	CnSetCookie-Commands,CmdSetCookie-Commands
 	dc.w	CnCookies-Commands,CmdCookies-Commands
+	dc.w	CnDecode-Commands,CmdDecode-Commands
 	dc.w	0
 
 CnParse:	dc.b	"parse",0
@@ -183,6 +188,7 @@ CnHtml:		dc.b	"html",0
 CnLayout:	dc.b	"layout",0
 CnSetCookie:	dc.b	"setcookie",0
 CnCookies:	dc.b	"cookies",0
+CnDecode:	dc.b	"decode",0
 Empty:		dc.b	0
 ResultSep:	dc.b	" => ",0
 MsgUnknown:	dc.b	"unknown command",0
@@ -352,6 +358,97 @@ MsgBody:	dc.b	"] body=",0
 MsgBodyOpen:	dc.b	10,"<<<",0
 MsgBodyClose:	dc.b	">>>",0
 MsgSum:		dc.b	" sum=",0
+	even
+
+;--------------------------------------------------------------------
+CmdDecode:
+	movem.l	d2-d6/a2,-(sp)
+	sub.l	a2,a2
+	move.l	T_Words+4,d1		; the file, into memory
+	move.l	#MODE_OLDFILE,d2
+	DOS	Open
+	move.l	d0,d4
+	beq	.err
+	move.l	d4,d1
+	moveq	#0,d2
+	moveq	#OFFSET_END,d3
+	DOS	Seek
+	move.l	d4,d1
+	moveq	#0,d2
+	moveq	#OFFSET_BEGINNING,d3
+	DOS	Seek
+	move.l	d0,d5			; d5 = length
+	addq.l	#1,d0
+	jsr	PicAlloc
+	move.l	d0,a2
+	beq.s	.close
+	move.l	d4,d1
+	move.l	a2,d2
+	move.l	d5,d3
+	DOS	Read
+.close:	move.l	d4,d1
+	DOS	Close
+	move.l	a2,d0
+	beq	.err
+	lea	MsgInfo(pc),a0		; "info WxH"
+	jsr	PutStr
+	move.l	a2,a0
+	move.l	d5,d0
+	jsr	PicInfo
+	move.l	d1,d6
+	bsr	PutSize
+	move.l	T_Words+12,a0		; width wanted ("": 0)
+	jsr	ParseDec
+	move.l	d0,d1
+	move.l	a2,a0
+	move.l	d5,d0
+	jsr	PicDecode
+	beq.s	.fail
+	lea	MsgDecoded(pc),a0	; " decoded WxH"
+	jsr	PutStr
+	move.l	g_PicW(a4),d0
+	move.l	g_PicH(a4),d6
+	bsr	PutSize
+	move.l	T_Words+8,d1		; width, height, pixels to OUT
+	move.l	#MODE_NEWFILE,d2
+	DOS	Open
+	move.l	d0,d4
+	beq.s	.free
+	move.l	d4,d1
+	lea	g_PicW(a4),a0
+	move.l	a0,d2
+	moveq	#8,d3
+	DOS	Write
+	move.l	g_PicW(a4),d3
+	mulu.l	g_PicH(a4),d3
+	lsl.l	#2,d3
+	move.l	d4,d1
+	move.l	g_PicData(a4),d2
+	DOS	Write
+	move.l	d4,d1
+	DOS	Close
+	bra.s	.free
+.fail:	lea	MsgNotDecoded(pc),a0
+	jsr	PutStr
+.free:	jsr	PicFree
+	move.l	a2,a1
+	jsr	PicFreeMem
+	movem.l	(sp)+,d2-d6/a2
+	rts
+.err:	movem.l	(sp)+,d2-d6/a2
+	bra	PutError
+
+; PutSize - print "<d0>x<d6>"
+PutSize:
+	jsr	PutNum
+	moveq	#'x',d0
+	jsr	PutChar
+	move.l	d6,d0
+	jmp	PutNum
+
+MsgInfo:	dc.b	"info ",0
+MsgDecoded:	dc.b	" decoded ",0
+MsgNotDecoded:	dc.b	" not decoded",0
 	even
 
 ;--------------------------------------------------------------------
