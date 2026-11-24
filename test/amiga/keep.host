@@ -73,6 +73,14 @@ try:
     want = U + "echo?q=hello+xyz&c1=on&s=g&h=x+y"
     wait_log(log, "page " + want)
     step("the text typed was kept: " + want)
+    # a page left before its images came has no page file: saved later,
+    # from the copy kept, once nothing else loads
+    go(a, "slow.html?keep")           # (a URL no other test saved)
+    wait_log(log, "page " + U + "slow.html?keep")
+    go(a, "second.html")
+    wait_log(log, "page " + U + "second.html")
+    wait_log(log, "pfsaved " + U + "slow.html?keep", timeout=60)
+    step("a kept page is saved to disk when nothing loads")
     a.key("ctrl+q")
     # Velox/KeepPages 1: one page kept, the farthest one gives way
     wait_log(log2, "page " + U + "form.html")
@@ -90,7 +98,10 @@ try:
     lines = wait_log(log2, "page " + U + "form.html", 2)
     if "restored " + U + "form.html 0" in lines:
         raise AssertionError("form.html restored after it was dropped")
-    step("the page dropped is loaded again")
+    seg = lines[len(lines) - 1 - lines[::-1].index("go " + U + "form.html"):]
+    if not any(l.startswith("pfshown " + U + "form.html") for l in seg):
+        raise AssertionError("form.html not from its page file: %r" % seg)
+    step("the page dropped comes back from its page file")
     a.key("ctrl+q")
     step("ok")
 except Exception as e:  # report and let the Amiga side time out

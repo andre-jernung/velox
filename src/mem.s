@@ -7,7 +7,7 @@
 
 	include	"velox.i"
 
-	xdef	MemInit,MemExit,Alloc,Free,PageNew,PageFree,PageAlloc,ArenaFree,ArenaBlock
+	xdef	MemInit,MemExit,Alloc,Free,PageNew,PageFree,PageAlloc,ArenaFree,ArenaBlock,ArenaBlockRaw
 	xdef	BufReserve,BufAppend,BufAppendByte,BufAppendStr,BufClear,BufFree
 	xref	PageLeave,KeepEvict
 
@@ -110,9 +110,14 @@ PageNew:
 ; Out: d0 = block or 0 (CCR set)
 ;--------------------------------------------------------------------
 ArenaBlock:
+	move.l	#MEMF_ANY|MEMF_CLEAR,d1
+	bra.s	ArenaAlloc
+; ArenaBlockRaw - the same, not cleared (it is read into at once)
+ArenaBlockRaw:
+	moveq	#MEMF_ANY,d1
+ArenaAlloc:
 	move.l	d0,-(sp)
 	add.l	#AB_SIZEOF,d0
-	move.l	#MEMF_ANY|MEMF_CLEAR,d1
 	EXEC	AllocVec
 	move.l	(sp)+,d1
 	tst.l	d0

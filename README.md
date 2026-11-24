@@ -65,7 +65,7 @@ icon (remove the parentheses to enable one) or environment variables
 | `NOIMAGES`           | `Velox/NoImages`    | do not load images                  |
 | `PUBSCREEN=name`     | `Velox/PubScreen`   | open on that public screen          |
 |                      | `Velox/CacheDir`    | disk cache drawer (default `PROGDIR:Cache`) |
-|                      | `Velox/CacheSize`   | disk cache size in KB (default 4096, 0: none) |
+|                      | `Velox/CacheSize`   | disk cache size in KB (default 16384, 0: none) |
 |                      | `Velox/KeepPages`   | pages kept in memory for Back/Forward (default 4, 0: none) |
 |                      | `Velox/InsecureTLS` | skip certificate checks (testing)   |
 

@@ -23,7 +23,7 @@
 	xref	GuiPageWidth,GuiScrollTo,LogEvent,CssLoad,BufFree,ImagesStart
 	xref	GuiProgress,TaskAbort,TaskStart,ImagesLoad,TaskBusy,TaskNow
 	xref	HtmlBegin,HtmlMore,IsValidUtf8,GuiRelayout
-	xref	PageRestore,KeepDrop,ImagesAgain,PfLoad,PfSave,DcHash
+	xref	PageRestore,KeepDrop,ImagesAgain,PfLoad,PfSave,PfSaveKept,DcHash
 
 HIST_MAX	equ	HIST_ENTRIES
 NAV_HISTORY	equ	1
@@ -589,6 +589,13 @@ NavLoad:
 	bra.s	.built
 .nvs:	btst	#1,d3			; NAV_CACHE
 	beq.s	.dc
+	lea	g_NavUrl(a4),a0		; Back/Forward: its page file, as
+	moveq	#0,d0			; it is (any version: no check)
+	jsr	PfLoad
+	beq.s	.nopfb
+	bsr	ShowFile
+	bra	.img
+.nopfb:	lea	g_NavUrl(a4),a0
 	jsr	HttpGetCached
 	bra.s	.got
 .dc:	tst.l	g_NoCache(a4)		; on disk: shown at once, then
@@ -734,9 +741,10 @@ NavLoad:
 	moveq	#2,d0			; then its images
 	move.l	d0,g_LoadPhase(a4)
 	jsr	ImagesLoad
-	tst.l	g_TkAbort(a4)		; then laid out on disk
-	bne.s	.x
+	tst.l	g_TkAbort(a4)		; then laid out on disk, and the
+	bne.s	.x			; pages kept that are not yet
 	jsr	PfSave
+	jsr	PfSaveKept
 	bra.s	.x
 .nohist:
 	moveq	#-1,d0
@@ -2030,11 +2038,9 @@ NavKept:
 	IFD	PROFILE
 	jsr	ProfLog
 	ENDC
-	jsr	ImagesAgain		; images left unloaded: now
-	beq.s	.x
-	lea	KeptImages(pc),a0
+	lea	KeptJob(pc),a0		; images left unloaded, saving
 	jsr	TaskStart
-.x:	move.l	(sp)+,d2
+	move.l	(sp)+,d2
 	rts
 
 ;--------------------------------------------------------------------
@@ -2133,13 +2139,20 @@ ShowFile:
 LogFile:	dc.b	"pfshown",0
 	even
 
-; KeptImages - (the loader's job) a kept page's images left unloaded
-KeptImages:
+; KeptJob - (the loader's job) after Back/Forward to a kept page: its
+; images left unloaded, then saving it and other kept pages (pagefile.s)
+KeptJob:
 	moveq	#2,d0			; (the page shown loads)
 	move.l	d0,g_LoadPhase(a4)
+	jsr	ImagesAgain
+	beq.s	.s
 	jsr	ImagesLoad
-	clr.l	g_LoadPhase(a4)
-	rts
+.s:	clr.l	g_LoadPhase(a4)
+	tst.l	g_TkAbort(a4)
+	bne.s	.x
+	jsr	PfSave
+	jsr	PfSaveKept
+.x:	rts
 
 LogRestored:	dc.b	"restored",0
 	even

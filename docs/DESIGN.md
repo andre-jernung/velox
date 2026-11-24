@@ -94,7 +94,9 @@ crypto of the TLS handshake, and one layout of a big page.
 diskcache.s keeps pages and style sheets on disk as they came, with
 their validators (ETag, Last-Modified) and max-age, in a cache directory
 (`Velox/CacheDir`, default `PROGDIR:Cache`; `Velox/CacheSize` in KB,
-default 4096, 0 for none; the oldest files go).
+default 16384 = 16 MB, 0 for none). When it is full, the oldest files
+go until it takes 3/4: one pass over the directory notes every file,
+then the oldest are deleted (the window is served while it is read).
 - **Pages.** A page in the cache is shown at once, then checked unless
   it is still fresh: 304 keeps it; a newer version is shown as it comes,
   where the user had scrolled to, unless the user has typed into the
@@ -113,30 +115,40 @@ default 4096, 0 for none; the oldest files go).
   takes 1.0 s to parse and 2.8 s to lay out on a stock A1200, so a page
   that has been shown (with its images) is also saved as it is in
   memory: its arena blocks (DOM, attributes, styles, CSS rules, form
-  state), source, runs, anchors and globals. The next time it comes
-  from the disk cache, that is read back instead: for big.html on a
-  stock A1200, 0.34 s to read and relocate it and 0.11 s to paint,
-  instead of 5.7 s (plus the disk: about 0.2 s for its 350 KB on IDE).
-  A saved DOM alone (without the layout) would save only the sixth that
-  is parsing. Building the file takes 0.4 s after the page and its
-  images are there, in slices that yield to the window; if the page is
-  laid out again or typed into meanwhile, it is not saved.
+  state), runs, anchors and globals (the source only if something
+  points into it: plain text; HTML text is copied into the arena). The
+  next time it comes from the disk cache, or Back/Forward to it when it
+  is no longer kept in memory, that is read back instead: for big.html
+  on a stock A1200, 0.17 s to read and relocate its 350 KB file and
+  0.11 s to paint, instead of 5.7 s (plus the disk itself: about 0.2 s
+  on IDE). A saved DOM alone (without the layout) would save only the
+  sixth that is parsing. Building the file takes 0.4 s after the page
+  and its images are there, in slices that yield to the window; if the
+  page is laid out again or typed into meanwhile, it is not saved. A
+  page kept for Back that was left before it was saved (its images not
+  all there yet) is saved from its kept copy once nothing else loads
+  (`PfSaveKept`).
 
-  Page memory is Velox's own arena of blocks (mem.s), so its parts can
-  be written as they are. Pointers are the hard part: `PfBuild` copies
-  the parts one after the other, walks the page's structures as the rest
-  of Velox does, and for each pointer field writes the offset of its
-  target into the copy and marks the field in a bitmap (a bit a long).
-  Loading needs no walk: the parts go to new memory and each marked long
-  becomes an address again. A pointer out of the page fails the save
-  (never a wrong file); known attribute names point into html.s's table
-  on purpose, which counts as a part (its offsets hold within a build).
-  Images are not saved: they come back from the image cache as shown.
-  CSS match caches are dropped.
+  Page memory is Velox's own arena of blocks (mem.s), so its sections
+  (arena, runs, anchors, source) can be written as they are. Pointers
+  are the hard part: `PfBuild` copies the sections, walks the page's
+  structures as the rest of Velox does, and for each pointer field
+  writes `section << 28 | offset` of its target into the copy and marks
+  the field in a bitmap (a bit a long). Loading needs no walk: the
+  sections are read straight into new memory (the arena as one block,
+  not cleared first), and one tight loop turns each marked long into a
+  section's address plus the offset; each section starts on 128 bytes,
+  so a long of the bitmap covers 32 longs of one section, and 32 longs
+  without a pointer are skipped at once. A pointer out of the page fails
+  the save (never a wrong file); known attribute names point into
+  html.s's table on purpose, a section of its own (not saved: its
+  offsets hold within a build). Images are not saved: they come back
+  from the image cache as shown. CSS match caches are dropped.
 
   A page file is used only with the HTML entry it was made from (a hash
-  of the source as it came), the same build (`BUILD_ID`, a hash of the
-  sources made by the Makefile) and the same fonts; at another window
+  of the source as it came; Back/Forward take it as it is), the same
+  build (`BUILD_ID`, a hash of the sources made by the Makefile) and
+  the same fonts; at another window
   width it is laid out again with its kept styles. Pages the user typed
   into are not saved. The `pagefile` unit test saves pages, spoils their
   memory, loads them and compares DOM, runs and anchors, also after a
@@ -157,7 +169,8 @@ Forward to that entry swaps it in: it is shown as it was left, with its
 scroll position, focus and what was typed, with nothing fetched, parsed
 or laid out (unless the window's width changed); only painted. On a
 stock A1200 that takes 0.1 s for big.html, which takes 5.7 s from the
-disk cache. Images it had not loaded yet load then.
+disk cache. Images it had not loaded yet load then. A page no longer
+kept comes back from its page file (above) if it has one.
 
 Only complete pages are kept, not error pages, and not a page replaced
 by itself (Reload, a newer version of a cached copy). At most

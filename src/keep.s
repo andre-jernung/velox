@@ -315,7 +315,12 @@ KeepDrop:
 KeepFree:
 	move.l	a2,-(sp)
 	move.l	a0,a2
-	move.l	kp_Img+20(a2),a0	; (g_ImgList)
+	cmp.l	g_PfBusy(a4),a2		; being saved (pagefile.s): that ends
+	bne.s	.nb
+	clr.l	g_PfBusy(a4)
+	moveq	#1,d0
+	move.l	d0,g_PfFail(a4)
+.nb:	move.l	kp_Img+20(a2),a0	; (g_ImgList)
 	jsr	ImgListFree
 	lea	kp_Pool+4(a2),a0	; (g_PageSrc)
 	jsr	BufFree

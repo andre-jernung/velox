@@ -508,11 +508,8 @@ g_DcOn		rs.l	1		; diskcache.s: a cache directory
 g_DcMax		rs.l	1		; bytes it may take
 g_DcUsed	rs.l	1		; bytes it takes
 g_DcImg		rs.l	1		; an image's pixels (DcLoadImg)
-g_DcOldMin	rs.l	1		; (Scan: the oldest's minute,
-g_DcOldSize	rs.l	1		;  its size)
 g_DcHdr		rs.b	40		; an entry's header (DH_SIZEOF)
 g_DcName	rs.b	12		; its file name
-g_DcOld		rs.b	32		; (Scan: the oldest file)
 g_DcDir		rs.b	DCPATH_MAX	; the directory
 g_DcPath	rs.b	DCPATH_MAX	; an entry's path
 g_DcETag	rs.b	ETAG_MAX	; the entry's validators (DcLoad)
@@ -955,8 +952,13 @@ g_PfData	rs.l	1		; ... the copy of its memory
 g_PfBits	rs.l	1		; ... which longs of it are pointers
 g_PfSize	rs.l	1		; ... its bytes (all parts)
 g_PfRegN	rs.l	1		; ... parts in g_PfReg
-g_PfHit		rs.l	1		; ... the part found last (PfWhere)
-g_PfHit2	rs.l	1		; ... and before
+g_PfHitT	rs.l	1		; ... the part a pointer was found in
+g_PfHitF	rs.l	1		; ... a field was found in
+g_PfKp		rs.l	1		; ... the KeepPage being saved
+g_PfBusy	rs.l	1		; ... (a kept one; KeepFree: g_PfFail)
+g_PfLive	rs.l	1		; ... it is the page shown's
+g_PfSrcUsed	rs.l	1		; ... something points into the source
+g_PfPieces	rs.l	4		; ... what to write: offset, bytes, twice
 g_PfFH		rs.l	1		; ... reading from this file,
 g_PfGen		rs.l	1		; ... g_LayGen when it began
 g_LayGen	rs.l	1		; layout.s: counts the layouts
@@ -981,7 +983,8 @@ g_DcStr		rs.b	DCSTR_MAX	; diskcache.s: an entry's strings
 g_ImgUrl	rs.b	URL_MAX		; img.s: the image's URL (the loader's)
 g_ImgKey	rs.b	URL_MAX+80	; its disk cache key
 PF_REGMAX	equ	160		; parts of a page saved (blocks, buffers)
-g_PfReg		rs.l	3*PF_REGMAX	; pagefile.s: start, end, offset
+g_PfReg		rs.l	4*PF_REGMAX	; pagefile.s: start, end, section | offset,
+					; place in the copy
 g_SIZEOF	rs.b	0
 
 ;--------------------------------------------------------------------

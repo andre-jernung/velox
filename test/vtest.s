@@ -30,7 +30,7 @@
 	xref	HtmlParse,HtmlBegin,HtmlMore,TagNameOf,LayoutDocument,RunCount,RunPtr,ParseDec,CssLoad
 	xref	Inflate,PicInfo,PicDecode,PicFree,PicAlloc,PicFreeMem
 	xref	CookieSet,CookieHeader,UrlParse,BufFree,PageFixups,PfBuild,PfApply
-	xref	CssAddSheet,CssInvalidate,PageAlloc
+	xref	CssAddSheet,CssInvalidate,PageAlloc,KeepCopy,Alloc,Free
 
 T_LINEMAX	equ	2048
 T_MAXWORDS	equ	4
@@ -923,11 +923,16 @@ CmdPagefile:
 	move.l	d0,d4			; d4 = what the page is
 	move.l	T_Sums+4,T_Sums+16
 	move.l	T_Sums+8,T_Sums+20
-	jsr	PfBuild
-	beq.s	.nosave
+	bsr	PfFile
+	beq	.nosave
 	move.l	d0,a2			; a2 = the page file
 	lea	MsgPfSaved(pc),a0
 	jsr	PutStr
+	tst.l	24(a2)			; (pf_Src: the source kept too?)
+	beq.s	.nos
+	lea	MsgPfSrc(pc),a0
+	jsr	PutStr
+.nos:
 	bsr	Spoil
 	move.l	a2,a0
 	jsr	PfApply
@@ -975,6 +980,7 @@ CmdPagefile:
 .s:	jmp	PutStr
 
 MsgPfSaved:	dc.b	"saved",0
+MsgPfSrc:	dc.b	" with its source",0
 MsgPfNoSave:	dc.b	"not saved",0
 MsgPfNoLoad:	dc.b	" not loaded",0
 MsgPfSame:	dc.b	" same",0
@@ -1052,6 +1058,50 @@ CmdCssFilter:
 
 MsgRules:	dc.b	" rules, without the filter: ",0
 	even
+
+; PfFile - the page shown as a page file in memory, as it would be on
+; disk (PfBuild: its pieces joined)
+; Out: d0 = it (AllocVec) or 0 (CCR set)
+PfFile:
+	movem.l	d2-d3/a2-a3,-(sp)
+	moveq	#0,d3			; d3 = the file
+	suba.l	a2,a2			; a2 = the KeepPage
+	move.l	#KP_SIZEOF,d0
+	jsr	Alloc
+	beq.s	.x
+	move.l	d0,a2
+	move.l	a2,a0
+	moveq	#0,d0
+	jsr	KeepCopy
+	move.l	a2,a0
+	jsr	PfBuild
+	move.l	a0,a3			; a3 = PfBuild's buffer
+	move.l	a3,d0
+	beq.s	.x
+	move.l	g_PfPieces+4(a4),d0
+	add.l	g_PfPieces+12(a4),d0
+	moveq	#MEMF_ANY,d1
+	EXEC	AllocVec
+	move.l	d0,d3
+	beq.s	.fb
+	move.l	a3,a0
+	add.l	g_PfPieces(a4),a0
+	move.l	d3,a1
+	move.l	g_PfPieces+4(a4),d0
+	EXEC	CopyMem
+	move.l	a3,a0
+	add.l	g_PfPieces+8(a4),a0
+	move.l	d3,a1
+	add.l	g_PfPieces+4(a4),a1
+	move.l	g_PfPieces+12(a4),d0
+	EXEC	CopyMem
+.fb:	move.l	a3,a1
+	EXEC	FreeVec
+.x:	move.l	a2,a1
+	jsr	Free
+	move.l	d3,d0
+	movem.l	(sp)+,d2-d3/a2-a3
+	rts
 
 ; Spoil - fill the page's memory (arena, source, runs, anchors) with
 ; $a5: what still points into it after PfApply shows

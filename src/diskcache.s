@@ -12,17 +12,17 @@
 ; also the size and the screen's colours).  The file has a header, the
 ; key and the validators, then the data; a key that differs (a hash
 ; collision) is a miss.  When the files take more than Velox/CacheSize
-; KB (default 4096; 0: no cache), the oldest go.
+; KB (default 16384; 0: no cache), the oldest go.
 ;
 
 	include	"velox.i"
 
 	xdef	DcInit,DcLoad,DcStore,DcFresh,DcLoadImg,DcStoreImg,DcImgFree,DcCond,DcHash
 	xdef	DcPathOf,DcAdded
-	xref	StrCopyN,StrLen,StrIPrefix,BufClear,BufReserve,ParseDec
+	xref	StrCopyN,StrLen,StrIPrefix,BufClear,BufReserve,ParseDec,TaskPoll
 
 DC_MAGIC	equ	'VXC1'
-DC_DEFKB	equ	4096
+DC_DEFKB	equ	16384
 
 ; then: the key, the content type, the ETag, Last-Modified (each NUL
 ; terminated), then the data
@@ -90,16 +90,12 @@ DcGetVar:
 	rts
 
 ;--------------------------------------------------------------------
-; DcScanDir - go through the cache directory: the bytes of all files, and
-; the oldest (g_DcOld = its name, g_DcOldSize)
-; Out: d0 = the bytes, 0 if the directory cannot be read
+; DcScanDir - the bytes of all files in the cache directory
+; Out: d0 = them, 0 if the directory cannot be read
 ;--------------------------------------------------------------------
 DcScanDir:
-	movem.l	d2-d6/a2,-(sp)
+	movem.l	d2-d5/a2,-(sp)
 	moveq	#0,d5			; bytes
-	clr.b	g_DcOld(a4)
-	moveq	#-1,d6			; the oldest date (days) so far
-	move.l	d6,g_DcOldMin(a4)
 	moveq	#DOS_FIB,d1
 	moveq	#0,d2
 	DOS	AllocDosObject
@@ -125,20 +121,6 @@ DcScanDir:
 	tst.l	fib_DirEntryType(a2)	; files only
 	bpl.s	.n
 	add.l	fib_Size(a2),d5
-	move.l	fib_DateStamp+ds_Days(a2),d0	; older than the oldest?
-	cmp.l	d6,d0
-	bhi.s	.n
-	blo.s	.old
-	move.l	fib_DateStamp+ds_Minute(a2),d0
-	cmp.l	g_DcOldMin(a4),d0
-	bhs.s	.n
-.old:	move.l	fib_DateStamp+ds_Days(a2),d6
-	move.l	fib_DateStamp+ds_Minute(a2),g_DcOldMin(a4)
-	move.l	fib_Size(a2),g_DcOldSize(a4)
-	lea	fib_FileName(a2),a0
-	lea	g_DcOld(a4),a1
-	moveq	#31,d0
-	jsr	StrCopyN
 	bra.s	.n
 .unl:	move.l	d4,d1
 	DOS	UnLock
@@ -146,43 +128,135 @@ DcScanDir:
 	move.l	a2,d2
 	DOS	FreeDosObject
 .x:	move.l	d5,d0
-	movem.l	(sp)+,d2-d6/a2
+	movem.l	(sp)+,d2-d5/a2
 	rts
 
 ;--------------------------------------------------------------------
-; DcTrimOld - the oldest files go until the cache takes 3/4 of its size
+; DcTrimOld - the oldest files go until the cache takes 3/4 of its size:
+; one pass over the directory notes every file (its age, size, name),
+; then the oldest are deleted.  In the loader the window is served
+; while the directory is read (TaskPoll); stopped, it is done next time.
 ;--------------------------------------------------------------------
+TRIM_MAX	equ	2048		; files noted at most
+	RSRESET
+dt_Age		rs.l	1		; minutes (-1: deleted)
+dt_Size		rs.l	1
+dt_Name		rs.b	12		; (Velox's names: 8 hex digits + .p)
+DT_SIZEOF	rs.b	0
+
 DcTrimOld:
-	movem.l	d2,-(sp)
-.l:	move.l	g_DcMax(a4),d0
+	movem.l	d2-d7/a2-a3,-(sp)
+	move.l	g_DcMax(a4),d7
+	move.l	d7,d0
 	lsr.l	#2,d0
-	move.l	g_DcMax(a4),d1
-	sub.l	d0,d1
-	cmp.l	g_DcUsed(a4),d1
-	bhs.s	.x
-	bsr	DcScanDir
-	move.l	d0,g_DcUsed(a4)
-	tst.b	g_DcOld(a4)
-	beq.s	.x
-	lea	g_DcDir(a4),a0		; the oldest goes
+	sub.l	d0,d7			; d7 = what may stay
+	cmp.l	g_DcUsed(a4),d7
+	bhs	.x
+	move.l	#TRIM_MAX*DT_SIZEOF,d0
+	moveq	#MEMF_ANY,d1
+	EXEC	AllocVec
+	move.l	d0,a3			; a3 = the files noted
+	tst.l	d0
+	beq	.x
+	moveq	#DOS_FIB,d1
+	moveq	#0,d2
+	DOS	AllocDosObject
+	move.l	d0,a2			; a2 = FileInfoBlock
+	tst.l	d0
+	beq	.free
+	lea	g_DcDir(a4),a0
+	move.l	a0,d1
+	moveq	#ACCESS_READ,d2
+	DOS	Lock
+	move.l	d0,d4			; d4 = the directory
+	beq	.fib
+	move.l	d4,d1
+	move.l	a2,d2
+	DOS	Examine
+	tst.l	d0
+	beq	.unl
+	moveq	#0,d5			; d5 = bytes
+	moveq	#0,d6			; d6 = files noted
+.n:	move.l	d4,d1
+	move.l	a2,d2
+	DOS	ExNext
+	tst.l	d0
+	beq.s	.scanned
+	tst.l	fib_DirEntryType(a2)	; files only
+	bpl.s	.n
+	add.l	fib_Size(a2),d5
+	cmp.l	#TRIM_MAX,d6
+	bhs.s	.n
+	lea	fib_FileName(a2),a0	; (ours: short names)
+	jsr	StrLen
+	cmp.l	#11,d0
+	bhi.s	.n
+	move.l	d6,d0
+	mulu.l	#DT_SIZEOF,d0
+	lea	(a3,d0.l),a1
+	move.l	fib_DateStamp+ds_Days(a2),d0
+	mulu.l	#1440,d0
+	add.l	fib_DateStamp+ds_Minute(a2),d0
+	move.l	d0,(a1)+
+	move.l	fib_Size(a2),(a1)+
+	lea	fib_FileName(a2),a0
+.cn:	move.b	(a0)+,(a1)+
+	bne.s	.cn
+	addq.l	#1,d6
+	moveq	#15,d0			; the window now and then
+	and.l	d6,d0
+	bne.s	.n
+	jsr	TaskPoll
+	beq.s	.n
+	bra.s	.unl			; (stopped)
+.scanned:
+	move.l	d5,g_DcUsed(a4)
+.del:	cmp.l	g_DcUsed(a4),d7		; the oldest, until enough went
+	bhs.s	.unl
+	moveq	#-1,d3			; d3 = its age, a0 = it
+	suba.l	a0,a0
+	move.l	a3,a1
+	move.l	d6,d0
+	bra.s	.oe
+.ol:	cmp.l	(a1),d3
+	bls.s	.on
+	move.l	(a1),d3
+	move.l	a1,a0
+.on:	lea	DT_SIZEOF(a1),a1
+.oe:	dbf	d0,.ol
+	move.l	a0,d0
+	beq.s	.unl			; (none left)
+	move.l	a0,-(sp)
+	lea	g_DcDir(a4),a0
 	lea	g_DcPath(a4),a1
 	move.l	#DCPATH_MAX-1,d0
 	jsr	StrCopyN
 	lea	g_DcPath(a4),a0
 	move.l	a0,d1
-	lea	g_DcOld(a4),a0
-	move.l	a0,d2
+	move.l	(sp),a0
+	pea	dt_Name(a0)
+	move.l	(sp)+,d2
 	move.l	#DCPATH_MAX,d3
 	DOS	AddPart
 	lea	g_DcPath(a4),a0
 	move.l	a0,d1
 	DOS	DeleteFile
+	move.l	(sp)+,a0
+	moveq	#-1,d1			; (gone, or cannot go: not again)
+	move.l	d1,dt_Age(a0)
 	tst.l	d0
-	beq.s	.x			; (cannot: stop trying)
-	move.l	g_DcOldSize(a4),d0
+	beq.s	.del
+	move.l	dt_Size(a0),d0
 	sub.l	d0,g_DcUsed(a4)
-	bra.s	.l
-.x:	movem.l	(sp)+,d2
+	bra.s	.del
+.unl:	move.l	d4,d1
+	DOS	UnLock
+.fib:	moveq	#DOS_FIB,d1
+	move.l	a2,d2
+	DOS	FreeDosObject
+.free:	move.l	a3,a1
+	EXEC	FreeVec
+.x:	movem.l	(sp)+,d2-d7/a2-a3
 	rts
 
 ;--------------------------------------------------------------------
