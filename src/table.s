@@ -46,6 +46,11 @@ tb_TabBox	rs.l	1
 tb_Squeezed	rs.l	1		; columns below their minimum
 tb_NSpans	rs.l	1
 tb_Spans	rs.l	MAXSPANS*4	; column, span, min, pref
+tb_RsRows	rs.l	MAXCOLS		; rows a rowspan cell still covers
+tb_RsTop	rs.l	MAXCOLS		; at its column: its top ...
+tb_RsBot	rs.l	MAXCOLS		; ... its content bottom (0: none)
+tb_RsRect	rs.l	MAXCOLS		; ... its background run
+tb_RsBox	rs.l	MAXCOLS		; ... its outline run
 tb_SIZEOF	rs.b	0
 
 	section	code,code
@@ -63,6 +68,7 @@ LayoutTable:
 	move.l	a1,tb_Style(a3)
 	clr.l	tb_Squeezed(a3)
 	clr.l	tb_NSpans(a3)
+	bsr	RsClear
 
 	lea	AnCellspacing(pc),a1
 	moveq	#2,d0
@@ -148,6 +154,7 @@ LayoutTable:
 	move.l	tb_Style(a3),a1
 	bsr	RowStyle
 	beq.s	.mr
+	bsr	RsAge
 	moveq	#0,d5			; column
 	move.l	n_First(a2),d6
 .mc:	tst.l	d6
@@ -157,6 +164,11 @@ LayoutTable:
 	move.l	d6,a0
 	bsr	IsCell
 	beq	.mcn
+	bsr	RsSkip			; columns taken by rowspans above
+	bge	.mr
+	move.l	d6,a0
+	bsr	RsMark
+	move.l	d6,a0
 	bsr	SpanOf
 	move.l	d0,d7			; span
 	move.l	d6,a0
@@ -391,6 +403,7 @@ LayoutTable:
 	add.l	d0,g_LayY(a4)
 
 	; rows
+	bsr	RsClear
 	sub.l	a2,a2
 .row:	move.l	a2,a1
 	bsr	NextRow
@@ -404,6 +417,7 @@ LayoutTable:
 	move.l	g_LayY(a4),tb_RowTop(a3)
 	move.l	g_LayY(a4),tb_RowBottom(a3)
 	clr.l	tb_NCells(a3)
+	bsr	RsAge
 	moveq	#0,d5			; column
 	move.l	n_First(a2),d6
 .cell:	tst.l	d6
@@ -413,6 +427,9 @@ LayoutTable:
 	move.l	d6,a0
 	bsr	IsCell
 	beq	.celln
+	bsr	RsSkip			; columns taken by rowspans above
+	bge	.rowend
+	move.l	d6,a0
 	bsr	SpanOf
 	move.l	d0,d7
 	move.l	d5,d0			; clamp the span
@@ -507,7 +524,26 @@ LayoutTable:
 	cmp.l	d1,d0
 	bge.s	.hok
 	move.l	d1,d0
-.hok:	cmp.l	tb_RowBottom(a3),d0
+.hok:	move.l	d0,-(sp)		; rowspan: it ends in a later row
+	move.l	d6,a0
+	bsr	RsMark
+	movem.l	(sp)+,d0
+	beq.s	.single
+	lea	tb_RsTop(a3),a0
+	move.l	tb_RowTop(a3),(a0,d5.l*4)
+	lea	tb_RsBot(a3),a0
+	move.l	d0,(a0,d5.l*4)
+	lea	tb_Rect(a3),a0		; its boxes: sized when it ends
+	lea	tb_RsRect(a3),a1
+	move.l	(a0,d4.l*4),(a1,d5.l*4)
+	move.l	#-1,(a0,d4.l*4)
+	lea	tb_Box(a3),a0
+	lea	tb_RsBox(a3),a1
+	move.l	(a0,d4.l*4),(a1,d5.l*4)
+	move.l	#-1,(a0,d4.l*4)
+	bra.s	.nb
+.single:
+	cmp.l	tb_RowBottom(a3),d0
 	ble.s	.nb
 	move.l	d0,tb_RowBottom(a3)
 .nb:	add.l	d7,d5
@@ -515,6 +551,7 @@ LayoutTable:
 	move.l	n_Next(a0),d6
 	bra	.cell
 .rowend:
+	bsr	RsEnd			; rowspans ending in this row
 	; row height for the cell boxes
 	move.l	tb_RowBottom(a3),d2
 	sub.l	tb_RowTop(a3),d2
@@ -532,7 +569,8 @@ LayoutTable:
 	jsr	RunPtr
 	move.w	d2,ru_H(a0)
 	bra.s	.fix
-.fixd:	move.l	tb_RowBottom(a3),d0
+.fixd:	bsr	RsFix
+	move.l	tb_RowBottom(a3),d0
 	add.l	tb_Spacing(a3),d0
 	move.l	d0,g_LayY(a4)
 	clr.l	g_PendMargin(a4)
@@ -801,6 +839,129 @@ SpanOf:
 .one:	moveq	#1,d0
 .x:	movem.l	(sp)+,a0
 	rts
+
+;--------------------------------------------------------------------
+; rowspan: tb_RsRows counts the rows below that a cell still covers in
+; each of its columns; RsAge counts down at every row
+;--------------------------------------------------------------------
+RsClear:
+	lea	tb_RsRows(a3),a0
+	moveq	#MAXCOLS*2-1,d0		; (RsRows and RsTop)
+.c:	clr.l	(a0)+
+	dbf	d0,.c
+	lea	tb_RsBot(a3),a0
+	moveq	#MAXCOLS-1,d0
+.b:	clr.l	(a0)+
+	dbf	d0,.b
+	rts
+
+RsAge:
+	lea	tb_RsRows(a3),a0
+	moveq	#MAXCOLS-1,d0
+.a:	tst.l	(a0)
+	beq.s	.n
+	subq.l	#1,(a0)
+.n:	addq.l	#4,a0
+	dbf	d0,.a
+	rts
+
+; RsSkip - move column d5 past the columns rowspans above cover
+; Out: CCR: ge if no column is left
+RsSkip:
+	lea	tb_RsRows(a3),a0
+.l:	cmp.l	tb_Cols(a3),d5
+	bge.s	.x
+	tst.l	(a0,d5.l*4)
+	beq.s	.free
+	addq.l	#1,d5
+	bra.s	.l
+.free:	cmp.l	tb_Cols(a3),d5		; (lt)
+.x:	rts
+
+; RsMark - cell a0 at column d5 with rowspan > 1 covers its columns
+; in the rows below.  Out: d0 = rows (0 if it spans one), CCR set
+RsMark:
+	movem.l	d2-d3,-(sp)
+	lea	AnRowspan(pc),a1
+	jsr	DomGetAttr
+	tst.l	d0
+	beq.s	.one
+	move.l	d0,a0
+	jsr	ParseDec
+	cmp.l	#1,d0
+	ble.s	.one
+	cmp.l	#1000,d0
+	bls.s	.ok
+	move.l	#1000,d0
+.ok:	move.l	d0,d2
+	move.l	d6,a0			; its columns
+	bsr	SpanOf
+	move.l	d0,d3
+	lea	tb_RsRows(a3),a0
+	move.l	d5,d1
+.m:	cmp.l	tb_Cols(a3),d1
+	bge.s	.md
+	move.l	d2,(a0,d1.l*4)
+	addq.l	#1,d1
+	subq.l	#1,d3
+	bne.s	.m
+.md:	move.l	d2,d0
+	bra.s	.x
+.one:	moveq	#0,d0
+.x:	movem.l	(sp)+,d2-d3
+	rts
+
+; RsEnd - rowspan cells ending in this row make it tall enough
+RsEnd:
+	moveq	#0,d1
+.l:	cmp.l	tb_Cols(a3),d1
+	bge.s	.x
+	lea	tb_RsRows(a3),a0
+	cmp.l	#1,(a0,d1.l*4)
+	bne.s	.n
+	lea	tb_RsBot(a3),a0
+	move.l	(a0,d1.l*4),d0
+	beq.s	.n
+	cmp.l	tb_RowBottom(a3),d0
+	ble.s	.n
+	move.l	d0,tb_RowBottom(a3)
+.n:	addq.l	#1,d1
+	bra.s	.l
+.x:	rts
+
+; RsFix - the boxes of rowspan cells ending in this row get their height
+RsFix:
+	movem.l	d2-d3,-(sp)
+	moveq	#0,d3
+.l:	cmp.l	tb_Cols(a3),d3
+	bge.s	.x
+	lea	tb_RsRows(a3),a0
+	cmp.l	#1,(a0,d3.l*4)
+	bne.s	.n
+	lea	tb_RsBot(a3),a0
+	tst.l	(a0,d3.l*4)
+	beq.s	.n
+	clr.l	(a0,d3.l*4)
+	move.l	tb_RowBottom(a3),d2
+	lea	tb_RsTop(a3),a0
+	sub.l	(a0,d3.l*4),d2		; d2 = the height
+	lea	tb_RsRect(a3),a0
+	move.l	(a0,d3.l*4),d0
+	bmi.s	.b
+	jsr	RunPtr
+	move.w	d2,ru_H(a0)
+.b:	lea	tb_RsBox(a3),a0
+	move.l	(a0,d3.l*4),d0
+	bmi.s	.n
+	jsr	RunPtr
+	move.w	d2,ru_H(a0)
+.n:	addq.l	#1,d3
+	bra.s	.l
+.x:	movem.l	(sp)+,d2-d3
+	rts
+
+AnRowspan:	dc.b	"rowspan",0
+	even
 
 ; NumAttr - numeric attribute of the table a5
 ; In: a1 = name, d0 = default; Out: d0 = value

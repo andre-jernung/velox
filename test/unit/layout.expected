@@ -173,3 +173,35 @@ box  197 137 76 68 0 f0 s0 c000000
 text 199 139 72 10 8 f1 s0 c000000 "next cell"
 text 278 8 128 10 8 f1 s0 c000000 "After the table."
 
+# rowspan: later rows skip the covered columns; a tall cell stretches its last row
+layout test/unit/layout/rowspan.html 300 => 
+height 104
+box  0 8 86 52 0 f0 s0 c000000
+box  3 11 36 30 0 f0 s0 c000000
+text 5 13 32 10 8 f1 s0 c000000 "tall"
+box  3 49 20 14 0 f0 s0 c000000
+text 5 51 16 10 8 f1 s0 c000000 "a1"
+box  3 71 20 14 0 f0 s0 c000000
+text 5 73 16 10 8 f1 s0 c000000 "b1"
+box  19 49 20 14 0 f0 s0 c000000
+text 21 51 16 10 8 f1 s0 c000000 "a2"
+box  19 71 20 14 0 f0 s0 c000000
+text 21 73 16 10 8 f1 s0 c000000 "b2"
+box  35 11 36 14 0 f0 s0 c000000
+text 37 13 16 10 8 f1 s0 c000000 "x3"
+box  35 49 20 14 0 f0 s0 c000000
+text 37 51 16 10 8 f1 s0 c000000 "a3"
+box  35 71 20 14 0 f0 s0 c000000
+text 37 73 16 10 8 f1 s0 c000000 "b3"
+box  52 8 284 52 0 f0 s0 c000000
+box  55 11 44 14 0 f0 s0 c000000
+text 57 13 24 10 8 f1 s0 c000000 "one"
+box  55 57 232 46 0 f0 s0 c000000
+text 57 59 208 10 8 f1 s0 c000000 "a cell with much more text"
+text 67 59 216 10 8 f1 s0 c000000 "than the three rows next to"
+text 77 59 56 10 8 f1 s0 c000000 "it need"
+box  71 11 44 14 0 f0 s0 c000000
+text 73 13 24 10 8 f1 s0 c000000 "two"
+box  87 11 44 14 0 f0 s0 c000000
+text 89 13 40 10 8 f1 s0 c000000 "three"
+

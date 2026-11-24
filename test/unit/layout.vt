@@ -13,3 +13,5 @@ layout test/unit/layout/align.html 300
 layout test/unit/layout/indent.html 400
 # floated images (align=left/right, CSS float), <br clear>, floats in cells
 layout test/unit/layout/floats.html 300
+# rowspan: later rows skip the covered columns; a tall cell stretches its last row
+layout test/unit/layout/rowspan.html 300

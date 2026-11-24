@@ -155,7 +155,7 @@ def ccr(files):
                 continue
             start = starts[0]
             header = "\n".join(lines[max(0, start - 8):start])
-            if re.search(r"Z (clear|set)", header):
+            if re.search(r"Z (clear|set)|CCR:", header):
                 continue
             end = start + 1
             while end < len(lines) and not re.match(r"^[A-Za-z_]\w*:", lines[end]):
