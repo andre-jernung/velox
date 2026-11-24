@@ -10,7 +10,7 @@
 	xref	MemInit,MemExit,NetExit,HttpGet,UrlFixup
 	xref	PutStr,PutBuf,PutNum,PutNL,FlushOut,ErrorText
 	xref	GuiOpen,GuiClose,GuiEventLoop,NavGo,NavExit,StrIPrefix,ParseDec
-	xref	StrCopyN,CacheInit,CookiesLoad,CookiesSave,TaskInit,TaskExit
+	xref	StrCopyN,CacheInit,CookiesLoad,CookiesSave,TaskInit,TaskExit,DcInit
 
 STACK_SIZE	equ	65536
 
@@ -99,6 +99,7 @@ Main:
 	beq	.cleanup
 	jsr	CacheInit
 	bsr	LoadSettings
+	jsr	DcInit
 	jsr	CookiesLoad
 	tst.l	g_WBMsg(a4)
 	beq.s	.notwb

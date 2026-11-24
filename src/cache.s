@@ -11,6 +11,7 @@
 	include	"velox.i"
 
 	xdef	CacheInit,CacheStore,HttpGetCached,CacheFlush
+	xref	DcLoad,DcFresh,DcCond
 	xref	Alloc,Free,HttpGet,StrLen,StrCopyN,BufFree,BufReserve,LogEvent
 
 CACHE_N		equ	32		; entries at most
@@ -88,11 +89,40 @@ HttpGetCached:
 	move.l	d0,g_Resp+r_Status(a4)
 	movem.l	(sp)+,a2-a3
 	rts
-.miss:	move.l	a2,a0
+.miss:	move.l	a2,a0			; on disk?
+	jsr	DcLoad
+	beq.s	.net2
+	jsr	DcFresh			; still fresh, or for Back/Forward: as
+	bne.s	.disk			; it is
+	btst	#1,g_NavFlags+3(a4)	; (NAV_CACHE)
+	bne.s	.disk
+	jsr	DcCond			; else: changed since?
+	move.l	a2,a0
+	jsr	HttpGet
+	cmp.l	#304,d0
+	beq.s	.same
+	tst.l	d0			; (offline: the copy is better than
+	bne.s	.x			;  nothing)
+	tst.l	g_TkAbort(a4)
+	bne.s	.x
+.same:	move.l	a2,a0			; the copy on disk, then
+	jsr	DcLoad
+	beq.s	.x
+.disk:	lea	LogDisk(pc),a0
+	move.l	a2,a1
+	move.l	#$80000000,d0
+	jsr	LogEvent
+	jsr	CacheStore		; (and in memory now)
+	move.l	#200,d0
+.x:	tst.l	d0
+	movem.l	(sp)+,a2-a3
+	rts
+.net2:	move.l	a2,a0
 	movem.l	(sp)+,a2-a3
 .net:	jmp	HttpGet
 
 LogCached:	dc.b	"cached",0
+LogDisk:	dc.b	"diskcache",0
 	even
 
 ; Find - the entry for URL a2

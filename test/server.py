@@ -13,6 +13,7 @@ import time
 BIG = bytes((i * 7 + 13) % 251 for i in range(100000))
 HELLO = b"Hello from the Velox test server\n"
 SLOW_HITS = {}                  # requests for each /slow/ image
+CACHED = {"v": 1, "200": 0, "304": 0}  # /cached: version, replies
 DOCROOT = sys.argv[2] if len(sys.argv) > 2 else "test/www"
 
 
@@ -62,6 +63,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # requests for /slow/ images whose names start with this
             n = p[len("/slowcount/"):]
             self.send(200, b"%d" % sum(v for k, v in SLOW_HITS.items() if k.startswith(n)))
+        elif p == "/cached":
+            # a page with a validator: 304 when the browser has it
+            tag = '"v%d"' % CACHED["v"]
+            if self.headers.get("If-None-Match") == tag:
+                CACHED["304"] += 1
+                self.send_response(304)
+                self.send_header("ETag", tag)
+                self.end_headers()
+            else:
+                CACHED["200"] += 1
+                self.send(200, b"<title>Cached v%d</title><p>Version %d of the page." % (CACHED["v"], CACHED["v"]),
+                          "text/html", headers=[("ETag", tag)])
+        elif p == "/cached-bump":
+            CACHED["v"] += 1
+            self.send(200, b"%d" % CACHED["v"])
+        elif p == "/cached-count":
+            self.send(200, b"200:%d 304:%d" % (CACHED["200"], CACHED["304"]))
         elif p == "/trickle":
             # a page in three parts, 5 s apart (chunked): shown as it
             # comes; its style sheet is fetched in the middle of it

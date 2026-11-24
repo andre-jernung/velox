@@ -1,0 +1,4 @@
+#!/bin/sh
+d=$(dirname "$1")
+sed 's/^/driver: /' "$d/cache.driver"
+grep -qx ok "$d/cache.driver"

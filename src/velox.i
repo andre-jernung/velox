@@ -45,6 +45,10 @@ URL_MAX		equ	2048		; max URL length incl. NUL
 LINE_MAX	equ	1024		; max HTTP header line we keep
 HOST_MAX	equ	256
 CONN_BUFSIZE	equ	4096
+ETAG_MAX	equ	128		; ETag value kept
+LASTMOD_MAX	equ	40		; Last-Modified value kept
+DCPATH_MAX	equ	256		; disk cache: a file's path
+DCSTR_MAX	equ	URL_MAX+64+ETAG_MAX+LASTMOD_MAX+8 ; its strings
 NET_TIMEOUT	equ	60		; seconds without data before giving up
 LS_IDLE		equ	0		; the loader (task.s): no job
 LS_RUN		equ	1		; ready to run
@@ -134,6 +138,10 @@ r_Body		rs.b	BUF_SIZEOF
 r_CType		rs.b	64		; Content-Type value
 r_Url		rs.b	URL_MAX		; final URL after redirects
 r_Location	rs.b	URL_MAX		; Location header
+r_ETag		rs.b	ETAG_MAX	; ETag (for the disk cache)
+r_LastMod	rs.b	LASTMOD_MAX	; Last-Modified
+r_MaxAge	rs.l	1		; Cache-Control max-age (s), -1 none
+r_NoStore	rs.l	1		; Cache-Control: no-store
 RESP_SIZEOF	rs.b	0
 
 ;--------------------------------------------------------------------
@@ -423,6 +431,23 @@ g_IncEvery	rs.l	1		; ticks between layouts
 g_IncT0		rs.l	1		; when the last layout started
 g_UserTick	rs.l	1		; the user's last key or scroller use
 g_Dragging	rs.l	1		; the scroller is held
+g_Revalid	rs.l	1		; checking a page shown from the disk cache
+g_FormTouched	rs.l	1		; the user changed a form control of it
+g_DcOn		rs.l	1		; diskcache.s: a cache directory
+g_DcMax		rs.l	1		; bytes it may take
+g_DcUsed	rs.l	1		; bytes it takes
+g_DcImg		rs.l	1		; an image's pixels (DcLoadImg)
+g_DcOldMin	rs.l	1		; (Scan: the oldest's minute,
+g_DcOldSize	rs.l	1		;  its size)
+g_DcHdr		rs.b	36		; an entry's header (DH_SIZEOF)
+g_DcName	rs.b	12		; its file name
+g_DcOld		rs.b	32		; (Scan: the oldest file)
+g_DcDir		rs.b	DCPATH_MAX	; the directory
+g_DcPath	rs.b	DCPATH_MAX	; an entry's path
+g_DcETag	rs.b	ETAG_MAX	; the entry's validators (DcLoad)
+g_DcLM		rs.b	LASTMOD_MAX
+g_CondETag	rs.b	ETAG_MAX	; the next request: If-None-Match,
+g_CondLM	rs.b	LASTMOD_MAX	; If-Modified-Since
 g_NavStopped	rs.l	1		; the user stopped the load (NavStop)
 g_LoadPhase	rs.l	1		; 1: a new page loads, 2: the shown one
 g_LayWidth	rs.l	1		; width laid out for
@@ -853,6 +878,7 @@ g_C2pLo		rs.l	256		; c2p: a pen's bits, planes 0-3,
 g_C2pHi		rs.l	256		; ... 4-7 (just after)
 g_PngAbs	rs.b	1022		; |v| of -510..510, 255 at most
 g_RespSave	rs.b	RESP_SIZEOF	; the page's response (IncCss)
+g_DcStr		rs.b	DCSTR_MAX	; diskcache.s: an entry's strings
 g_SIZEOF	rs.b	0
 
 ;--------------------------------------------------------------------

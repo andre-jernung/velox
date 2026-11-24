@@ -9,7 +9,7 @@
 	include	"velox.i"
 
 	xdef	HttpGet,HttpReadResponse,HttpCloseKept
-	xref	CacheStore
+	xref	CacheStore,DcStore
 	xref	UrlParse,UrlResolve
 	xref	ConnOpen,ConnClose,ConnWrite,ConnRead,ConnReadLine
 	xref	BufAppend,BufAppendByte,BufAppendStr,BufClear,BufReserve
@@ -75,8 +75,11 @@ HttpGet:
 	tst.l	g_PostData(a4)
 	bne.s	.nost
 	jsr	CacheStore
+	jsr	DcStore			; (pages and style sheets on disk)
 .nost:	move.l	d2,d0
 .x:	clr.l	g_PostData(a4)		; a POST body is used once
+	clr.b	g_CondETag(a4)		; (and so is a revalidation)
+	clr.b	g_CondLM(a4)
 	tst.l	d0			; (the clr changed the flags)
 	movem.l	(sp)+,d2-d3/a2-a3
 	rts
@@ -230,6 +233,8 @@ AppendB64:
 
 B64:	dc.b	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 RqAuth:	dc.b	13,10,"Authorization: Basic ",0
+RqIfNone:	dc.b	13,10,"If-None-Match: ",0
+RqIfMod:	dc.b	13,10,"If-Modified-Since: ",0
 	even
 
 ;--------------------------------------------------------------------
@@ -343,7 +348,21 @@ BuildRequest:
 	tst.l	d0
 	beq	ReqNoMem
 .nopost:
-	REQSTR	RqTail
+	tst.b	g_CondETag(a4)		; revalidating a cached copy
+	beq.s	.nce
+	REQSTR	RqIfNone
+	lea	g_ReqBuf(a4),a0
+	lea	g_CondETag(a4),a1
+	jsr	BufAppendStr
+	beq	ReqNoMem
+.nce:	tst.b	g_CondLM(a4)
+	beq.s	.ncl
+	REQSTR	RqIfMod
+	lea	g_ReqBuf(a4),a0
+	lea	g_CondLM(a4),a1
+	jsr	BufAppendStr
+	beq	ReqNoMem
+.ncl:	REQSTR	RqTail
 	move.l	g_PostData(a4),d0	; the body follows the headers
 	beq.s	.done
 	lea	g_ReqBuf(a4),a0
@@ -427,6 +446,11 @@ HttpReadResponse:
 	clr.l	r_Chunked(a3)
 	clr.b	r_CType(a3)
 	clr.b	r_Location(a3)
+	clr.b	r_ETag(a3)
+	clr.b	r_LastMod(a3)
+	moveq	#-1,d0
+	move.l	d0,r_MaxAge(a3)
+	clr.l	r_NoStore(a3)
 	clr.l	g_Error(a4)
 .sl:	bsr	ReadHdrLine
 	bpl.s	.sl1
@@ -498,7 +522,48 @@ HttpReadResponse:
 	beq	.h6
 	jsr	CookieSet
 	bra	.hdr
-.h6:	lea	HConnection(pc),a1	; Connection: close / keep-alive
+.h6:	lea	HETag(pc),a1		; validators for the cache
+	jsr	StrIPrefix
+	beq.s	.h7
+	jsr	SkipSpace
+	lea	r_ETag(a3),a1
+	moveq	#ETAG_MAX-1,d0
+	jsr	StrCopyN
+	bra	.hdr
+.h7:	lea	HLastMod(pc),a1
+	jsr	StrIPrefix
+	beq.s	.h8
+	jsr	SkipSpace
+	lea	r_LastMod(a3),a1
+	moveq	#LASTMOD_MAX-1,d0
+	jsr	StrCopyN
+	bra	.hdr
+.h8:	lea	HCacheCtl(pc),a1	; Cache-Control: no-store, no-cache,
+	jsr	StrIPrefix		; max-age=
+	beq.s	.h9
+	move.l	a0,-(sp)
+	lea	SNoStore(pc),a1
+	jsr	StrIFind
+	beq.s	.cc1
+	moveq	#1,d0
+	move.l	d0,r_NoStore(a3)
+.cc1:	move.l	(sp),a0
+	lea	SNoCache(pc),a1
+	jsr	StrIFind
+	beq.s	.cc2
+	clr.l	r_MaxAge(a3)
+.cc2:	move.l	(sp)+,a0
+	lea	SMaxAge(pc),a1
+	jsr	StrIFind
+	beq	.hdr
+	jsr	ParseDec
+	tst.l	d1
+	beq	.hdr
+	tst.l	r_MaxAge(a3)		; (no-cache wins)
+	beq	.hdr
+	move.l	d0,r_MaxAge(a3)
+	bra	.hdr
+.h9:	lea	HConnection(pc),a1	; Connection: close / keep-alive
 	jsr	StrIPrefix
 	beq	.hdr
 	move.l	a0,-(sp)
@@ -646,4 +711,10 @@ HSetCookie:		dc.b	"set-cookie:",0
 HConnection:		dc.b	"connection:",0
 HClose:			dc.b	"close",0
 HKeepAlive:		dc.b	"keep-alive",0
+HETag:			dc.b	"etag:",0
+HLastMod:		dc.b	"last-modified:",0
+HCacheCtl:		dc.b	"cache-control:",0
+SNoStore:		dc.b	"no-store",0
+SNoCache:		dc.b	"no-cache",0
+SMaxAge:		dc.b	"max-age=",0
 	even

@@ -1,0 +1,10 @@
+; cache: pages from the disk cache, shown at once and then checked
+; (304 or the newer version); the cache outlives Velox
+; (test/amiga/cache.host)
+Echo >VELOX:r/cache.txt "cache"
+Echo >VELOX:r/cache.start ""
+VELOX:velox http://127.0.0.1:8080/index.html LOG=VELOX:r/cache.log
+Echo >>VELOX:r/cache.txt "exit rc=$RC"
+VELOX:velox http://127.0.0.1:8080/cached LOG=VELOX:r/cache2.log
+Echo >>VELOX:r/cache.txt "exit rc=$RC"
+Echo >>VELOX:r/cache.txt "done"

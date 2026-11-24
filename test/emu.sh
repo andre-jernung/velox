@@ -96,7 +96,7 @@ if [ -d "$SYS/AmiSSL/Certs" ]; then
 	cp "$B/tls/ca.pem" "$SYS/AmiSSL/Certs/$(openssl x509 -hash -noout -in "$B/tls/ca.pem").0"
 fi
 
-rm -rf "$B/r" "$B/t" "$B/shot.req" "$B/autotest" "$B/alldone" "$B/screenshot.png"
+rm -rf "$B/r" "$B/t" "$B/Cache" "$B/shot.req" "$B/autotest" "$B/alldone" "$B/screenshot.png"
 if [ $AUTO = 1 ]; then
 	mkdir -p "$B/r" "$B/t"
 	{

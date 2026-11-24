@@ -537,7 +537,9 @@ FormActivate:
 	moveq	#0,d1			; after the last: wrap around
 .s2:	move.w	d1,fs_Sel(a3)
 	bsr	SelectLabel
-.node:	move.l	a5,a0			; this control only
+.node:	moveq	#1,d0
+	move.l	d0,g_FormTouched(a4)
+	move.l	a5,a0			; this control only
 	jsr	GuiPaintNode
 	bra.s	.x
 .paint:	jsr	GuiPaintAll
@@ -742,6 +744,8 @@ FormEditKey:
 .chn:	subq.l	#1,d4
 	bne.s	.ch
 .changed:
+	moveq	#1,d0			; (a newer version of the page must not
+	move.l	d0,g_FormTouched(a4)	;  undo this)
 	move.l	a5,a0			; just the field: typing is instant
 	jsr	GuiPaintNode
 .yes:	moveq	#1,d0

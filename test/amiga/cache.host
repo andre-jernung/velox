@@ -1,0 +1,76 @@
+#!/usr/bin/env python3
+"""Host side of cache.script: /cached has an ETag.  Visited again, it is
+shown from the disk cache and checked (304); once it changed, the copy
+is shown and then the newer version; a new Velox finds it on disk."""
+import os
+import sys
+import time
+import urllib.request
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from xdrive import Amiga, wait_log  # noqa: E402
+
+r = sys.argv[1]
+log = os.path.join(r, "cache.log")
+out = open(os.path.join(r, "cache.driver"), "w")
+U = "http://127.0.0.1:8080/"
+
+
+def step(msg):
+    out.write(msg + "\n")
+    out.flush()
+
+
+def server(path):
+    return urllib.request.urlopen(U + path).read().decode()
+
+
+def go(a, path):
+    a.key("ctrl+l")
+    a.type("127.0.0.1:8080/" + path)
+    a.key("Return")
+
+
+try:
+    a = Amiga()
+    wait_log(log, "page " + U + "index.html")
+    time.sleep(1)
+    go(a, "cached")
+    wait_log(log, "title Cached v1")
+    go(a, "index.html")
+    wait_log(log, "page " + U + "index.html", 2)
+    go(a, "cached")
+    lines = wait_log(log, "page " + U + "cached", 2)
+    time.sleep(1)
+    if "diskcache " + U + "cached" not in open(log).read().split("\n"):
+        raise AssertionError("not from the disk cache")
+    if server("cached-count") != "200:1 304:1":
+        raise AssertionError("server saw " + server("cached-count"))
+    step("shown from the disk cache, checked: 304")
+    server("cached-bump")
+    go(a, "index.html")
+    wait_log(log, "page " + U + "index.html", 3)
+    go(a, "cached")
+    wait_log(log, "title Cached v2")
+    text = open(log).read().split("\n")
+    i = len(text) - 1 - text[::-1].index("title Cached v2")
+    if "title Cached v1" not in text[:i][-8:]:
+        raise AssertionError("the cached copy was not shown first")
+    step("changed: the copy first, then the newer version")
+    a.key("ctrl+q")
+    log2 = os.path.join(r, "cache2.log")
+    lines = wait_log(log2, "page " + U + "cached", timeout=60)
+    if "diskcache " + U + "cached" not in lines:
+        raise AssertionError("a new Velox did not find it on disk")
+    step("a new Velox finds it on disk")
+    time.sleep(1)
+    a.key("ctrl+q")
+    step("ok")
+except Exception as e:
+    step("FAIL " + repr(e))
+    try:
+        Amiga().key("ctrl+q")
+        time.sleep(3)
+        Amiga().key("ctrl+q")
+    except Exception:
+        pass

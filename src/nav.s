@@ -12,6 +12,7 @@
 	xref	DomNewNode,DomAppend,DomGetAttr,StrCopyN,StrCopy,StrIPrefix,StrLen
 	xref	Alloc,Free,ErrorText,FmtDec,LayoutDocument
 	xref	HttpGetCached,CacheFlush,DomAddAttr,PageAlloc,ParseDec
+	xref	DcLoad,DcFresh,DcCond
 	xdef	NavRefresh,PageFixups,CopyAddress,ViewSource,FragCheck
 	xref	FindAnchor
 	xref	ClipCopy
@@ -196,12 +197,18 @@ PageHook:
 .x:	move.l	g_TkAbort(a4),d0
 	rts
 
-; IncWanted - is g_Resp an HTML page to show as it comes?
+; IncWanted - is g_Resp an HTML page to show as it comes?  (Not a newer
+; version of a cached page the user has typed into meanwhile.)
 ; Out: d0 = 1 if so (CCR set)
 IncWanted:
 	move.l	a2,-(sp)
 	cmp.l	#200,g_Resp+r_Status(a4)
 	bne.s	.no
+	tst.l	g_Revalid(a4)
+	beq.s	.nr
+	tst.l	g_FormTouched(a4)
+	bne.s	.no
+.nr:
 	lea	g_Resp+r_CType(a4),a2
 	tst.b	(a2)
 	beq.s	.yes
@@ -471,6 +478,35 @@ SheetCount:
 	bra.s	.walk
 .x:	rts
 
+;--------------------------------------------------------------------
+; ShowCached - show the page DcLoad put in g_Resp, now (the network can
+; come after); it goes into the history (flags d3)
+; Out: d0 = 0 if it could not be made (CCR set)
+;--------------------------------------------------------------------
+ShowCached:
+	lea	LogDisk(pc),a0		; (for tests)
+	lea	g_NavUrl(a4),a1
+	move.l	#$80000000,d0
+	jsr	LogEvent
+	bsr	IncBegin
+	beq.s	.x
+	moveq	#1,d0
+	bsr	IncFeed
+	lea	g_Resp+r_Body(a4),a0
+	jsr	BufFree
+	clr.l	g_IncState(a4)
+	move.l	#200,g_PageStatus(a4)
+	bsr	PageFixups
+	bsr	IncCss
+	moveq	#1,d0			; shown: it stays if stopped
+	move.l	d0,g_IncShown(a4)
+	moveq	#2,d0
+	move.l	d0,g_LoadPhase(a4)
+	bsr	ShowPage
+	bsr	NavHistory
+	moveq	#1,d0
+.x:	rts
+
 ; NavHistory - add g_PageUrl to the history as flags d3 say
 NavHistory:
 	btst	#0,d3
@@ -541,9 +577,52 @@ NavLoad:
 	lea	g_NavUrl(a4),a0
 	bra.s	.built
 .nvs:	btst	#1,d3			; NAV_CACHE
-	beq.s	.fetch
+	beq.s	.dc
 	jsr	HttpGetCached
 	bra.s	.got
+.dc:	tst.l	g_NoCache(a4)		; on disk: shown at once, then
+	bne.s	.fetch			; checked (not for Reload or POST)
+	tst.l	g_PostData(a4)
+	bne.s	.fetch
+	lea	g_NavUrl(a4),a0
+	jsr	DcLoad
+	beq.s	.fetch0
+	bsr	ShowCached
+	beq.s	.fetch0
+	bclr	#0,d3			; (in the history now)
+	tst.l	g_Quit(a4)
+	bne	.x
+	jsr	DcFresh
+	bne	.img
+	move.l	g_ScrollY(a4),g_WantScroll(a4)	; a newer one: where the
+	clr.l	g_FormTouched(a4)		; user is now
+	moveq	#1,d0
+	move.l	d0,g_Revalid(a4)
+	clr.l	g_IncState(a4)
+	jsr	DcCond
+	lea	g_NavUrl(a4),a0
+	jsr	HttpGet
+	clr.l	g_Revalid(a4)
+	moveq	#-1,d1
+	move.l	d1,g_WantScroll(a4)
+	cmp.l	#304,d0			; the same: done
+	beq	.img
+	tst.l	d0			; failed (offline?): the copy stays
+	bne.s	.reok
+	tst.l	g_TkAbort(a4)
+	bne	.stop
+	lea	MsgOffline(pc),a0
+	jsr	GuiStatus
+	bra	.img
+.reok:	cmp.l	#1,g_IncState(a4)	; the newer one is being shown
+	beq	.ok
+	cmp.l	#200,d0			; not shown (the user typed into the
+	bne	.img			; page): just say so
+	lea	MsgNewer(pc),a0
+	jsr	GuiStatus
+	bra	.img
+.fetch0:
+	lea	g_NavUrl(a4),a0
 .fetch:	jsr	HttpGet
 .got:
 	tst.l	d0
@@ -601,7 +680,7 @@ NavLoad:
 	lea	MsgAuth(pc),a0
 	jsr	GuiStatus
 .hist:	bsr	NavHistory
-	moveq	#-1,d0
+.img:	moveq	#-1,d0
 	move.l	d0,g_NavUndo(a4)
 	moveq	#0,d0
 	jsr	GuiBusy
@@ -655,6 +734,9 @@ LogTitle:	dc.b	"title",0
 LogTop:		dc.b	"top",0
 MsgLoading:	dc.b	"Loading ",0
 MsgAuth:	dc.b	"Login needed: put user:password@ before the host name",0
+MsgOffline:	dc.b	"Not reachable: the copy from the cache is shown",0
+MsgNewer:	dc.b	"A newer version of this page is there: Reload shows it",0
+LogDisk:	dc.b	"diskcache",0
 	even
 
 ; StatusWithUrl - status line "<a0>g_NavUrl"
