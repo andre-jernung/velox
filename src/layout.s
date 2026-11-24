@@ -232,6 +232,7 @@ LayoutBlock:
 	move.l	a5,a0
 	move.l	a3,a1
 	bsr	BlockBounds
+	bsr	LineReset		; the first line starts at the new edge
 
 	; lists: <ol start=n>, other lists count from 1
 	move.w	n_Tag(a5),d0

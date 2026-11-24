@@ -137,3 +137,10 @@ text 62 8 32 10 8 f1 s0 c000000 "left"
 text 82 8 120 10 8 f1 s0 c000000 "justify-is-left"
 text 102 126 48 10 8 f1 s0 c000000 "center"
 
+# the first line of an indented block starts at its edge
+layout test/unit/layout/indent.html 400 => 
+height 60
+text 10 8 32 10 8 f1 s0 c000000 "para"
+text 30 28 48 10 8 f1 s0 c000000 "quoted"
+text 50 70 96 10 8 f1 s0 c000000 "indented div"
+
