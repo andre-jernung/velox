@@ -34,7 +34,7 @@ bmh_Height		equ	2
 	xdef	BgFind,ImagesLoad,ImagesReap,ImagesReapNow,ImagesQuit
 	xref	TaskPoll,TaskWaitSig
 	IFD	PROFILE
-	xdef	ProfRead
+	xdef	ProfRead,ProfLog
 	ENDC
 	xdef	ImagesStop,ImagesStart,ImagesStep,ImagesPending,ImagesFree,ImagePaint
 	xref	PageAlloc,DomGetAttr,UrlResolve,HttpGetCached,ParseDec,BufFree

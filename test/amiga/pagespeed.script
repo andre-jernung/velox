@@ -1,0 +1,6 @@
+; pagespeed (manual): stage times of a big page, fetched, then from the
+; disk cache (SPEED=real PROFILE=1 test/emu.sh --auto pagespeed)
+Echo >VELOX:r/pagespeed.txt "pagespeed"
+Echo >VELOX:r/pagespeed.start ""
+VELOX:velox http://127.0.0.1:8080/index.html LOG=VELOX:r/pagespeed.log
+Echo >>VELOX:r/pagespeed.txt "done"

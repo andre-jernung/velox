@@ -20,6 +20,9 @@
 
 	xdef	HtmlParse,HtmlBegin,HtmlMore
 	xref	TaskPoll
+	IFD	PROFILE
+	xref	ProfRead
+	ENDC
 	xref	PageAlloc,DomNewNode,DomAppend,DomAddAttr,DomGetAttr
 	xref	TagLookup,TagFlagsOf,DecodeEntities,ToLower,StrIPrefix
 
@@ -72,6 +75,7 @@ HtmlBegin:
 ;--------------------------------------------------------------------
 HtmlMore:
 	movem.l	d2-d7/a2-a3/a5,-(sp)
+	PROFB	13
 	move.l	a0,g_ParseBase(a4)
 	move.l	d0,g_ParseFinal(a4)
 	move.l	a0,a2
@@ -216,6 +220,7 @@ HtmlMore:
 
 .done:	sub.l	g_ParseBase(a4),a2	; where to go on
 	move.l	a2,g_ParsePos(a4)
+	PROFE	13
 	move.l	g_Doc(a4),d0
 	movem.l	(sp)+,d2-d7/a2-a3/a5
 	rts

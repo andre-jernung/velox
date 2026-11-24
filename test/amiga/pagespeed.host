@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+"""Host side of pagespeed.script: big.html (53 KB, 80 CSS rules) fetched,
+then again from the disk cache; the stage times (PROFILE=1 builds)."""
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from xdrive import Amiga, wait_log  # noqa: E402
+
+r = sys.argv[1]
+log = os.path.join(r, "pagespeed.log")
+out = open(os.path.join(r, "pagespeed.driver"), "w")
+U = "http://127.0.0.1:8080/"
+names = {"m": "cached page shown", "n": "parse", "o": "CSS", "p": "layout"}
+
+
+def go(a, path):
+    a.key("ctrl+l")
+    a.type("127.0.0.1:8080/" + path)
+    a.key("Return")
+
+
+try:
+    a = Amiga()
+    wait_log(log, "page " + U + "index.html", timeout=120)
+    time.sleep(2)
+    for n, what in ((1, "fetched"), (2, "from the disk cache")):
+        go(a, "big.html")
+        wait_log(log, "page " + U + "big.html", n, timeout=600)
+        time.sleep(3)
+        go(a, "index.html")
+        lines = wait_log(log, "page " + U + "index.html", n + 1, timeout=600)
+        text = open(log).read().split("\n")
+        i = [k for k, l in enumerate(text) if l.startswith("go " + U + "big.html")][-1]
+        j = [k for k, l in enumerate(text) if l.startswith("go " + U + "index.html")][-1]
+        out.write("big.html %s:\n" % what)
+        for l in text[i:j]:
+            if l.startswith("prof"):
+                out.write("  %-18s %6s ms\n" % (names.get(l[4], l[4]), l.split()[1]))
+        time.sleep(2)
+    a.key("ctrl+q")
+    out.write("ok\n")
+except Exception as e:
+    out.write("FAIL %r\n" % e)
+    try:
+        Amiga().key("ctrl+q")
+    except Exception:
+        pass

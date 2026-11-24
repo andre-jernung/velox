@@ -13,6 +13,9 @@
 	xref	Alloc,Free,ErrorText,FmtDec,LayoutDocument
 	xref	HttpGetCached,CacheFlush,DomAddAttr,PageAlloc,ParseDec
 	xref	DcLoad,DcFresh,DcCond
+	IFD	PROFILE
+	xref	ProfRead,ProfLog
+	ENDC
 	xdef	NavRefresh,PageFixups,CopyAddress,ViewSource,FragCheck
 	xref	FindAnchor
 	xref	ClipCopy
@@ -484,6 +487,7 @@ SheetCount:
 ; Out: d0 = 0 if it could not be made (CCR set)
 ;--------------------------------------------------------------------
 ShowCached:
+	PROFB	12
 	lea	LogDisk(pc),a0		; (for tests)
 	lea	g_NavUrl(a4),a1
 	move.l	#$80000000,d0
@@ -497,12 +501,18 @@ ShowCached:
 	clr.l	g_IncState(a4)
 	move.l	#200,g_PageStatus(a4)
 	bsr	PageFixups
+	PROFB	14
 	bsr	IncCss
+	PROFE	14
 	moveq	#1,d0			; shown: it stays if stopped
 	move.l	d0,g_IncShown(a4)
 	moveq	#2,d0
 	move.l	d0,g_LoadPhase(a4)
 	bsr	ShowPage
+	PROFE	12
+	IFD	PROFILE
+	jsr	ProfLog
+	ENDC
 	bsr	NavHistory
 	moveq	#1,d0
 .x:	rts
@@ -1646,6 +1656,9 @@ ShowPage:
 
 ; ShowDone - the page is all there: log it (tests), queue its images
 ShowDone:
+	IFD	PROFILE
+	jsr	ProfLog			; (stage times, for the speed test)
+	ENDC
 	lea	LogPage(pc),a0
 	lea	g_PageUrl(a4),a1
 	move.l	g_DocHeight(a4),d0

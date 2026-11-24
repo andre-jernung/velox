@@ -16,6 +16,9 @@
 	xdef	FlushLine,LineReset,AddMargin,AddRun,RunCount,RunPtr,Measure
 	xdef	ApplyPendingMargin,IntAttr,ClearFloats,FindAnchor
 	xref	BufAppend
+	IFD	PROFILE
+	xref	ProfRead
+	ENDC
 	xref	StyleRoot,StyleCompute,BufClear,BufReserve,PageAlloc,FmtDec
 	xref	DomGetAttr,ParseDec,LayoutTable,CssApply
 	xref	FormIsControl,FormControlSize,CssInvalidate
@@ -37,6 +40,7 @@ MAX_LAYDEPTH	equ	200
 ;--------------------------------------------------------------------
 LayoutDocument:
 	movem.l	d2/a2,-(sp)
+	PROFB	15
 	move.l	d0,g_LayWidth(a4)
 	clr.l	g_ViewLive(a4)		; the runs change
 	clr.l	g_PageBgRec(a4)		; (the page background image: <body>)
@@ -93,6 +97,7 @@ LayoutDocument:
 	move.l	d0,g_DocHeight(a4)
 	moveq	#1,d0
 	move.l	d0,g_ViewLive(a4)	; the runs can be painted
+	PROFE	15
 	movem.l	(sp)+,d2/a2
 	rts
 
