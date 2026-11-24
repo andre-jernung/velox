@@ -122,6 +122,20 @@ cjpeg("j440.jpg", "-sample", "1x2", "-quality", "85")
 cjpeg("jrgb.jpg", "-rgb", "-quality", "90")
 os.remove(ppm)
 
+# WebP lossless: PIL picks transforms by content: photos (predictor,
+# cross colour, subtract green, meta codes, colour cache), few colours
+# (colour indexing, packed), alpha; lossy (VP8), with alpha (ALPH)
+wp = picture(71, 53, alpha=True)
+save(wp, "wl-rgba.webp", lossless=True)
+save(wp.convert("RGB"), "wl-rgb.webp", lossless=True)
+save(wp.convert("RGB"), "wl-fast.webp", lossless=True, quality=0, method=0)
+save(wp.convert("RGB"), "wl-best.webp", lossless=True, quality=100, method=6)
+save(wp.convert("RGB").quantize(2).convert("RGB"), "wl-pal2.webp", lossless=True)
+save(wp.convert("RGB").quantize(4).convert("RGB"), "wl-pal4.webp", lossless=True)
+save(wp.convert("RGB").quantize(16).convert("RGB"), "wl-pal16.webp", lossless=True)
+save(wp.convert("RGB").quantize(200).convert("RGB"), "wl-pal200.webp", lossless=True)
+save(picture(300, 200).convert("RGB"), "wl-big.webp", lossless=True)
+
 # broken files: cut short, and with bytes overwritten; decoding them
 # must not crash (their output is not compared: ".bad")
 random.seed(11)

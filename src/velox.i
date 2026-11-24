@@ -626,6 +626,13 @@ g_JAcTab	rs.l	1		; its AC table
 g_JLine		rs.l	1		; output: first line of the MCU row,
 g_JLy		rs.l	1		; line in it
 g_JComp		rs.b	4*40		; components (jpeg.s: JC_SIZEOF)
+g_VChain	rs.l	1		; vp8l.s: memory to free
+g_VOver		rs.l	1		; bytes read past the end
+g_VW		rs.l	1		; width of the image
+g_VNTrans	rs.l	1		; transforms
+g_VTSeen	rs.l	1		; (types seen: bits)
+g_VBw		rs.l	1		; blocks across
+g_VTrans	rs.l	4*4		; type, bits, data, width
 g_InfOut	rs.l	1		; inflate.s: start of the output,
 g_InfOver	rs.l	1		; bytes read past the end,
 g_InfWork	rs.l	1		; working memory

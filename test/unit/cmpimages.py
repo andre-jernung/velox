@@ -45,7 +45,7 @@ for out in sorted(glob.glob(os.path.join(d, "*.argb"))):
         data = data[:8] + b"".join(bytes((255, v, v, v)) for v in mine.convert("L").tobytes())
         ref = ref.convert("L").convert("RGBA")
     rp = ref.tobytes()
-    lossy = name.endswith((".jpg", ".jpeg")) or name.startswith("wl")
+    lossy = name.endswith((".jpg", ".jpeg")) or name.startswith("wy")
     diff = 0
     worst = 0
     n = 0
