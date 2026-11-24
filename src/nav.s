@@ -385,6 +385,8 @@ LogShown:	dc.b	"shown",0
 ; IncRelayout - lay out again what has come, if enough time went by
 ; since the last layout and the user is not scrolling right now
 IncRelayout:
+	tst.l	g_Dragging(a4)		; the scroller is held: later
+	bne.s	.x
 	jsr	TaskNow
 	move.l	d0,d1
 	sub.l	g_IncLast(a4),d1

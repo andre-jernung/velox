@@ -422,6 +422,7 @@ g_IncLast	rs.l	1		; the last layout (ticks)
 g_IncEvery	rs.l	1		; ticks between layouts
 g_IncT0		rs.l	1		; when the last layout started
 g_UserTick	rs.l	1		; the user's last key or scroller use
+g_Dragging	rs.l	1		; the scroller is held
 g_NavStopped	rs.l	1		; the user stopped the load (NavStop)
 g_LoadPhase	rs.l	1		; 1: a new page loads, 2: the shown one
 g_LayWidth	rs.l	1		; width laid out for

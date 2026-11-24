@@ -2106,6 +2106,8 @@ GuiStatus:
 
 ; UpdateScroller - give the scroller the document size and position
 UpdateScroller:
+	tst.l	g_Dragging(a4)		; (while the user drags it, the page
+	bne.s	.x			;  changing must not move it back)
 	move.l	g_GadScroll(a4),d0
 	beq.s	.x
 	movem.l	a2-a3,-(sp)
@@ -2396,6 +2398,8 @@ HandleEvent:
 	bne.s	.ngd
 	cmp.l	g_GadScroll(a4),a2
 	bne.s	.x
+	moveq	#1,d0			; held: not moved under the mouse
+	move.l	d0,g_Dragging(a4)
 	move.l	d3,d0
 	bra	GuiScrollTo
 .ngd:	cmp.l	#IDCMP_INTUITICKS,d2	; a meta refresh counting down
@@ -2426,8 +2430,10 @@ OnGadget:
 	move.w	gg_GadgetID(a2),d0
 	cmp.w	#GID_SCROLL,d0
 	bne.s	.ns
+	clr.l	g_Dragging(a4)		; let go: now it shows the page again
 	move.l	d3,d0
-	bra	GuiScrollTo
+	bsr	GuiScrollTo
+	bra	UpdateScroller
 .ns:	cmp.w	#GID_BACK,d0
 	beq	ToNavBack
 	cmp.w	#GID_FWD,d0
