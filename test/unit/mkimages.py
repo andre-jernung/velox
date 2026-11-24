@@ -45,6 +45,52 @@ save(t, "gtrans.gif", transparency=5, interlace=False)
 big = picture(301, 201).convert("RGB").quantize(200)
 save(big, "gbig.gif", interlace=False)
 
+# PNG: every colour type and depth, interlaced or not, palettes with
+# tRNS, colour keys, filters of all kinds (PIL picks them per row)
+from PIL import PngImagePlugin  # noqa: E402,F401
+pic = picture(53, 37, alpha=True)
+save(pic, "prgba.png")
+save(pic, "prgbai.png", interlace=True)
+save(pic.convert("RGB"), "prgb.png")
+save(pic.convert("RGB"), "prgbi.png", interlace=True)
+save(pic.convert("L"), "pgrey.png")
+save(pic.convert("LA"), "pga.png")
+save(pic.convert("RGB").quantize(256), "ppal8.png")
+save(pic.convert("RGB").quantize(16), "ppal4.png", bits=4)
+save(pic.convert("RGB").quantize(4), "ppal2.png", bits=2)
+save(pic.convert("1"), "pmono.png")
+save(pic.convert("RGB").quantize(16), "ppal4i.png", bits=4, interlace=True)
+q = pic.quantize(64)                        # palette with alpha (tRNS)
+save(q, "ppaltrns.png")
+save(pic.convert("RGB"), "pkey.png", transparency=(255, 255, 0))
+save(pic.convert("L"), "pgreykey.png", transparency=0)
+# 16 bits per sample (I;16 grey, and 48/64-bit colour through raw data)
+g16 = Image.new("I;16", (31, 29))
+g16.putdata([(x * 2113 + y * 977) & 0xffff for y in range(29) for x in range(31)])
+save(g16, "pgrey16.png")
+# a big one, compressed hard (dynamic Huffman codes, long matches)
+save(picture(400, 300).convert("RGB"), "pbig.png", optimize=True)
+save(picture(400, 300).convert("RGB"), "pfast.png", compress_level=1)
+save(picture(64, 64).convert("RGB"), "pstored.png", compress_level=0)
+w16 = pic.convert("RGBA")
+
+
+def png16(name, mode, w, h, px):
+    """A 16-bit colour PNG, written by hand (PIL cannot)."""
+    import struct, zlib
+    ctype = {"RGB": 2, "RGBA": 6}[mode]
+    raw = b"".join(b"\0" + b"".join(struct.pack(">" + "H" * len(p), *p) for p in px[y * w:(y + 1) * w]) for y in range(h))
+    def chunk(t, d):
+        return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d))
+    data = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 16, ctype, 0, 0, 0)) +
+            chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+    open(os.path.join(d, name), "wb").write(data)
+
+
+px = [((x * 2311) & 0xffff, (y * 4099) & 0xffff, (x * y * 37) & 0xffff, ((x + y) * 3001) & 0xffff) for y in range(21) for x in range(27)]
+png16("prgba16.png", "RGBA", 27, 21, px)
+png16("prgb16.png", "RGB", 27, 21, [p[:3] for p in px])
+
 # broken files: cut short, and with bytes overwritten; decoding them
 # must not crash (their output is not compared: ".bad")
 random.seed(11)

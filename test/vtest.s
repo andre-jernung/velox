@@ -14,6 +14,7 @@
 ;                        per character), dump the display list
 ;   setcookie URL VALUE  Set-Cookie VALUE ('|' = blank) from URL
 ;   cookies URL          the Cookie header for a request to URL
+;   inflate FILE OUT     inflate a raw deflate stream (to at most 256 KB)
 ;   decode FILE OUT [W]  decode an image file with Velox's decoders
 ;                        (width W wanted); OUT gets width.l, height.l
 ;                        and the ARGB pixels
@@ -27,7 +28,7 @@
 	xref	PutStr,PutBuf,PutNum,PutNL,PutChar,FlushOut,ErrorText
 	xref	PageNew,BufReserve,BufClear,CharsetDetect,DecodeCharset
 	xref	HtmlParse,TagNameOf,LayoutDocument,RunCount,RunPtr,ParseDec,CssLoad
-	xref	PicInfo,PicDecode,PicFree,PicAlloc,PicFreeMem
+	xref	Inflate,PicInfo,PicDecode,PicFree,PicAlloc,PicFreeMem
 	xref	CookieSet,CookieHeader,UrlParse,BufFree,PageFixups
 
 T_LINEMAX	equ	2048
@@ -177,6 +178,7 @@ Commands:
 	dc.w	CnSetCookie-Commands,CmdSetCookie-Commands
 	dc.w	CnCookies-Commands,CmdCookies-Commands
 	dc.w	CnDecode-Commands,CmdDecode-Commands
+	dc.w	CnInflate-Commands,CmdInflate-Commands
 	dc.w	0
 
 CnParse:	dc.b	"parse",0
@@ -189,6 +191,7 @@ CnLayout:	dc.b	"layout",0
 CnSetCookie:	dc.b	"setcookie",0
 CnCookies:	dc.b	"cookies",0
 CnDecode:	dc.b	"decode",0
+CnInflate:	dc.b	"inflate",0
 Empty:		dc.b	0
 ResultSep:	dc.b	" => ",0
 MsgUnknown:	dc.b	"unknown command",0
@@ -437,6 +440,81 @@ CmdDecode:
 	rts
 .err:	movem.l	(sp)+,d2-d6/a2
 	bra	PutError
+
+CmdInflate:
+	movem.l	d2-d6/a2-a3,-(sp)
+	sub.l	a3,a3
+	move.l	T_Words+4,a0
+	bsr	ReadAll			; a2 = data, d5 = length
+	beq.s	.err
+	move.l	#256*1024,d0
+	jsr	PicAlloc
+	move.l	d0,a3
+	beq.s	.free
+	move.l	a2,a0
+	move.l	d5,d0
+	move.l	a3,a1
+	move.l	#256*1024,d1
+	jsr	Inflate
+	move.l	d0,d6
+	jsr	PutNum			; bytes (-1: damaged)
+	tst.l	d6
+	ble.s	.free
+	move.l	T_Words+8,d1
+	move.l	#MODE_NEWFILE,d2
+	DOS	Open
+	move.l	d0,d4
+	beq.s	.free
+	move.l	d4,d1
+	move.l	a3,d2
+	move.l	d6,d3
+	DOS	Write
+	move.l	d4,d1
+	DOS	Close
+.free:	move.l	a3,a1
+	jsr	PicFreeMem
+	move.l	a2,a1
+	jsr	PicFreeMem
+	movem.l	(sp)+,d2-d6/a2-a3
+	rts
+.err:	movem.l	(sp)+,d2-d6/a2-a3
+	bra	PutError
+
+; ReadAll - read file a0 into PicAlloc memory
+; Out: a2 = data, d5 = length; d0 = 0 on failure (CCR set)
+ReadAll:
+	movem.l	d2-d4,-(sp)
+	sub.l	a2,a2
+	move.l	a0,d1
+	move.l	#MODE_OLDFILE,d2
+	DOS	Open
+	move.l	d0,d4
+	beq.s	.no
+	move.l	d4,d1
+	moveq	#0,d2
+	moveq	#OFFSET_END,d3
+	DOS	Seek
+	move.l	d4,d1
+	moveq	#0,d2
+	moveq	#OFFSET_BEGINNING,d3
+	DOS	Seek
+	move.l	d0,d5
+	addq.l	#1,d0
+	jsr	PicAlloc
+	move.l	d0,a2
+	beq.s	.cl
+	move.l	d4,d1
+	move.l	a2,d2
+	move.l	d5,d3
+	DOS	Read
+.cl:	move.l	d4,d1
+	DOS	Close
+	move.l	a2,d0
+	bne.s	.x
+.no:	SETERR	ERR_FILE
+	moveq	#0,d0
+.x:	movem.l	(sp)+,d2-d4
+	rts
 
 ; PutSize - print "<d0>x<d6>"
 PutSize:

@@ -13,7 +13,7 @@
 	include	"velox.i"
 
 	xdef	PicInfo,PicDecode,PicFree,PicAlloc,PicFreeMem,PicNew
-	xref	GifInfo,GifDecode
+	xref	GifInfo,GifDecode,PngInfo,PngDecode
 
 	section	code,code
 
@@ -29,7 +29,7 @@ PicInfo:
 	jmp	(a1)
 .no:	moveq	#0,d1
 	rts
-.tab:	dc.l	GifInfo,NoInfo,NoInfo,NoInfo
+.tab:	dc.l	GifInfo,PngInfo,NoInfo,NoInfo
 
 ;--------------------------------------------------------------------
 ; PicDecode - decode an image file into g_PicW/g_PicH/g_PicData
@@ -57,7 +57,7 @@ PicDecode:
 .no:	moveq	#0,d0
 .x:	movem.l	(sp)+,d2/a2
 	rts
-.tab:	dc.l	GifDecode,NoDecode,NoDecode,NoDecode
+.tab:	dc.l	GifDecode,PngDecode,NoDecode,NoDecode
 
 NoInfo:	moveq	#0,d1
 NoDecode:

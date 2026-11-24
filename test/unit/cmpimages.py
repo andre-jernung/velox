@@ -18,6 +18,9 @@ for out in sorted(glob.glob(os.path.join(d, "*.argb"))):
     w, h = struct.unpack(">II", data[:8])
     ref = Image.open(src)
     ref.seek(0)
+    if ref.mode in ("I;16", "I;16B", "I"):
+        # 16-bit grey: PNG means the high byte (PIL would clip)
+        ref = ref.point(lambda v: v / 256).convert("L")
     ref = ref.convert("RGBA")
     if ref.size != (w, h):
         # a scaled decode: compare with PIL's own scaling

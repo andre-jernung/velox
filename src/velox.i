@@ -579,6 +579,23 @@ g_GifY		rs.l	1		; row being decoded
 g_GifPass	rs.l	1		; interlace pass
 g_GifStep	rs.l	1		; rows to the next one
 g_LzwClear	rs.l	1		; the clear code
+g_PngW		rs.l	1		; png.s: IHDR
+g_PngH		rs.l	1
+g_PngDepth	rs.l	1
+g_PngType	rs.l	1
+g_PngLace	rs.l	1
+g_PngChans	rs.l	1		; samples per pixel
+g_PngTrns	rs.l	1		; a clear colour (g_PngKey) is set
+g_PngKey	rs.w	4		; ... grey, or red, green, blue
+g_PngFirst	rs.l	1		; the first chunk
+g_PngIdat	rs.l	1		; the IDATs joined
+g_PngRaw	rs.l	1		; the rows (after a row of zeros)
+g_PngZero	rs.l	1		; size of that row
+g_PngPW		rs.l	1		; pass: width,
+g_PngRB		rs.l	1		; bytes in a row
+g_InfOut	rs.l	1		; inflate.s: start of the output,
+g_InfOver	rs.l	1		; bytes read past the end,
+g_InfWork	rs.l	1		; working memory
 g_ViewLive	rs.l	1		; the runs are those of the page shown
 g_DnsNext	rs.l	1		; next g_DnsCache entry to replace
 g_DnsCache	rs.b	DNS_ENTRIES*DNS_SIZEOF	; address.l, host name

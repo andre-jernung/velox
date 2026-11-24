@@ -12,7 +12,7 @@ for t in test/unit/*.vt; do
 	name=$(basename "$t" .vt)
 	out=build/$name.out
 	err=build/$name.err
-	tools/venv/bin/vamos -C 68020 build/vtest "$t" >"$out" 2>"$err"
+	tools/venv/bin/vamos -C 68020 -m 8192 build/vtest "$t" >"$out" 2>"$err"
 	rc=$?
 	if [ $rc -ne 0 ]; then
 		echo "FAIL $name: vamos exit code $rc"; cat "$err"; fail=1
