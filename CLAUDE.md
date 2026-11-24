@@ -41,6 +41,9 @@ and a single event dispatch point.
   repainted.
 - FS-UAE turns cursor keys into a joystick unless `joystick_port_1 = none`
   is set, which the test config does.
+- `SPEED=real test/emu.sh --auto speed` runs a stock 14 MHz A1200 (not the
+  unthrottled CPU) and reports image decoding times (`imgtime`/`imgconv`
+  log events, in 1/50 s).
 - `OS=3.2 test/emu.sh --auto` runs the same tests on AmigaOS 3.2 (Kickstart
   3.2 and Workbench/Classes/Fonts disks from the user's 3.2 CD in
   `~/amiga/os32/cd`). Run both before calling GUI or image work done.

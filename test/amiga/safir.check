@@ -1,0 +1,4 @@
+#!/bin/sh
+d=$(dirname "$1")
+sed 's/^/driver: /' "$d/safir.driver"
+grep -qx ok "$d/safir.driver"

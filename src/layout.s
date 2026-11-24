@@ -38,6 +38,7 @@ LayoutDocument:
 	movem.l	d2/a2,-(sp)
 	move.l	d0,g_LayWidth(a4)
 	clr.l	g_ViewLive(a4)		; the runs change
+	clr.l	g_PageBgRec(a4)		; (the page background image: <body>)
 	clr.l	g_FindRun(a4)
 	clr.l	g_SelShown(a4)
 	clr.l	g_SelOn(a4)
@@ -281,17 +282,27 @@ LayoutBlock:
 	; background
 	moveq	#-1,d7
 	cmp.b	#DISP_TABLE,st_Display(a3)	; tables draw their own
-	beq.s	.nobg
-	move.l	st_Bg(a3),d0
-	bmi.s	.nobg
-	move.w	n_Tag(a5),d1		; <body>/<html>: the page background
+	beq	.nobg
+	move.l	st_Bg(a3),d0		; a colour or an image
+	bpl.s	.bg
+	tst.l	st_BgImg(a3)
+	beq	.nobg
+.bg:	move.w	n_Tag(a5),d1		; <body>/<html>: the page background
 	cmp.w	#TAG_BODY,d1
 	beq.s	.pagebg
 	cmp.w	#TAG_HTML,d1
 	bne.s	.rect
 .pagebg:
+	tst.l	d0
+	bmi.s	.pbi
 	move.l	d0,g_PageBg(a4)
-	bra.s	.nobg
+.pbi:	move.l	st_BgImg(a3),d1
+	beq	.nobg
+	move.l	d1,g_PageBgRec(a4)
+	moveq	#0,d1
+	move.b	st_BgRep(a3),d1
+	move.l	d1,g_PageBgRep(a4)
+	bra	.nobg
 .rect:
 	bsr	ApplyPendingMargin
 	bsr	AddRun
@@ -304,6 +315,10 @@ LayoutBlock:
 	sub.l	g_LayLeft(a4),d0
 	move.w	d0,ru_W(a0)
 	move.l	st_Bg(a3),ru_Color(a0)
+	move.l	st_BgImg(a3),ru_Text(a0)	; (its image)
+	moveq	#0,d0
+	move.b	st_BgRep(a3),d0
+	move.l	d0,ru_Len(a0)
 	bsr	RunCount
 	subq.l	#1,d0
 	move.l	d0,d7			; index of the rectangle

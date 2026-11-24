@@ -1,0 +1,6 @@
+; safir (manual): a real site with background images (needs internet)
+Echo >VELOX:r/safir.txt "safir"
+Echo >VELOX:r/safir.start ""
+VELOX:velox http://safir.amigaos.se/ LOG=VELOX:r/safir.log
+Echo >>VELOX:r/safir.txt "exit rc=$RC"
+Echo >>VELOX:r/safir.txt "done"

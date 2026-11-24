@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+"""Host side of safir.script: wait for the images, screenshot, quit."""
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from xdrive import Amiga, wait_log  # noqa: E402
+
+r = sys.argv[1]
+log = os.path.join(r, "safir.log")
+out = open(os.path.join(r, "safir.driver"), "w")
+try:
+    a = Amiga()
+    wait_log(log, "images ", timeout=600)
+    time.sleep(3)
+    a.shot(os.path.join(r, "safir.png"))
+    a.key("ctrl+q")
+    out.write("ok\n")
+except Exception as e:
+    out.write("FAIL %r\n" % e)
+    Amiga().shot(os.path.join(r, "safir.png"))
+    Amiga().key("ctrl+q")

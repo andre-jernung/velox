@@ -9,8 +9,9 @@ A small, fast web browser for classic AmigaOS 3.x, written entirely in
 - A TCP/IP stack with bsdsocket.library (Roadshow, AmiTCP, Miami)
 - For https: AmiSSL 5 or newer (AmiSSL 6 recommended), or
   `velox-proxy.py` running on a modern machine
-- For images: picture datatypes. OS 3.1 has ILBM; OS 3.2 also has PNG,
-  GIF and BMP.
+- Nothing more for images: Velox decodes JPEG, PNG, GIF and WebP
+  itself. Other formats (ILBM, BMP ...) go through the picture
+  datatypes the system has.
 
 ## Features
 
@@ -23,8 +24,13 @@ A small, fast web browser for classic AmigaOS 3.x, written entirely in
   floated left or right with the text flowing around them
 - Forms: text, password, checkboxes, radio buttons, selects, text areas;
   GET and POST
-- Images through datatypes.library, scaled and remapped to the screen,
-  loaded while the page is already usable
+- Images: JPEG (baseline and progressive), PNG (all kinds, with
+  transparency), GIF and WebP (lossy, lossless, with alpha) decoded by
+  Velox itself, dithered to the screen's colours, transparency kept;
+  other formats through datatypes.library. Loaded while the page is
+  already usable.
+- Background images (HTML `background`, CSS `background-image` and
+  `background`), tiled or not, on the page, tables, cells and blocks
 - http and https (AmiSSL with certificate checks, or through a proxy),
   keep-alive connections, redirects, chunked transfers, cookies
 - Password protected pages (HTTP Basic): `http://user:password@host/`

@@ -11,6 +11,7 @@
 
 	xdef	StyleRoot,StyleCompute,ParseColor,ParseLength
 	xref	UaStyle,DomGetAttr,ToLower,StrIPrefix,StrIFind,SkipSpace
+	xref	BgFind
 
 	section	code,code
 
@@ -44,6 +45,8 @@ StyleCompute:
 	clr.b	st_Display(a3)		; ... then reset what is not inherited
 	moveq	#-1,d0
 	move.l	d0,st_Bg(a3)
+	clr.l	st_BgImg(a3)
+	move.b	#3,st_BgRep(a3)
 	clr.l	st_MTop(a3)
 	clr.l	st_MLeft(a3)
 	clr.l	st_Width(a3)
@@ -296,7 +299,16 @@ StyleCompute:
 	move.l	d0,a0
 	bsr	ParseColor
 	move.l	d0,st_Bg(a3)
-.nobg:	move.l	a5,a0
+.nobg:	move.l	a5,a0			; background="image" (repeated)
+	lea	AnBackground(pc),a1
+	jsr	DomGetAttr
+	tst.l	d0
+	beq.s	.nobi
+	move.l	d0,a0
+	suba.l	a1,a1
+	jsr	BgFind
+	move.l	d0,st_BgImg(a3)
+.nobi:	move.l	a5,a0
 	lea	AnText(pc),a1		; <body text=...>
 	jsr	DomGetAttr
 	tst.l	d0
@@ -349,6 +361,7 @@ AnFace:		dc.b	"face",0
 AnHidden:	dc.b	"hidden",0
 AnAlign:	dc.b	"align",0
 AnBgcolor:	dc.b	"bgcolor",0
+AnBackground:	dc.b	"background",0
 AnText:		dc.b	"text",0
 AnNowrap:	dc.b	"nowrap",0
 AnWidth:	dc.b	"width",0

@@ -1,0 +1,7 @@
+; speed (manual): decoding times of a 640x480 picture in each format
+; run with: SPEED=real test/emu.sh --auto speed  (a stock 14 MHz A1200)
+Echo >VELOX:r/speed.txt "speed"
+Echo >VELOX:r/speed.start ""
+VELOX:velox http://127.0.0.1:8080/speed.html LOG=VELOX:r/speed.log
+Echo >>VELOX:r/speed.txt "exit rc=$RC"
+Echo >>VELOX:r/speed.txt "done"

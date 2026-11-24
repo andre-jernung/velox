@@ -387,9 +387,15 @@ LayoutTable:
 	move.l	d0,tb_TabRect(a3)
 	move.l	d0,tb_TabBox(a3)
 	move.l	tb_Style(a3),a0
+	move.l	st_BgImg(a0),g_RunImg(a4)	; (a background image too)
+	moveq	#0,d0
+	move.b	st_BgRep(a0),d0
+	move.l	d0,g_RunRep(a4)
 	move.l	st_Bg(a0),d1
-	bmi.s	.notb
-	moveq	#RT_RECT,d0
+	bpl.s	.tb
+	tst.l	g_RunImg(a4)
+	beq.s	.notb
+.tb:	moveq	#RT_RECT,d0
 	bsr	BoxRun
 	move.l	d0,tb_TabRect(a3)
 .notb:	tst.l	tb_Border(a3)
@@ -463,10 +469,20 @@ LayoutTable:
 	move.l	#-1,(a0,d4.l*4)
 	lea	tb_Box(a3),a0
 	move.l	#-1,(a0,d4.l*4)
-	move.l	tb_CellStyle+st_Bg(a3),d1
-	bpl.s	.cbg
-	move.l	tb_RowStyle+st_Bg(a3),d1
-	bmi.s	.nocbg
+	lea	tb_CellStyle(a3),a0	; the cell's colour/image, or the row's
+	move.l	st_Bg(a0),d1
+	bpl.s	.cim
+	tst.l	st_BgImg(a0)
+	bne.s	.cim
+	lea	tb_RowStyle(a3),a0
+	move.l	st_Bg(a0),d1
+	bpl.s	.cim
+	tst.l	st_BgImg(a0)
+	beq.s	.nocbg
+.cim:	move.l	st_BgImg(a0),g_RunImg(a4)
+	moveq	#0,d0
+	move.b	st_BgRep(a0),d0
+	move.l	d0,g_RunRep(a4)
 .cbg:	moveq	#RT_RECT,d0
 	bsr	CellRun
 	lea	tb_Rect(a3),a0
@@ -605,6 +621,7 @@ BoxRun:
 	move.l	d0,a0
 	move.b	d2,ru_Type(a0)
 	move.l	d3,ru_Color(a0)
+	bsr	RunImage
 	move.l	tb_Top(a3),ru_Y(a0)
 	move.w	tb_X0+2(a3),ru_X(a0)
 	move.w	tb_Width+2(a3),ru_W(a0)
@@ -617,6 +634,16 @@ BoxRun:
 	movem.l	(sp)+,d2-d3
 	rts
 
+; RunImage - a RECT run a0 gets the background image g_RunImg (repeat
+; g_RunRep), which is then used up (a0 kept)
+RunImage:
+	cmp.b	#RT_RECT,ru_Type(a0)
+	bne.s	.x
+	move.l	g_RunImg(a4),ru_Text(a0)
+	move.l	g_RunRep(a4),ru_Len(a0)
+	clr.l	g_RunImg(a4)
+.x:	rts
+
 ; CellRun - a RECT/BOX run for a cell (x d2..d3 at the row top)
 ; In: d0 = type, d1 = colour; Out: d0 = run index
 CellRun:
@@ -628,6 +655,7 @@ CellRun:
 	move.l	d0,a0
 	move.b	d4,ru_Type(a0)
 	move.l	d5,ru_Color(a0)
+	bsr	RunImage
 	move.l	tb_RowTop(a3),ru_Y(a0)
 	move.w	d2,ru_X(a0)
 	move.l	d3,d0

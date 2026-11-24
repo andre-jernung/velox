@@ -113,6 +113,12 @@ if [ $AUTO = 1 ]; then
 fi
 
 mkdir -p "$B/fs-uae"
+CPUSPEED=max
+ACCURACY=-1
+if [ "${SPEED:-}" = real ]; then
+	CPUSPEED=real
+	ACCURACY=1
+fi
 cat >"$B/velox.fs-uae" <<EOF
 [fs-uae]
 base_dir = $B/fs-uae
@@ -128,9 +134,10 @@ bsdsocket_library = 1
 joystick_port_0 = mouse
 joystick_port_1 = none
 # run the 68020 unthrottled (like an accelerated Amiga): TLS handshakes
-# take ~15 s at the stock 14 MHz, too slow for some servers
-uae_cpu_speed = max
-accuracy = -1
+# take ~15 s at the stock 14 MHz, too slow for some servers.  SPEED=real
+# gives a stock A1200 (14 MHz 68020) for timing things.
+uae_cpu_speed = $CPUSPEED
+accuracy = $ACCURACY
 automatic_input_grab = 0
 floppy_drive_volume = 0
 volume = 0

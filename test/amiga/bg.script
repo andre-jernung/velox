@@ -1,0 +1,7 @@
+; bg: background images (HTML background="", CSS url(), repeat, the
+; page's) (test/amiga/bg.host)
+Echo >VELOX:r/bg.txt "bg"
+Echo >VELOX:r/bg.start ""
+VELOX:velox http://127.0.0.1:8080/bg.html LOG=VELOX:r/bg.log
+Echo >>VELOX:r/bg.txt "exit rc=$RC"
+Echo >>VELOX:r/bg.txt "done"

@@ -1,0 +1,4 @@
+#!/bin/sh
+d=$(dirname "$1")
+sed 's/^/driver: /' "$d/bg.driver"
+grep -qx ok "$d/bg.driver"

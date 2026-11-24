@@ -30,9 +30,9 @@ bmh_Width		equ	0
 bmh_Height		equ	2
 	include	"lvo/datatypes_lib.i"
 
-	xdef	ImagesStop,ImagesStart,ImagesStep,ImagesPending,ImagesFree,ImagePaint
+	xdef	BgFind,ImagesStop,ImagesStart,ImagesStep,ImagesPending,ImagesFree,ImagePaint
 	xref	PageAlloc,DomGetAttr,UrlResolve,HttpGetCached,ParseDec,BufFree
-	xref	G,BusyEvents,PicInfo,PicDecode,PicFree,PalInit,PicToBitMap,BufAppend,BufClear,GuiStatus,GuiRelayout,GuiRefresh,GuiPageWidth
+	xref	G,BusyEvents,PicInfo,PicDecode,PicFree,PalInit,PicToBitMap,PicAlloc,BufAppend,BufClear,GuiStatus,GuiRelayout,GuiRefresh,GuiPageWidth
 	xref	FmtDec,StrCopy,LogEvent,ImgNetHook
 
 MAX_IMAGES	equ	64
@@ -40,6 +40,10 @@ MAX_IMAGE	equ	2*1024*1024	; bytes of an image file
 CHIP_RESERVE	equ	200*1024	; keep this much chip memory free
 RELAYOUT_EVERY	equ	4
 MY_BMF_CLEAR	equ	1
+
+	IFNE	bg_Info-n_Data2
+	FAIL	"bg_Info must be where n_Data2 is (AddImage)"
+	ENDIF
 
 	section	code,code
 
@@ -113,6 +117,8 @@ AnHeight:	dc.b	"height",0
 ; ImagesPending - Out: d0 = 1 if images are still to be loaded
 ;--------------------------------------------------------------------
 ImagesPending:
+	bsr	BgNext			; a background image to load?
+	bne.s	.yes
 	move.l	g_ImgNext(a4),d0
 	cmp.l	g_ImgCount(a4),d0
 	blo.s	.yes
@@ -125,7 +131,13 @@ ImagesPending:
 ; ImagesStop - load no more images of this page (Esc)
 ;--------------------------------------------------------------------
 ImagesStop:
-	move.l	g_ImgNext(a4),d0
+	move.l	g_BgList(a4),d0		; backgrounds: none more either
+.bs:	beq.s	.bd
+	move.l	d0,a0
+	move.l	#1,bg_State(a0)
+	move.l	bg_Next(a0),d0
+	bra.s	.bs
+.bd:	move.l	g_ImgNext(a4),d0
 	cmp.l	g_ImgCount(a4),d0
 	bhs.s	.x
 	move.l	g_ImgCount(a4),g_ImgNext(a4)
@@ -141,11 +153,216 @@ ImagesStop:
 .x:	rts
 
 ;--------------------------------------------------------------------
+; BgFind - the background image record of URL a0 (relative to a1, or
+; to the page if a1 = 0): one record a URL, made the first time
+; Out: d0 = record or 0 (CCR set)
+;--------------------------------------------------------------------
+BgFind:
+	movem.l	a2-a3,-(sp)
+	move.l	a0,a3			; (relative)
+	move.l	a1,d0
+	bne.s	.res
+	lea	g_PageUrl(a4),a0	; the page, or its <base href>
+	move.l	g_BaseHref(a4),d0
+	beq.s	.pg
+	move.l	d0,a1
+	lea	g_UrlTmp2(a4),a2
+	jsr	UrlResolve
+	lea	g_UrlTmp2(a4),a0
+	tst.l	d0
+	bne.s	.base
+	lea	g_PageUrl(a4),a0
+	bra.s	.base
+.pg:	bra.s	.base
+.res:	move.l	d0,a0
+.base:	move.l	a3,a1			; resolved: into g_LinkUrl? no: a buffer
+	lea	g_BgAbs(a4),a2
+	jsr	UrlResolve
+	tst.l	d0
+	beq.s	.no
+	move.l	g_BgList(a4),a3		; known?
+	sub.l	a2,a2			; (the last one)
+.f:	move.l	a3,d0
+	beq.s	.new
+	lea	bg_Url(a3),a0
+	lea	g_BgAbs(a4),a1
+.c:	move.b	(a0)+,d0
+	cmp.b	(a1)+,d0
+	bne.s	.fn
+	tst.b	d0
+	bne.s	.c
+	move.l	a3,d0			; yes
+	bra.s	.x
+.fn:	move.l	a3,a2
+	move.l	bg_Next(a3),a3
+	bra.s	.f
+.new:	lea	g_BgAbs(a4),a0		; a new record, last in the list
+	moveq	#-1,d0
+.l:	addq.l	#1,d0
+	tst.b	(a0)+
+	bne.s	.l
+	add.l	#bg_Url+1,d0
+	jsr	PageAlloc
+	beq.s	.x
+	move.l	d0,a3
+	lea	g_BgAbs(a4),a0
+	lea	bg_Url(a3),a1
+.cp:	move.b	(a0)+,(a1)+
+	bne.s	.cp
+	move.l	a2,d0
+	beq.s	.first
+	move.l	a3,bg_Next(a2)
+	bra.s	.ok
+.first:	move.l	a3,g_BgList(a4)
+.ok:	move.l	a3,d0
+	bra.s	.x
+.no:	moveq	#0,d0
+.x:	movem.l	(sp)+,a2-a3
+	rts
+
+; BgNext - the first background image record not tried yet
+; Out: d0 = record or 0 (CCR set)
+BgNext:
+	move.l	g_BgList(a4),d0
+.l:	beq.s	.x
+	move.l	d0,a0
+	tst.l	bg_State(a0)
+	beq.s	.y
+	move.l	bg_Next(a0),d0
+	bra.s	.l
+.y:	move.l	a0,d0
+.x:	rts
+
+;--------------------------------------------------------------------
+; BgStep - load background image a5 (a record)
+;--------------------------------------------------------------------
+BgStep:
+	movem.l	d2-d7/a2-a3/a5,-(sp)
+	move.l	#1,bg_State(a5)
+	lea	MsgBg(pc),a0
+	jsr	GuiStatus
+	move.l	#MEMF_CHIP|MEMF_LARGEST,d1
+	EXEC	AvailMem
+	cmp.l	#CHIP_RESERVE,d0
+	blo	.x
+	lea	bg_Url(a5),a0		; fetch (the user can stop it)
+	lea	g_LinkUrl(a4),a1
+	move.l	#URL_MAX-1,d0
+.u:	move.b	(a0)+,(a1)+
+	dbeq	d0,.u
+	clr.b	-(a1)
+	move.l	g_WinSigMask(a4),d0
+	or.l	#SIGBREAKF_CTRL_C,d0
+	move.l	d0,g_AbortMask(a4)
+	lea	ImgNetHook,a0
+	move.l	a0,g_NetSigHook(a4)
+	lea	g_LinkUrl(a4),a0
+	jsr	HttpGetCached
+	clr.l	g_NetSigHook(a4)
+	tst.l	d0
+	bne.s	.got
+	cmp.l	#ERR_ABORT,g_Error(a4)	; stopped for the user: again later
+	bne.s	.free
+	tst.l	g_Quit(a4)
+	bne.s	.free
+	clr.l	bg_State(a5)
+	bra.s	.free
+.got:	cmp.l	#200,d0
+	bne.s	.free
+	move.l	g_Resp+r_Body+buf_Len(a4),d0
+	beq.s	.free
+	cmp.l	#MAX_IMAGE,d0
+	bhi.s	.free
+	move.l	g_Resp+r_Body+buf_Data(a4),a0
+	jsr	PicInfo			; (Velox's own formats only)
+	tst.l	d0
+	beq.s	.free
+	bsr	DecodeBg
+.free:	lea	g_Resp+r_Body(a4),a0
+	jsr	BufFree
+	moveq	#0,d0			; (log: decoded or not)
+	tst.l	bg_Info(a5)
+	beq.s	.lg
+	moveq	#1,d0
+.lg:	lea	LogBg(pc),a0
+	lea	bg_Url(a5),a1
+	jsr	LogEvent
+	cmp.l	g_PageBgRec(a4),a5	; the page's: everything changes
+	bne.s	.r
+	clr.l	g_BandsOk(a4)
+.r:	jsr	GuiRefresh
+.x:	movem.l	(sp)+,d2-d7/a2-a3/a5
+	rts
+
+; DecodeBg - decode background image a5 (natural size d0/d1), small
+; ones tiled to 64 or more, into bg_Info
+DecodeBg:
+	movem.l	d2-d7,-(sp)
+	move.l	d0,bg_W(a5)
+	move.l	d1,bg_H(a5)
+	tst.l	d0
+	beq.s	.x
+	tst.l	d1
+	beq.s	.x
+	cmp.l	#2048,d0		; (huge backgrounds: no)
+	bhi.s	.x
+	cmp.l	#2048,d1
+	bhi.s	.x
+	move.l	d1,-(sp)		; tiled size
+	move.l	d0,d4
+	bsr.s	.tile
+	move.l	d4,d5
+	move.l	(sp)+,d4
+	bsr.s	.tile
+	exg	d4,d5			; d4/d5 = width, height
+	move.l	#MEMF_CHIP|MEMF_LARGEST,d1	; chip memory for it?
+	EXEC	AvailMem
+	move.l	d4,d1
+	add.l	#15,d1
+	lsr.l	#3,d1
+	mulu.l	d5,d1
+	lsl.l	#3,d1
+	add.l	#CHIP_RESERVE,d1
+	cmp.l	d1,d0
+	blo.s	.x
+	jsr	PalInit
+	move.l	d4,g_DecW(a4)
+	move.l	d5,g_DecH(a4)
+	moveq	#1,d0
+	move.l	d0,g_DecTile(a4)
+	lea	PicWork(pc),a0
+	bsr	BgRun
+	clr.l	g_DecTile(a4)
+	move.l	d0,d7
+	beq.s	.x
+	moveq	#0,d6			; (no relayout)
+	move.l	g_PbmMask(a4),a0
+	bsr	AddImage		; (bg_Info is where a node's n_Data2 is)
+.x:	movem.l	(sp)+,d2-d7
+	rts
+.tile:	cmp.l	#64,d4			; d4 times what makes 64 or more
+	bhs.s	.t
+	move.l	d4,d2
+.tl:	add.l	d2,d4
+	cmp.l	#64,d4
+	blo.s	.tl
+.t:	rts
+
+MsgBg:	dc.b	"Background image",0
+LogBg:	dc.b	"bg",0
+	even
+
+;--------------------------------------------------------------------
 ; ImagesStep - load the next queued image
 ;--------------------------------------------------------------------
 ImagesStep:
 	movem.l	d2-d7/a2-a3/a5,-(sp)
-	move.l	g_ImgNext(a4),d0
+	bsr	BgNext			; background images first: the look of
+	beq.s	.img			; the page
+	move.l	d0,a5
+	bsr	BgStep
+	bra	.x
+.img:	move.l	g_ImgNext(a4),d0
 	cmp.l	g_ImgCount(a4),d0
 	bhs	.x
 	addq.l	#1,g_ImgNext(a4)
@@ -278,6 +495,8 @@ MsgImage:	dc.b	"Image ",0
 MsgOf:		dc.b	" of ",0
 LogImages:	dc.b	"images",0
 LogImgStop:	dc.b	"imgstop",0
+LogImgTime:	dc.b	"imgtime",0
+LogImgConv:	dc.b	"imgconv",0
 MsgStopped:	dc.b	"Stopped",0
 	even
 
@@ -381,9 +600,24 @@ DecodeOwn:
 	jsr	PalInit
 	move.l	d4,g_DecW(a4)
 	move.l	d5,g_DecH(a4)
+	bsr	Ticks			; (the time it takes: logged for tests)
+	move.l	d0,g_DecT0(a4)
 	lea	PicWork(pc),a0
 	bsr	BgRun			; d0 = bitmap
 	move.l	d0,d7
+	bsr	Ticks
+	move.l	d0,-(sp)
+	move.l	g_DecT1(a4),d0		; decoding,
+	sub.l	g_DecT0(a4),d0
+	lea	LogImgTime(pc),a0
+	suba.l	a1,a1
+	jsr	LogEvent
+	move.l	(sp)+,d0		; making the bitmap
+	sub.l	g_DecT1(a4),d0
+	lea	LogImgConv(pc),a0
+	suba.l	a1,a1
+	jsr	LogEvent
+	tst.l	d7
 	beq.s	.fail
 	move.l	g_PbmMask(a4),a0
 	bsr	AddImage
@@ -401,12 +635,67 @@ PicWork:
 	move.l	g_DecW(a4),d1
 	jsr	PicDecode
 	beq.s	.x
+	tst.l	g_DecTile(a4)		; a background: tiled
+	beq.s	.nt
+	bsr	PicTile
+	beq.s	.nb
+.nt:	bsr	Ticks			; (decoded: the time, for tests)
+	move.l	d0,g_DecT1(a4)
 	move.l	g_DecW(a4),d0
 	move.l	g_DecH(a4),d1
 	jsr	PicToBitMap
 	move.l	d0,g_DecObj(a4)
-	jsr	PicFree
+.nb:	jsr	PicFree
 .x:	rts
+
+; PicTile - the decoded image repeated to g_DecW x g_DecH (a multiple
+; of its size); Out: d0 = 0 if out of memory (CCR set)
+PicTile:
+	movem.l	d2-d5/a2-a3,-(sp)
+	move.l	g_DecW(a4),d0
+	mulu.l	g_DecH(a4),d0
+	lsl.l	#2,d0
+	jsr	PicAlloc
+	beq.s	.x
+	move.l	d0,a3			; a3 = the tiled image
+	move.l	d0,a1
+	moveq	#0,d3			; y
+.y:	cmp.l	g_DecH(a4),d3
+	bhs.s	.done
+	move.l	d3,d0			; source row: y mod h
+	divul.l	g_PicH(a4),d1:d0
+	move.l	d1,d0
+	mulu.l	g_PicW(a4),d0
+	move.l	g_PicData(a4),a2
+	lea	(a2,d0.l*4),a2
+	moveq	#0,d2			; x
+.x1:	cmp.l	g_DecW(a4),d2
+	bhs.s	.yn
+	move.l	d2,d0
+	divul.l	g_PicW(a4),d1:d0
+	move.l	(a2,d1.l*4),(a1)+
+	addq.l	#1,d2
+	bra.s	.x1
+.yn:	addq.l	#1,d3
+	bra.s	.y
+.done:	jsr	PicFree			; instead of the decoded one
+	move.l	a3,g_PicData(a4)
+	move.l	g_DecW(a4),g_PicW(a4)
+	move.l	g_DecH(a4),g_PicH(a4)
+	moveq	#1,d0
+.x:	movem.l	(sp)+,d2-d5/a2-a3
+	rts
+
+; Ticks - the time in ticks (1/50 s); Out: d0
+Ticks:
+	lea	-12(sp),sp
+	move.l	sp,d1
+	DOS	DateStamp
+	move.l	4(sp),d0		; minutes * 3000 + ticks
+	mulu.l	#3000,d0
+	add.l	8(sp),d0
+	lea	12(sp),sp
+	rts
 
 ;--------------------------------------------------------------------
 ; WantedSize - the size an image is shown at: width=/height= (one of
@@ -654,6 +943,8 @@ PxAttr:
 ;--------------------------------------------------------------------
 ImagesFree:
 	move.l	a2,-(sp)
+	clr.l	g_BgList(a4)		; (their records are in the page)
+	clr.l	g_PageBgRec(a4)
 	clr.l	g_ImgCount(a4)
 	clr.l	g_ImgNext(a4)
 	move.l	g_ImgList(a4),a2

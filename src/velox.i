@@ -196,7 +196,7 @@ st_Align	rs.b	1
 st_White	rs.b	1
 st_List		rs.b	1
 st_Flags	rs.b	1
-st_pad		rs.b	1
+st_BgRep	rs.b	1		; background repeat: 1 x, 2 y (not inh.)
 st_Color	rs.l	1		; $RRGGBB
 st_Bg		rs.l	1		; $RRGGBB or -1 (not inherited)
 st_MTop		rs.w	1		; margins in pixels (not inherited)
@@ -206,6 +206,7 @@ st_MRight	rs.w	1
 st_Link		rs.l	1		; enclosing <a href> element
 st_Width	rs.w	1		; px; negative = percent; 0 = auto
 st_Height	rs.w	1
+st_BgImg	rs.l	1		; background image (record) or 0
 STYLE_SIZEOF	rs.b	0
 
 ;--------------------------------------------------------------------
@@ -250,6 +251,7 @@ cs_Spec		rs.l	1		; specificity: ids<<16|classes<<8|tags
 cs_Order	rs.l	1
 cs_MqMin	rs.w	1		; media query width range
 cs_MqMax	rs.w	1
+cs_Base		rs.l	1		; URL its sheet came from, 0: the page
 CS_SIZEOF	rs.b	0
 
 CSS_IDBUCKETS	equ	64
@@ -264,6 +266,7 @@ CSS_MAXMATCH	equ	64		; matched rules kept per element
 BAND_SHIFT	equ	2
 BAND_H		equ	1<<BAND_SHIFT
 BANDS_MAX	equ	320
+VIEWKEYS	equ	6		; (gui.s ViewKey: as many)
 BAND_GAP	equ	6		; unchanged bands painted to join two
 STRIP_H		equ	32
 PIC_MAXSIDE	equ	8192		; images decoded at most this wide/high
@@ -337,6 +340,17 @@ im_Mask		rs.l	1		; its mask plane (set: drawn) or 0
 im_W		rs.w	1
 im_H		rs.w	1
 IMG_SIZEOF	rs.b	0
+
+; a background image (img.s); its ImageInfo is where a node's n_Data2
+; is, so that AddImage serves both
+	RSRESET
+bg_Next		rs.l	1
+bg_State	rs.l	1		; 0: to be loaded
+bg_W		rs.l	1		; natural size
+bg_H		rs.l	1
+		rs.l	2
+bg_Info		rs.l	1		; (= n_Data2) ImageInfo or 0
+bg_Url		rs.b	0		; absolute, NUL terminated
 
 ;--------------------------------------------------------------------
 ; Global data block, addressed as xxx(a4)
@@ -563,6 +577,21 @@ g_SelBOff	rs.l	1
 g_SelFrom	rs.l	1		; scratch
 g_PaintIdx	rs.l	1		; index of the run being painted
 g_PageGen	rs.l	1		; counts the pages shown
+g_PageBgRec	rs.l	1		; the page's background image (record)
+g_PageBgRep	rs.l	1		; ... repeated: 1 x, 2 y
+g_BgList	rs.l	1		; background image records (img.s)
+g_RunImg	rs.l	1		; layout: image of the next RECT run
+g_RunRep	rs.l	1		; ... repeated
+g_CssBase	rs.l	1		; URL of the sheet being used, or 0
+g_DecTile	rs.l	1		; decoding a background: tile it to
+g_DecTarget	rs.l	1		; ... where its ImageInfo goes
+g_TlX0		rs.l	1		; TileRect: the area (window),
+g_TlY0		rs.l	1
+g_TlX1		rs.l	1
+g_TlY1		rs.l	1
+g_TlOX		rs.l	1		; ... the origin of the tiles,
+g_TlOY		rs.l	1
+g_TlRep		rs.l	1		; ... repeated: 1 x, 2 y
 ; image decoders (pic.s, gif.s ...): one image at a time
 g_PicW		rs.l	1		; the decoded image: size,
 g_PicH		rs.l	1
@@ -711,6 +740,8 @@ g_DecObj	rs.l	1		; ... with this result
 g_DecJob	rs.l	1		; ... of this job
 g_DecW		rs.l	1		; the size it is wanted at
 g_DecH		rs.l	1
+g_DecT0		rs.l	1		; (the time it began,
+g_DecT1		rs.l	1		; was decoded)
 g_PalReady	rs.l	1		; picbm.s: the colour cube is there
 g_PalLevels	rs.l	1		; levels of each colour
 g_PalCount	rs.l	1		; pens obtained
@@ -727,7 +758,7 @@ g_PbmRP		rs.b	rp_SIZEOF	; RastPort on the bitmap
 g_Cube		rs.b	216		; the pens of the colour cube
 g_BandsOk	rs.l	1		; g_Bands tells what is on the screen
 g_BandN		rs.l	1		; bands in the view
-g_BandView	rs.l	5		; ViewKey (gui.s) of g_Bands
+g_BandView	rs.l	VIEWKEYS	; ViewKey (gui.s) of g_Bands
 g_StripBM	rs.l	1		; off-screen strip for painting
 g_StripLI	rs.l	1		; its LayerInfo
 g_StripLayer	rs.l	1		; its layer (0: no strip)
@@ -752,6 +783,8 @@ g_PageUrl	rs.b	URL_MAX		; URL of the page shown
 g_NavUrl	rs.b	URL_MAX		; URL being loaded
 g_LinkUrl	rs.b	URL_MAX
 ; (large arrays last: the rest stays in reach of 16-bit offsets)
+g_BgUrl		rs.b	URL_MAX		; a background image's URL
+g_BgAbs		rs.b	URL_MAX		; ... resolved
 g_Bands		rs.l	BANDS_MAX	; signature of each band on the screen
 g_BandsNew	rs.l	BANDS_MAX	; ... and of the runs now
 g_Vis		rs.l	VIS_MAX		; indexes of the runs being painted

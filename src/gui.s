@@ -761,7 +761,10 @@ GuiRefresh:
 
 ; what the bands depend on besides the runs (a highlight cleared by a
 ; relayout, too)
-ViewKey:	dc.w	g_PageW,g_PageH,g_PageBg,g_FindRun,g_SelShown,0
+ViewKey:	dc.w	g_PageW,g_PageH,g_PageBg,g_PageBgRec,g_FindRun,g_SelShown,0
+	IFNE	(*-ViewKey)/2-1-VIEWKEYS
+	FAIL	"ViewKey: VIEWKEYS (velox.i) must match"
+	ENDIF
 LogPaint:	dc.b	"paint",0
 	even
 
@@ -836,8 +839,12 @@ RunSig:
 	cmp.b	#RT_WIDGET,ru_Type(a2)	; controls and images: the same only
 	beq.s	.page			; on the same page
 	cmp.b	#RT_IMAGE,ru_Type(a2)
-	bne.s	.x
-	move.l	ru_Text(a2),a0		; loaded or not
+	beq.s	.img
+	cmp.b	#RT_RECT,ru_Type(a2)	; a background image (its record
+	bne.s	.x			; has bg_Info where n_Data2 is)
+	tst.l	ru_Text(a2)
+	beq.s	.x
+.img:	move.l	ru_Text(a2),a0		; loaded or not
 	rol.l	#5,d0
 	add.l	n_Data2(a0),d0
 .page:	rol.l	#5,d0
@@ -855,6 +862,163 @@ RunSig:
 	subq.l	#1,d2
 	bne.s	.t
 .x:	movem.l	(sp)+,d2
+	rts
+
+;--------------------------------------------------------------------
+; PageBgImage - the page's background image (if loaded) over d0/d1 -
+; d2/d3 (window coordinates as the view is set up), from the top left
+; of the document
+;--------------------------------------------------------------------
+PageBgImage:
+	movem.l	d0-d3,g_TlX0(a4)	; (TlX0, TlY0, TlX1, TlY1)
+	move.l	g_PageBgRec(a4),d0
+	beq.s	.x
+	move.l	d0,a0
+	tst.l	bg_Info(a0)
+	beq.s	.x
+	move.l	g_PageX(a4),g_TlOX(a4)
+	move.l	g_PageY(a4),d0
+	sub.l	g_ScrollY(a4),d0
+	move.l	d0,g_TlOY(a4)
+	move.l	g_PageBgRep(a4),g_TlRep(a4)
+	move.l	a3,a1
+	bra	TileRect
+.x:	rts
+
+;--------------------------------------------------------------------
+; TileRect - a background image (record a0) repeated over the area
+; g_TlX0/Y0 - X1/Y1 of RastPort a1, clipped to the view: tiles from the
+; origin g_TlOX/OY, repeated across (g_TlRep bit 0) and down (bit 1)
+;--------------------------------------------------------------------
+TileRect:
+	movem.l	d2-d7/a2-a3/a5,-(sp)
+	move.l	a0,a5			; a5 = record
+	move.l	a1,a3			; a3 = RastPort
+	move.l	bg_Info(a5),a2		; a2 = its ImageInfo
+	; the area, within the view
+	move.l	g_TlY0(a4),d0
+	move.l	g_PageY(a4),d1
+	cmp.l	d1,d0
+	bge.s	.y0
+	move.l	d1,d0
+.y0:	move.l	d0,g_TlY0(a4)
+	add.l	g_PageH(a4),d1
+	subq.l	#1,d1
+	cmp.l	g_TlY1(a4),d1
+	bge.s	.y1
+	move.l	d1,g_TlY1(a4)
+.y1:	move.l	g_TlX0(a4),d0
+	move.l	g_PageX(a4),d1
+	cmp.l	d1,d0
+	bge.s	.x0
+	move.l	d1,d0
+.x0:	move.l	d0,g_TlX0(a4)
+	add.l	g_PageW(a4),d1
+	subq.l	#1,d1
+	cmp.l	g_TlX1(a4),d1
+	bge.s	.x1
+	move.l	d1,g_TlX1(a4)
+.x1:	move.l	g_TlY0(a4),d0
+	cmp.l	g_TlY1(a4),d0
+	bgt	.x
+	move.l	g_TlX0(a4),d0
+	cmp.l	g_TlX1(a4),d0
+	bgt	.x
+	; tile size: the (tiled) bitmap when repeated, else one image
+	moveq	#0,d4
+	move.w	im_W(a2),d4
+	btst	#0,g_TlRep+3(a4)
+	bne.s	.w
+	move.l	bg_W(a5),d4
+.w:	moveq	#0,d5
+	move.w	im_H(a2),d5
+	btst	#1,g_TlRep+3(a4)
+	bne.s	.h
+	move.l	bg_H(a5),d5
+.h:	; the first row and column of tiles in the area
+	move.l	g_TlOY(a4),d6		; d6 = tile y
+	btst	#1,g_TlRep+3(a4)
+	beq.s	.fy
+	move.l	g_TlY0(a4),d0
+	sub.l	d6,d0
+	bmi.s	.fy
+	divul.l	d5,d1:d0
+	mulu.l	d5,d0
+	add.l	d0,d6
+.fy:	move.l	g_TlOX(a4),d7		; d7 = first tile x
+	btst	#0,g_TlRep+3(a4)
+	beq.s	.fx
+	move.l	g_TlX0(a4),d0
+	sub.l	d7,d0
+	bmi.s	.fx
+	divul.l	d4,d1:d0
+	mulu.l	d4,d0
+	add.l	d0,d7
+.fx:	move.l	d7,-(sp)		; (the first column again each row)
+.ty:	cmp.l	g_TlY1(a4),d6
+	bgt	.done
+	move.l	(sp),d7
+.tx:	cmp.l	g_TlX1(a4),d7
+	bgt	.tyn
+	; the tile at d7/d6 within the area
+	move.l	d7,d2			; dest x0 = max(tile x, area x0)
+	cmp.l	g_TlX0(a4),d2
+	bge.s	.a
+	move.l	g_TlX0(a4),d2
+.a:	move.l	d7,d0			; x1 = min(tile x + w - 1, area x1)
+	add.l	d4,d0
+	subq.l	#1,d0
+	cmp.l	g_TlX1(a4),d0
+	ble.s	.b
+	move.l	g_TlX1(a4),d0
+.b:	sub.l	d2,d0
+	bmi.s	.txn
+	addq.l	#1,d0
+	move.l	d0,-(sp)		; width
+	move.l	d6,d3			; dest y0
+	cmp.l	g_TlY0(a4),d3
+	bge.s	.c
+	move.l	g_TlY0(a4),d3
+.c:	move.l	d6,d0
+	add.l	d5,d0
+	subq.l	#1,d0
+	cmp.l	g_TlY1(a4),d0
+	ble.s	.d
+	move.l	g_TlY1(a4),d0
+.d:	sub.l	d3,d0
+	bmi.s	.skip
+	addq.l	#1,d0
+	movem.l	d4-d7,-(sp)
+	move.l	d0,d5			; height
+	move.l	16(sp),d4		; width
+	move.l	d2,d0			; source: the offset in the tile
+	sub.l	d7,d0
+	move.l	d3,d1
+	sub.l	d6,d1
+	move.l	im_BitMap(a2),a0
+	move.l	a3,a1
+	move.l	im_Mask(a2),d6
+	bne.s	.m
+	move.l	#$c0,d6
+	GFX	BltBitMapRastPort
+	bra.s	.bd
+.m:	move.l	a2,-(sp)
+	move.l	d6,a2
+	move.l	#$e0,d6
+	GFX	BltMaskBitMapRastPort
+	move.l	(sp)+,a2
+.bd:	movem.l	(sp)+,d4-d7
+.skip:	addq.l	#4,sp
+.txn:	btst	#0,g_TlRep+3(a4)	; not repeated: one tile only
+	beq.s	.tyn
+	add.l	d4,d7
+	bra	.tx
+.tyn:	btst	#1,g_TlRep+3(a4)
+	beq.s	.done
+	add.l	d5,d6
+	bra	.ty
+.done:	addq.l	#4,sp
+.x:	movem.l	(sp)+,d2-d7/a2-a3/a5
 	rts
 
 ;--------------------------------------------------------------------
@@ -910,6 +1074,12 @@ PaintRange:
 	subq.l	#1,d2
 	moveq	#STRIP_H-1,d3
 	GFX	RectFill
+	moveq	#0,d0			; the page's background image
+	moveq	#0,d1
+	move.l	g_PageW(a4),d2
+	subq.l	#1,d2
+	moveq	#STRIP_H-1,d3
+	bsr	PageBgImage
 	move.l	d6,d0
 	move.l	d5,d1
 	bsr	PaintRuns
@@ -978,7 +1148,10 @@ PaintRange:
 	ext.l	d1
 	ext.l	d2
 	ext.l	d3
+	movem.l	d0-d3,-(sp)
 	GFX	RectFill
+	movem.l	(sp)+,d0-d3
+	bsr	PageBgImage
 	move.l	d6,d0
 	move.l	d7,d1
 	bsr	PaintRuns
@@ -1201,6 +1374,8 @@ PaintRun:
 	bne	.x
 	bra.s	.box
 .notimg:
+	cmp.b	#RT_RECT,d0
+	beq.s	.rect
 	cmp.b	#RT_BULLET,d0
 	bne.s	.fill
 	cmp.l	#LIST_CIRCLE,ru_Len(a2)
@@ -1211,6 +1386,34 @@ PaintRun:
 	move.l	d4,d2
 	move.l	d5,d3
 	GFX	RectFill
+	bra.s	.x
+.rect:	tst.l	ru_Color(a2)		; a background: its colour,
+	bmi.s	.rimg
+	movem.l	d2-d3,-(sp)
+	move.l	a3,a1
+	move.l	d2,d0
+	move.l	d3,d1
+	move.l	d4,d2
+	move.l	d5,d3
+	GFX	RectFill
+	movem.l	(sp)+,d2-d3
+.rimg:	move.l	ru_Text(a2),d0		; ... its image, repeated
+	beq.s	.x
+	move.l	d0,a0
+	tst.l	bg_Info(a0)
+	beq.s	.x
+	move.l	d2,g_TlX0(a4)
+	move.l	d3,g_TlY0(a4)
+	move.l	d4,g_TlX1(a4)
+	move.l	d5,g_TlY1(a4)
+	move.l	d2,g_TlOX(a4)		; (from the box's top left)
+	move.l	ru_Y(a2),d0
+	sub.l	g_ScrollY(a4),d0
+	add.l	g_PageY(a4),d0
+	move.l	d0,g_TlOY(a4)
+	move.l	ru_Len(a2),g_TlRep(a4)
+	move.l	a3,a1
+	bsr	TileRect
 	bra.s	.x
 .box:	move.l	a3,a1
 	move.l	d2,d0

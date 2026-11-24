@@ -24,6 +24,7 @@
 	xdef	CssReset,CssAddSheet,CssApply,CssInvalidate,CssLoad
 	xref	PageAlloc,DomGetAttr,TagLookup,ToLower,ParseColor,ParseLength
 	xref	StrIPrefix,StrIFind,ParseDec,HttpGetCached,UrlResolve,DecodeCharset
+	xref	BgFind
 	xref	BufFree,GuiStatus
 
 MAX_SHEETS	equ	8		; linked style sheets fetched per page
@@ -69,6 +70,8 @@ CP_LEFT		rs.b	1
 CP_TOP		rs.b	1
 CP_OPACITY	rs.b	1
 CP_FLOAT	rs.b	1
+CP_BGIMAGE	rs.b	1
+CP_BGREPEAT	rs.b	1
 CP_COUNT	rs.b	0
 
 	section	code,code
@@ -199,8 +202,19 @@ CssLoad:
 	move.l	g_PageCharset(a4),-(sp)	; (keep the page's charset)
 	jsr	DecodeCharset
 	move.l	(sp)+,g_PageCharset(a4)
+	lea	g_LinkUrl(a4),a0	; url()s are relative to the sheet
+	bsr	StrLenA0
+	addq.l	#1,d0
+	jsr	PageAlloc
+	beq.s	.nb
+	move.l	d0,a1
+	lea	g_LinkUrl(a4),a0
+.cu:	move.b	(a0)+,(a1)+
+	bne.s	.cu
+.nb:	move.l	d0,g_CssBase(a4)
 	move.l	a2,a0
 	bsr	CssAddSheet
+	clr.l	g_CssBase(a4)
 .fetched:
 	lea	g_Resp+r_Body(a4),a0
 	jsr	BufFree
@@ -1039,6 +1053,8 @@ PropNames:
 	PN	CP_COLOR,"color"
 	PN	CP_BGCOLOR,"background-color"
 	PN	CP_BACKGROUND,"background"
+	PN	CP_BGIMAGE,"background-image"
+	PN	CP_BGREPEAT,"background-repeat"
 	PN	CP_FONTWEIGHT,"font-weight"
 	PN	CP_FONTSTYLE,"font-style"
 	PN	CP_TEXTDECO,"text-decoration"
@@ -1659,6 +1675,7 @@ AddRule:
 	addq.l	#1,g_CssRules(a4)
 	move.w	g_CssMqMin(a4),cs_MqMin(a2)
 	move.w	g_CssMqMax(a4),cs_MqMax(a2)
+	move.l	g_CssBase(a4),cs_Base(a2)
 	tst.w	cs_MqMin(a2)
 	bne.s	.mq
 	cmp.w	#$7fff,cs_MqMax(a2)
@@ -1761,6 +1778,7 @@ CssApply:
 	bra.s	.re
 .rl:	move.l	(a0)+,a1
 	move.l	a0,-(sp)
+	move.l	cs_Base(a1),g_CssBase(a4)	; (for url())
 	move.l	cs_Decls(a1),a0
 	move.l	d2,d0
 	move.l	a3,a1
@@ -2374,7 +2392,8 @@ PropJump:
 	dc.w	PMaxWidth-PropJump,PListType-PropJump,PListType-PropJump
 	dc.w	PVisibility-PropJump,PHeight-PropJump,PClip-PropJump
 	dc.w	PPosition-PropJump,PLeftTop-PropJump,PLeftTop-PropJump
-	dc.w	POpacity-PropJump,PFloat-PropJump
+	dc.w	POpacity-PropJump,PFloat-PropJump,PBgImage-PropJump
+	dc.w	PBgRepeat-PropJump
 
 ; Kw - is the value (a0) the keyword a1 (lower case), as a whole word?
 ; Out: Z clear if yes; a0 kept
@@ -2496,30 +2515,39 @@ PBgColor:
 	move.l	d0,st_Bg(a3)
 	rts
 
-PBackground:				; the colour in a shorthand
+PBackground:				; colour, image, repeat in a shorthand
+	clr.l	st_BgImg(a3)
+	move.b	#3,st_BgRep(a3)
 	move.l	a2,a0
 	lea	KwNone(pc),a1
 	bsr	Kw
-	bne.s	.none
+	bne	.none
 	move.l	a2,a0
 	lea	KwTransparent(pc),a1
 	bsr	Kw
-	bne.s	.none
-.l:	move.l	a2,a0			; try every word as a colour
+	bne	.none
+.l:	move.l	a2,a0			; every word
 	bsr	SkipWs
 	move.l	a0,a2
 	tst.b	(a2)
-	beq.s	.x
+	beq	.x
 	move.l	a2,a0
-	lea	KwUrl(pc),a1		; url(...) images: skip the word
+	lea	KwUrl(pc),a1		; url(...): the image
 	jsr	StrIPrefix
-	bne.s	.next
+	beq.s	.nu
+	bsr	BgUrl
+	move.l	d0,st_BgImg(a3)
+	bra.s	.next
+.nu:	move.l	a2,a0			; repeat keywords
+	bsr	Repeat
+	bpl.s	.rep
 	move.l	a2,a0
 	jsr	ParseColor
 	tst.l	d0
 	bmi.s	.next
 	move.l	d0,st_Bg(a3)
-	rts
+	bra.s	.next
+.rep:	move.b	d0,st_BgRep(a3)
 .next:	moveq	#0,d1			; skip a word (with parentheses)
 .w:	move.b	(a2),d0
 	beq.s	.x
@@ -2539,6 +2567,92 @@ PBackground:				; the colour in a shorthand
 .none:	moveq	#-1,d0
 	move.l	d0,st_Bg(a3)
 	rts
+
+PBgImage:				; url(...) or none
+	clr.l	st_BgImg(a3)
+	move.l	a2,a0
+	bsr	SkipWs
+	lea	KwUrl(pc),a1
+	jsr	StrIPrefix
+	beq.s	.x
+	bsr	BgUrl
+	move.l	d0,st_BgImg(a3)
+.x:	rts
+
+PBgRepeat:
+	move.l	a2,a0
+	bsr	SkipWs
+	bsr	Repeat
+	bmi.s	.x
+	move.b	d0,st_BgRep(a3)
+.x:	rts
+
+; Repeat - a repeat keyword at a0: repeat 3, repeat-x 1, repeat-y 2,
+; no-repeat 0
+; Out: d0, or -1 if none (CCR set)
+Repeat:
+	move.l	a0,-(sp)
+	lea	KwNoRepeat(pc),a1
+	bsr	Kw
+	bne.s	.r0
+	lea	KwRepeatX(pc),a1
+	bsr	Kw
+	bne.s	.r1
+	lea	KwRepeatY(pc),a1
+	bsr	Kw
+	bne.s	.r2
+	lea	KwRepeat(pc),a1
+	bsr	Kw
+	bne.s	.r3
+	moveq	#-1,d0
+	bra.s	.x
+.r0:	moveq	#0,d0
+	bra.s	.x
+.r1:	moveq	#1,d0
+	bra.s	.x
+.r2:	moveq	#2,d0
+	bra.s	.x
+.r3:	moveq	#3,d0
+.x:	movem.l	(sp)+,a0
+	tst.l	d0
+	rts
+
+; BgUrl - the image of url(...) at a0 (after "url("), relative to the
+; rule's sheet (g_CssBase) or the page
+; Out: d0 = its background record or 0
+BgUrl:
+	bsr	SkipWs
+	move.b	(a0),d1			; quoted?
+	cmp.b	#'"',d1
+	beq.s	.q
+	cmp.b	#39,d1
+	beq.s	.q
+	moveq	#')',d1
+	bra.s	.c
+.q:	addq.l	#1,a0
+.c:	lea	g_BgUrl(a4),a1
+	move.l	#URL_MAX-1,d0
+.cp:	tst.b	(a0)
+	beq.s	.e
+	cmp.b	(a0),d1
+	beq.s	.e
+	cmp.b	#')',d1			; (unquoted: a blank ends it too)
+	bne.s	.cc
+	cmp.b	#' ',(a0)
+	bls.s	.e
+.cc:	move.b	(a0)+,(a1)+
+	subq.l	#1,d0
+	bne.s	.cp
+.e:	clr.b	(a1)
+	lea	g_BgUrl(a4),a0
+	move.l	g_CssBase(a4),a1
+	jmp	BgFind
+
+KwNoRepeat:	dc.b	"no-repeat",0
+KwRepeatX:	dc.b	"repeat-x",0
+KwRepeatY:	dc.b	"repeat-y",0
+KwRepeat:	dc.b	"repeat",0
+	even
 
 PWeight:
 	move.l	a2,a0

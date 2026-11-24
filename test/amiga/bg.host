@@ -1,0 +1,29 @@
+#!/usr/bin/env python3
+"""Host side of bg.script: wait for the images, take a screenshot."""
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from xdrive import Amiga, wait_log  # noqa: E402
+
+r = sys.argv[1]
+log = os.path.join(r, "bg.log")
+out = open(os.path.join(r, "bg.driver"), "w")
+try:
+    a = Amiga()
+    lines = wait_log(log, "images ", timeout=120)
+    bgs = [l for l in lines if l.startswith("bg ")]
+    out.write("".join("background: %s\n" % l[3:] for l in bgs))
+    if len(bgs) != 3 or any(not l.endswith(" 1") for l in bgs):
+        raise AssertionError("not all 3 backgrounds decoded")
+    time.sleep(2)
+    a.shot(os.path.join(r, "bg.png"))
+    a.key("ctrl+q")
+    out.write("ok\n")
+except Exception as e:
+    out.write("FAIL %r\n" % e)
+    try:
+        Amiga().key("ctrl+q")
+    except Exception:
+        pass

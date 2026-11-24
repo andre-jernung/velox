@@ -120,6 +120,9 @@ JS is not on the roadmap yet, but it must stay possible to add. That means:
 10. [x] Text selection to the clipboard, type-ahead while loading,
    transfer progress, window geometry, public screen setting, floating
    images, rowspan, media query ranges, HTTP Basic authentication.
+11. [x] Painting without flicker (off-screen strips, only what changed),
+   staying responsive while loading (non-blocking sockets, a decoder
+   process), Velox's own JPEG/PNG/GIF/WebP decoders, background images.
 
 ## Modules
 
@@ -141,7 +144,10 @@ JS is not on the roadmap yet, but it must stay possible to add. That means:
 | layout.s    | blocks, inline text, replaced elements: the run list            |
 | table.s     | automatic table layout                                          |
 | forms.s     | form controls, editing, submission                              |
-| img.s       | images through datatypes.library                                |
+| img.s       | loading images (also backgrounds), the decoder process, datatypes |
+| pic.s       | image formats, the decoded image (ARGB)                         |
+| gif.s png.s jpeg.s webp.s vp8.s vp8l.s inflate.s | the decoders     |
+| picbm.s     | decoded images to bitmaps: colour cube, dither, mask            |
 | gui.s       | window, gadgets, menus, painting, events                        |
 | find.s      | find in page                                                    |
 | sel.s       | selecting text with the mouse                                   |
@@ -152,11 +158,51 @@ Everything is tested on AmigaOS 3.1 and 3.2 (see CLAUDE.md).
 
 ## Images
 
-Pictures are decoded by whatever picture datatypes the system has.
-OS 3.1 ships only ILBM. OS 3.2 adds PNG, GIF and BMP. JPEG needs a
-third-party datatype. The akJFIF datatype from Aminet did not work in the
-OS 3.2 test system, even in MultiView. Images that cannot be decoded keep
-their placeholder box (with width/height) or show their alt text.
+Velox decodes the web's formats itself, from the response in memory:
+GIF (gif.s), PNG (png.s with inflate.s), JPEG (jpeg.s: baseline and
+progressive) and WebP (webp.s, vp8.s lossy, vp8l.s lossless, alpha).
+The decoders write ARGB pixels (pic.s). They use no Velox state but
+their own and allocate with AllocVec, because they run in the image
+decoder process. They never read past their input or write past what
+they allocated, whatever the file contains (the headless tests feed
+them cut and damaged files).
+
+- JPEG uses libjpeg's fast integer inverse DCT. When an image is shown at
+  1/8 of its size or less, only the DC coefficients are used.
+- WebP follows libwebp step by step, including its "fancy" chroma
+  upsampling. The headless tests check that lossy WebP comes out with
+  exactly libwebp's pixels, and that PNG, GIF and lossless WebP come out
+  exactly as PIL decodes them. JPEG is checked against libjpeg
+  (`djpeg -nosmooth`) within a tolerance.
+
+picbm.s turns the pixels into a bitmap like the screen's. It obtains a
+colour cube of pens once, with 2 to 6 levels by the screen depth, and
+scales to the size shown (nearest pixel). It dithers with a 4x4 ordered
+matrix through tables, and pixels less than half opaque go into a mask
+plane. Other formats (ILBM, BMP ...) still go through datatypes.library.
+Images that cannot be decoded keep their placeholder box (with
+width/height) or show their alt text.
+
+Background images (`background="..."`, CSS `url()`) get one record per
+URL (img.s `BgFind`), so a tile used by many cells is fetched once. A
+URL in a linked style sheet resolves against the sheet's URL. They load
+before the `<img>`s, are tiled from the box's top left (`repeat`,
+`repeat-x`, `repeat-y`, `no-repeat`), and small ones are pre-tiled to
+64 pixels or more so that painting them takes few blits.
+
+Speed on a stock A1200 (14 MHz 68020, `SPEED=real test/emu.sh --auto
+speed`), for a 640x480 picture shown 400 wide (seconds):
+
+| Format           | decode | bitmap |
+|------------------|--------|--------|
+| baseline JPEG    | 9.5    | 2.7    |
+| progressive JPEG | 13.7   | 2.7    |
+| PNG              | 17.4   | 2.8    |
+| WebP (lossy)     | 35.9   | 2.8    |
+| GIF              | 3.2    | 2.7    |
+
+These are first, unoptimized versions: the inner loops still go through
+subroutines per symbol and per pixel.
 
 ## Known issues
 
