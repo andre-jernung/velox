@@ -12,7 +12,7 @@ and a single event dispatch point.
   when a feature needs it. Keep the code small and optimized, but don't
   give up a realistic solution (correctness, responsiveness) to stay
   under it.
-- `make lint`: static checks of the register conventions below (d1/a1
+- `make lint`: static checks of the register conventions below (d1/a1/a6
   used after a call, routines whose callers test flags not set from d0).
   It must stay clean. A routine that keeps or returns d1/a1 says so in
   its header ("Out: ... d1 = ...", "(d1 kept)"), which the lint reads.
@@ -64,7 +64,8 @@ and a single event dispatch point.
   `move.l (sp)+,dN`. A `move` sets the CCR from the restored value and
   destroys the result flags the caller tests (this bug happened).
 - Library calls use the `EXEC`/`DOS`/`INTUI`/`GFX` macros, which load a6
-  themselves.
+  themselves. So never keep a value in a6 across a call (this bug
+  happened twice in the image decoders).
 - Call routines in other modules with `jsr`/`jmp`, never `bsr`/`bra`. The
   code is larger than 32 KB, so 16-bit branches between modules don't
   reach. vasm turns `jsr` into a 32-bit `bsr.l` on the 68020. Conditional

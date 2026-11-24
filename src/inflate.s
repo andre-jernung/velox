@@ -130,7 +130,7 @@ Fill:
 	bra.s	.l			; error: OVER)
 .x:	rts
 
-; Bits - the next d0 bits (up to 16); Out: d0
+; Bits - the next d0 bits (up to 16); Out: d0 (a6 kept)
 Bits:
 	cmp.l	d0,d3
 	bge.s	.h
@@ -147,7 +147,7 @@ Bits:
 	rts
 
 ; Decode - the next symbol of Huffman table a0
-; Out: d0 = symbol, -1 if no code matches
+; Out: d0 = symbol, -1 if no code matches (a6 kept)
 Decode:
 	cmp.l	#15,d3
 	bge.s	.h

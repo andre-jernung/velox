@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Static checks for the register conventions in CLAUDE.md.
 
-1. scratch: d1 or a1 read after a call (jsr/bsr or a library macro)
-   without being written in between.  Calls may destroy d0-d1/a0-a1;
+1. scratch: d1, a1 or a6 read after a call (jsr/bsr or a library
+   macro) without being written in between.  Calls may destroy
+   d0-d1/a0-a1/a6 (the library macros load a6 with the library base);
    d0 is the result and many helpers return a pointer in a0, so only
-   d1/a1 are checked.  Straight-line code only (a label ends a run).
+   d1/a1/a6 are checked.  Straight-line code only (a label ends a run).
 2. ccr: a routine whose callers branch on the flags right after the call
    must leave the CCR set from d0 at every rts, unless its header says
    the result is in the Z flag ("Z clear"/"Z set").
@@ -96,8 +97,8 @@ def scratch(files):
             if mn.startswith(("jsr", "bsr")) or mn in CALL_MACROS:
                 callee = src.strip()
                 h = hdr.get(callee, "")
-                for r in ("d1", "a1"):
-                    if callee not in KEEPS and not returns(h, r):
+                for r in ("d1", "a1", "a6"):
+                    if mn in CALL_MACROS or (callee not in KEEPS or r == "a6") and not returns(h, r):
                         clob[r] = n
                     else:
                         clob.pop(r, None)
