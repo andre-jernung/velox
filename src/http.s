@@ -560,6 +560,12 @@ ReadBody:
 	move.l	r_Body+buf_Data(a3),a0
 	add.l	r_Body+buf_Len(a3),a0
 	clr.b	(a0)
+	move.l	g_ProgressHook(a4),d0	; progress (status line)
+	beq.s	.l
+	move.l	d0,a0
+	move.l	r_Body+buf_Len(a3),d0
+	move.l	r_Length(a3),d1
+	jsr	(a0)
 	bra.s	.l
 .ok:	moveq	#0,d0
 .x:	movem.l	(sp)+,d2-d3

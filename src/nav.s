@@ -16,6 +16,7 @@
 	xref	ClipCopy
 	xref	GuiStatus,GuiSetUrl,GuiSetTitle,GuiPaintAll,GuiBusy,GuiNetHook
 	xref	GuiPageWidth,GuiScrollTo,LogEvent,CssLoad,BufFree,ImagesStart
+	xref	GuiProgress
 
 HIST_MAX	equ	HIST_ENTRIES
 NAV_HISTORY	equ	1
@@ -66,6 +67,10 @@ NavGo:
 	move.l	d0,g_AbortMask(a4)
 	lea	GuiNetHook,a0
 	move.l	a0,g_NetSigHook(a4)
+	lea	GuiProgress,a0		; "Received 12 of 40 KB"
+	move.l	a0,g_ProgressHook(a4)
+	moveq	#-1,d0
+	move.l	d0,g_ProgKB(a4)
 	lea	LogGo(pc),a0
 	lea	g_NavUrl(a4),a1
 	move.l	#$80000000,d0
@@ -119,6 +124,7 @@ NavGo:
 	move.l	#URL_MAX-1,d0
 	jsr	StrCopyN
 	bsr	PageFixups
+	clr.l	g_ProgressHook(a4)	; (style sheets: their own message)
 	jsr	CssLoad
 	clr.l	g_NetSigHook(a4)
 	tst.l	g_Quit(a4)

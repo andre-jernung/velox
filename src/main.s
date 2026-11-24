@@ -221,7 +221,17 @@ LoadSettings:
 	lea	SRam(pc),a0
 .dc:	move.b	(a0)+,(a1)+
 	bne.s	.dc
-.dl:	lea	VarHome(pc),a0		; Velox/Home: the home page
+.dl:	lea	VarPubScr(pc),a0	; Velox/PubScreen: the screen
+	move.l	a0,d1
+	lea	g_PubScreen(a4),a0
+	move.l	a0,d2
+	moveq	#63,d3
+	moveq	#0,d4
+	DOS	GetVar
+	tst.l	d0
+	bgt.s	.ps
+	clr.b	g_PubScreen(a4)
+.ps:	lea	VarHome(pc),a0		; Velox/Home: the home page
 	move.l	a0,d1
 	lea	g_HomeUrl(a4),a0
 	move.l	a0,d2
@@ -261,6 +271,7 @@ VarInsecure:	dc.b	"Velox/InsecureTLS",0
 VarDlDir:	dc.b	"Velox/DownloadDir",0
 VarNoImg:	dc.b	"Velox/NoImages",0
 VarHome:	dc.b	"Velox/Home",0
+VarPubScr:	dc.b	"Velox/PubScreen",0
 SRam:		dc.b	"RAM:",0
 	even
 
@@ -324,7 +335,13 @@ ToolTypes:
 	move.l	a1,g_ArgArray+ARG_LOG(a4)
 	move.l	#127,d0
 	jsr	StrCopyN
-.t6:	move.l	a3,a0
+.t6:	lea	TtPubScr(pc),a1		; PUBSCREEN=name
+	bsr	.find
+	beq.s	.t7
+	lea	g_PubScreen(a4),a1
+	moveq	#63,d0
+	jsr	StrCopyN
+.t7:	move.l	a3,a0
 	move.l	g_IconBase(a4),a6
 	jsr	_LVOFreeDiskObject(a6)
 .close:	move.l	g_IconBase(a4),a1
@@ -347,6 +364,7 @@ TtUrl:		dc.b	"URL",0
 TtDlDir:	dc.b	"DOWNLOADDIR",0
 TtNoImg:	dc.b	"NOIMAGES",0
 TtLog:		dc.b	"LOG",0
+TtPubScr:	dc.b	"PUBSCREEN",0
 	even
 
 ;--------------------------------------------------------------------

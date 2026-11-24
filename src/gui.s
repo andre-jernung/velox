@@ -15,9 +15,9 @@
 
 	xdef	GuiOpen,GuiClose,GuiEventLoop,GuiPaintAll,GuiStatus
 	xdef	GuiSetUrl,GuiSetTitle,GuiScrollTo,GuiNetHook,GuiBusy
-	xdef	GuiRelayout,GuiPageWidth,GuiAbout,DrawStatus,ImgNetHook
+	xdef	GuiRelayout,GuiPageWidth,GuiAbout,DrawStatus,ImgNetHook,GuiProgress
 	xref	FindStart,FindKey,FindHighlight,KeyToChars,NavRefresh
-	xref	CopyAddress,ViewSource
+	xref	CopyAddress,ViewSource,ParseDec,FmtDec,StrCopy
 	xref	LayoutDocument,RunCount,RunPtr,StrLen,StrCopyN
 	xref	NavGo,NavBack,NavForward,NavReload,NavHome,NavLink,UrlFixup
 	xref	DomGetAttr,LogEvent,FormStateOf,FormIsControl,FormActivate
@@ -62,10 +62,17 @@ QUAL_COMMAND	equ	IEQUALIFIER_CONTROL|IEQUALIFIER_LCOMMAND|IEQUALIFIER_RCOMMAND
 ;--------------------------------------------------------------------
 GuiOpen:
 	movem.l	d2/a2,-(sp)
-	suba.l	a0,a0
+	lea	g_PubScreen(a4),a0	; a named public screen, or the
+	tst.b	(a0)			; default one
+	beq.s	.def
+	INTUI	LockPubScreen
+	move.l	d0,g_Screen(a4)
+	bne.s	.scr
+.def:	suba.l	a0,a0
 	INTUI	LockPubScreen
 	move.l	d0,g_Screen(a4)
 	beq	.fail
+.scr:
 	move.l	d0,a0
 	move.l	sc_ViewPort+vp_ColorMap(a0),g_ColorMap(a4)
 	suba.l	a1,a1
@@ -112,6 +119,7 @@ GuiOpen:
 	move.l	#460,d0
 .h:	move.l	d0,WinTagH+4
 	move.l	d1,WinTagT+4
+	bsr	WinGeometry		; as it was last time
 	move.l	g_Screen(a4),WinTagScr+4
 	suba.l	a0,a0
 	lea	WinTags,a1
@@ -174,7 +182,8 @@ GuiClose:
 	move.l	d0,a1
 	moveq	#-1,d0
 	INTUI	RemoveGList
-.nogl:	move.l	g_Window(a4),a0
+.nogl:	bsr	SaveGeometry
+	move.l	g_Window(a4),a0
 	clr.l	g_Window(a4)
 	INTUI	CloseWindow
 .nowin:	move.l	g_Menu(a4),a0
@@ -2283,6 +2292,144 @@ GuiNetHook:
 .abort:	moveq	#1,d0
 .x:	movem.l	(sp)+,d2-d7/a2
 	rts
+
+;--------------------------------------------------------------------
+; WinGeometry - the window position and size of the last run
+; (Velox/Window = "x y w h"), kept on the screen
+;--------------------------------------------------------------------
+WinGeometry:
+	movem.l	d2-d6,-(sp)
+	lea	VarWindow(pc),a0
+	move.l	a0,d1
+	lea	g_VarBuf(a4),a0
+	move.l	a0,d2
+	moveq	#63,d3
+	moveq	#0,d4
+	DOS	GetVar
+	tst.l	d0
+	ble.s	.x
+	lea	g_VarBuf(a4),a0
+	bsr	.num
+	move.l	d0,d2			; x
+	bsr	.num
+	move.l	d0,d3			; y
+	bsr	.num
+	move.l	d0,d4			; w
+	bsr	.num
+	move.l	d0,d5			; h
+	cmp.l	#200,d4			; (at least the minimum size)
+	blo.s	.x
+	cmp.l	#100,d5
+	blo.s	.x
+	move.l	g_Screen(a4),a1
+	moveq	#0,d6
+	move.w	sc_Width(a1),d6
+	cmp.l	d6,d4			; no wider than the screen
+	bls.s	.w
+	move.l	d6,d4
+.w:	sub.l	d4,d6			; nor off its right edge
+	cmp.l	d6,d2
+	bls.s	.xok
+	move.l	d6,d2
+.xok:	moveq	#0,d6
+	move.w	sc_Height(a1),d6
+	cmp.l	d6,d5
+	bls.s	.h
+	move.l	d6,d5
+.h:	sub.l	d5,d6
+	cmp.l	d6,d3
+	bls.s	.yok
+	move.l	d6,d3
+.yok:	move.l	d2,WinTags+4
+	move.l	d3,WinTagT+4
+	move.l	d4,WinTagW+4
+	move.l	d5,WinTagH+4
+.x:	movem.l	(sp)+,d2-d6
+	rts
+.num:	cmp.b	#' ',(a0)
+	bne.s	.n
+	addq.l	#1,a0
+	bra.s	.num
+.n:	jmp	ParseDec
+
+; SaveGeometry - remember the window position and size (ENVARC too)
+SaveGeometry:
+	movem.l	d2-d4/a2,-(sp)
+	move.l	g_Window(a4),a2
+	lea	g_VarBuf(a4),a0
+	moveq	#0,d0
+	move.w	wd_LeftEdge(a2),d0
+	bsr.s	.put
+	moveq	#0,d0
+	move.w	wd_TopEdge(a2),d0
+	bsr.s	.put
+	moveq	#0,d0
+	move.w	wd_Width(a2),d0
+	bsr.s	.put
+	moveq	#0,d0
+	move.w	wd_Height(a2),d0
+	bsr.s	.put
+	clr.b	-(a0)			; (no blank at the end)
+	lea	VarWindow(pc),a0
+	move.l	a0,d1
+	lea	g_VarBuf(a4),a0
+	move.l	a0,d2
+	moveq	#-1,d3			; (NUL terminated)
+	move.l	#$1100,d4		; GVF_GLOBAL_ONLY|GVF_SAVE_VAR
+	DOS	SetVar
+	movem.l	(sp)+,d2-d4/a2
+	rts
+.put:	jsr	FmtDec			; a number and a blank
+	move.b	#' ',(a0)+
+	rts
+
+VarWindow:	dc.b	"Velox/Window",0
+	even
+
+;--------------------------------------------------------------------
+; GuiProgress - the progress of a transfer in the status line
+; In: d0 = bytes so far, d1 = all bytes or -1
+;--------------------------------------------------------------------
+GuiProgress:
+	movem.l	d2,-(sp)
+	lsr.l	#8,d0			; KB
+	lsr.l	#2,d0
+	cmp.l	g_ProgKB(a4),d0		; only when that changes
+	beq.s	.x
+	move.l	d0,g_ProgKB(a4)
+	move.l	d1,d2
+	lea	LogRecv(pc),a0		; (for tests)
+	suba.l	a1,a1
+	jsr	LogEvent
+	lea	MsgRecv(pc),a0
+	lea	g_StatusBuf(a4),a1
+	jsr	StrCopy
+	move.l	a1,a0
+	move.l	g_ProgKB(a4),d0
+	jsr	FmtDec
+	tst.l	d2
+	ble.s	.kb
+	move.l	a0,a1
+	lea	MsgOf(pc),a0
+	jsr	StrCopy
+	move.l	a1,a0
+	move.l	d2,d0
+	lsr.l	#8,d0
+	lsr.l	#2,d0
+	jsr	FmtDec
+.kb:	move.l	a0,a1
+	lea	MsgKB(pc),a0
+	jsr	StrCopy
+	lea	g_StatusBuf(a4),a0
+	bsr	GuiStatus
+.x:	movem.l	(sp)+,d2
+	rts
+
+MsgRecv:	dc.b	"Received ",0
+LogRecv:	dc.b	"recv",0
+MsgOf:		dc.b	" of ",0
+MsgKB:		dc.b	" KB",0
+	even
 
 ;--------------------------------------------------------------------
 ; TypeAheadKey - the oldest key kept by GuiNetHook

@@ -10,4 +10,8 @@ echo "memory: before=$before after=$after"
 # bytes (seen: 24) between measurements; a leak in Velox would repeat
 # with every run, so up to 32 bytes in total are taken as noise.
 [ -n "$before" ] && [ -n "$after" ] && [ $((before - after)) -le 32 ] || { echo "memory not fully returned"; fail=1; }
+# the window position and size are kept for the next run
+g=$(cat "$(dirname "$r")/window.geom" 2>/dev/null)
+echo "geometry: $g"
+echo "$g" | grep -qE '^[0-9]+ [0-9]+ [0-9]+ [0-9]+$' || { echo "Velox/Window not saved"; fail=1; }
 exit $fail

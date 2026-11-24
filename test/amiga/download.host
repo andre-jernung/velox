@@ -28,6 +28,10 @@ try:
     a.shot(os.path.join(r, "download-asl.png"))
     a.key("Return")             # accept "big" in VELOX:r
     lines = wait_log(log, "saved ")
+    recv = [l for l in lines if l.startswith("recv ")]
+    if len(recv) < 2:
+        raise AssertionError("no progress shown: %r" % recv)
+    step("progress shown (%s)" % recv[-1])
     step([l for l in lines if l.startswith("saved ")][-1])
     a.key("ctrl+q")
     step("ok")

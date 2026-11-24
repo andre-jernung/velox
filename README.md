@@ -31,7 +31,9 @@ A small, fast web browser for classic AmigaOS 3.x, written entirely in
 - Downloads of anything that is not a page, with a file requester
 - History, bookmarks, local `file:` pages, a home page, find in page
 - Frames and iframes as links to their pages; `<meta>` refresh redirects
-- Keyboard navigation for everything
+- Keyboard navigation for everything; keys typed while a page loads
+  are not lost
+- Transfer progress in the status line
 
 ## Starting
 
@@ -50,8 +52,10 @@ icon (remove the parentheses to enable one) or environment variables
 | `URL=url`            |                     | the page to start with              |
 | `DOWNLOADDIR=drawer` | `Velox/DownloadDir` | where downloads go (default `RAM:`) |
 | `NOIMAGES`           | `Velox/NoImages`    | do not load images                  |
+| `PUBSCREEN=name`     | `Velox/PubScreen`   | open on that public screen          |
 |                      | `Velox/InsecureTLS` | skip certificate checks (testing)   |
 
+The window opens where it was last closed (`Velox/Window`).
 Bookmarks are kept in `ENVARC:Velox/Bookmarks.html`, an ordinary page
 you can edit. Cookies that a site wants kept (with an expiry date) are
 saved in `ENVARC:Velox/Cookies`; delete that file to forget them.

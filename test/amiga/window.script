@@ -55,4 +55,5 @@ Delete >NIL: ENV:vpid
 Avail >NIL: FLUSH
 Echo >>VELOX:r/window.txt "mem_after " NOLINE
 Avail >>VELOX:r/window.txt TOTAL
+Copy >NIL: ENV:Velox/Window VELOX:r/window.geom
 Echo >>VELOX:r/window.txt "done"

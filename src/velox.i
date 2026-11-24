@@ -506,6 +506,9 @@ g_KeepHost	rs.b	HOST_MAX
 ; settings
 g_HomeUrl	rs.b	256		; Velox/Home / HOME tooltype, or empty
 g_StartUrl	rs.b	256		; URL tooltype
+g_PubScreen	rs.b	64		; PUBSCREEN / Velox/PubScreen, or empty
+g_ProgressHook	rs.l	1		; called while a body arrives
+g_ProgKB	rs.l	1
 g_LogName	rs.b	128		; LOG tooltype
 g_IconBase	rs.l	1
 g_ProxyPort	rs.l	1		; 0 = no proxy
