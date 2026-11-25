@@ -86,19 +86,26 @@ try:
     a.key("Tab")
     wait_log(log, "focus " + F + "page2.html")
     n = count("page " + F + "top.html ")     # (not with frames' URLs)
+    nf, nl = count("frame "), count("layout ")
     a.key("Return")
     want = "page " + F + "top.html\x01main\x02" + F + "page2.html"
     wait_log(log, want, timeout=60)
     step("a link targeting a frame replaces its document")
-    if count("frame ") != 8:
-        raise AssertionError("the frames were not composed again")
+    fr = [x for x in lines() if x.startswith("frame ")][nf:]
+    if fr != ["frame main"] or count("layout ") - nl != 1:
+        raise AssertionError("loaded %r, laid out %d" % (fr, count("layout ") - nl))
+    step("that frame alone is loaded and laid out again")
     time.sleep(1)
     a.shot(os.path.join(r, "frames2.png"))
 
-    # Back: the frames as they were
+    # Back: the frames as they were, the same way
+    nf = count("frame ")
     a.key("BackSpace")
     wait_log(log, "page " + F + "top.html ", n + 1, timeout=60)
-    step("back brings the frame's document before")
+    fr = [x for x in lines() if x.startswith("frame ")][nf:]
+    if fr != ["frame main"]:
+        raise AssertionError("back loaded %r" % fr)
+    step("back brings the frame's document before, alone")
     time.sleep(1)
 
     # target=_top: out of the frames

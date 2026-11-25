@@ -24,8 +24,8 @@
 	xref	GuiProgress,TaskAbort,TaskStart,ImagesLoad,TaskBusy,TaskNow
 	xref	HtmlBegin,HtmlMore,IsValidUtf8,GuiRelayout,GuiLayout
 	xref	PageRestore,KeepDrop,ImagesAgain,PfLoad,PfSave,PfSaveKept,DcHash
-	xref	DcTouch,GuiBlank,GuiUnblank
-	xref	FramesCompose,FrameNav,FrameSplit,FrameShow
+	xref	DcTouch,GuiBlank,GuiUnblank,GuiProgSet
+	xref	FramesCompose,FrameNav,FrameSplit,FrameShow,FramesSame,FramesUpdate
 
 HIST_MAX	equ	HIST_ENTRIES
 NAV_HISTORY	equ	1
@@ -98,7 +98,15 @@ NavGo:
 .load:	move.l	d3,g_NavFlags(a4)
 	moveq	#-1,d0
 	move.l	d0,g_NavUndo(a4)
-	jsr	GuiBlank		; (the page left: gone from the window)
+	btst	#2,d3			; (NAV_RELOAD: all of it)
+	bne.s	.full
+	lea	g_NavUrl(a4),a0		; the page of frames shown, its frames
+	jsr	FramesSame		; showing others: only those change
+	beq.s	.full
+	lea	FrameLoad(pc),a0
+	jsr	TaskStart
+	bra.s	.x0
+.full:	jsr	GuiBlank		; (the page left: gone from the window)
 	lea	NavLoad(pc),a0
 	jsr	TaskStart
 .x0:	movem.l	(sp)+,d2-d3/a2
@@ -538,6 +546,71 @@ NavHistory:
 .push:	lea	g_PageUrl(a4),a0
 	bsr	HistoryPush
 .x:	move.l	g_HistPos(a4),g_PageHist(a4)
+	rts
+
+;--------------------------------------------------------------------
+; FrameLoad - (the loader's job) the page of frames shown, its frames
+; as g_NavUrl says (a link into a frame, Back, Forward): those whose
+; documents change are loaded and laid out again, the others stay as
+; they are (their scroll positions too)
+;--------------------------------------------------------------------
+FrameLoad:
+	movem.l	d2-d3/a2,-(sp)
+	move.l	g_NavFlags(a4),d3
+	moveq	#2,d0			; (the page is shown)
+	move.l	d0,g_LoadPhase(a4)
+	clr.l	g_AbortReq(a4)
+	clr.l	g_NavStopped(a4)
+	moveq	#2,d0			; Back/Forward: images as they are
+	and.l	d3,d0
+	move.l	d0,g_ImgNoCheck(a4)
+	move.l	g_WinSigMask(a4),d0
+	or.l	#SIGBREAKF_CTRL_C,d0
+	move.l	d0,g_AbortMask(a4)
+	lea	GuiNetHook,a0
+	move.l	a0,g_NetSigHook(a4)
+	clr.l	g_ProgressHook(a4)
+	lea	LogGo(pc),a0
+	lea	g_NavUrl(a4),a1
+	move.l	#$80000000,d0
+	jsr	LogEvent
+	lea	MsgLoading(pc),a0
+	bsr	StatusWithUrl
+	moveq	#0,d0			; (how much: not known)
+	moveq	#-1,d1
+	jsr	GuiProgSet
+	jsr	FrameSplit		; g_FrOv: the frames' URLs wanted
+	jsr	FramesUpdate		; the frames that change: anew
+	tst.l	g_TkAbort(a4)
+	bne.s	.stop
+	jsr	CssLoad			; (their style sheets too)
+	moveq	#1,d0			; laid out: those frames only
+	move.l	d0,g_FrOnlyDirty(a4)
+	jsr	GuiRelayout
+	clr.l	g_FrOnlyDirty(a4)
+	tst.l	g_TkAbort(a4)
+	bne.s	.stop
+	bsr	NavHistory
+	moveq	#-1,d0
+	move.l	d0,g_NavUndo(a4)
+	bsr	ShowDone		; (logged, its images queued)
+	lea	g_TitleText(a4),a0
+	jsr	GuiStatus
+	jsr	ImagesLoad
+	bra.s	.x
+.stop:	lea	LogStop(pc),a0		; stopped: the frames filled so far
+	lea	g_NavUrl(a4),a1		; stay (laid out by the next layout),
+	move.l	#$80000000,d0		; the history as it was
+	jsr	LogEvent
+	lea	MsgStopped(pc),a0
+	jsr	GuiStatus
+	move.l	g_NavUndo(a4),d0
+	bmi.s	.x
+	move.l	d0,g_HistPos(a4)
+.x:	clr.l	g_FrOnlyDirty(a4)
+	clr.l	g_LoadPhase(a4)
+	clr.l	g_NetSigHook(a4)
+	movem.l	(sp)+,d2-d3/a2
 	rts
 
 ;--------------------------------------------------------------------

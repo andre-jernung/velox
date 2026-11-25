@@ -204,6 +204,7 @@ NODE_SIZEOF	rs.b	0
 NF_ANC		equ	0		; n_Flags: n_Anc is there
 NF_IMGCHECK	equ	1		; <img> shown from the disk cache, to check
 NF_IMGFAIL	equ	2		; <img> that could not be loaded
+NF_FRDIRTY	equ	3		; <frame> filled anew: to be laid out
 
 	RSRESET
 at_Next		rs.l	1
@@ -1111,7 +1112,7 @@ g_LayTarget	rs.l	1		; layout.s: the view it is for (0: G's)
 g_LayRoot	rs.l	1		; ... its root (0: g_Doc)
 g_LayW		rs.l	1		; ... the width it lays out for
 g_InFrames	rs.l	1		; gui.s: painting a frame's view
-g_FrAll		rs.l	1		; ... all of each (GuiPaintAll)
+g_FrOnlyDirty	rs.l	1		; FramesLayout: only frames filled anew
 ; image maps (maps.s)
 g_MapImg	rs.l	1		; the last <img> asked for,
 g_MapNode	rs.l	1		; ... its <map>

@@ -30,6 +30,7 @@
 
 	xdef	FramesCompose,FrameNav,FrameSplit,FrameShow
 	xdef	FramesPage,FramesLayout,FramesFree,ViewSelect,ViewSlot,FrameAt
+	xdef	FramesSame,FramesUpdate
 	xref	LayoutDocument
 	xref	HttpGetCached,HtmlParse,CharsetDetect,DecodeCharset,BufFree
 	xref	PageAlloc,DomNewNode,DomAppend,DomAddAttr,DomGetAttr
@@ -39,6 +40,10 @@ FR_DEPTH	equ	4		; framesets in frames, at most
 FR_SEP		equ	1		; "<1>name<2>url" after the page's URL
 FR_EQ		equ	2
 FR_BORDER	equ	2		; between frames
+
+	IFNE	g_PageH-g_PageX-12
+	FAIL	"g_PageX .. g_PageH must stay together (FramesLayout)"
+	ENDC
 
 	section	code,code
 
@@ -236,17 +241,25 @@ FrameFill:
 	swap	d1
 	add.b	#'0',d1
 	move.b	d1,2(a0)
+	move.l	d0,d4			; (kept as its name: the same when
+	move.l	a2,a0			;  filled again, FramesUpdate)
+	lea	SName(pc),a1
+	move.l	d4,d1
+	bsr	FrAttrV
+	move.l	d4,d0
 .named:	move.l	d0,d4			; d4 = name
 	addq.l	#1,g_FrCount(a4)
 	move.l	a2,a0
 	lea	SVxFrame(pc),a1
 	move.l	d4,d1
 	bsr	FrAttrV
-	move.l	d4,a0			; its URL: as the page's URL says,
-	bsr	FrOvFind		; or its src
-	bne.s	.url
+	move.l	a2,a0			; (its base: FramesUpdate)
+	lea	SVxBase(pc),a1
+	move.l	d7,d1
+	bsr	FrAttrV
+	moveq	#0,d6			; its own URL: its src (vxdef)
 	tst.l	d5
-	beq	.x
+	beq.s	.nd
 	move.l	d7,a0
 	move.l	d5,a1
 	move.l	a2,-(sp)
@@ -254,10 +267,27 @@ FrameFill:
 	jsr	UrlResolve
 	move.l	(sp)+,a2
 	tst.l	d0
-	beq	.x
+	beq.s	.nd
 	lea	g_FrTmp(a4),a0
 	bsr	FrCopy
+	move.l	d0,d6
+	beq.s	.nd
+	move.l	a2,a0
+	lea	SVxDef(pc),a1
+	move.l	d6,d1
+	bsr	FrAttrV
+.nd:	move.l	d4,a0			; its URL: as the page's URL says,
+	bsr	FrOvFind		; or its own (vxsrc)
+	beq.s	.def
+	move.l	d0,d6
+.def:	tst.l	d6
 	beq	.x
+	move.l	a2,a0
+	lea	SVxSrc(pc),a1
+	move.l	d6,d1
+	bsr	FrAttrV
+	bset	#NF_FRDIRTY,n_Flags(a2)	; (to be laid out: FramesLayout)
+	move.l	d6,d0
 .url:	move.l	d0,d6
 	cmp.l	#FR_MAX,g_FrCount(a4)	; (too many: a link)
 	bhi	.link
@@ -491,6 +521,9 @@ SHref:		dc.b	"href",0
 STarget:	dc.b	"target",0
 SVxFrame:	dc.b	"vxframe",0
 SVxTarget:	dc.b	"vxtarget",0
+SVxBase:	dc.b	"vxbase",0
+SVxDef:		dc.b	"vxdef",0
+SVxSrc:		dc.b	"vxsrc",0
 	even
 
 ;--------------------------------------------------------------------
@@ -1093,12 +1126,18 @@ FramesLayout:
 	move.l	d2,d0
 	lsl.l	#4,d0
 	add.l	d0,a1
-	move.l	(a1)+,g_PageX-g_View(a0)
-	move.l	(a1)+,g_PageY-g_View(a0)
-	move.l	(a1)+,g_PageW-g_View(a0)
-	move.l	(a1)+,g_PageH-g_View(a0)
-	clr.l	g_BandsOk-g_View(a0)
-	addq.l	#1,d2
+	movem.l	(a1),d0-d1/d3-d4	; x, y, w, h: another rectangle is
+	cmp.l	g_PageX-g_View(a0),d0	; painted all again
+	bne.s	.chg
+	cmp.l	g_PageY-g_View(a0),d1
+	bne.s	.chg
+	cmp.l	g_PageW-g_View(a0),d3
+	bne.s	.chg
+	cmp.l	g_PageH-g_View(a0),d4
+	beq.s	.same
+.chg:	clr.l	g_BandsOk-g_View(a0)
+	movem.l	d0-d1/d3-d4,g_PageX-g_View(a0)
+.same:	addq.l	#1,d2
 	bra.s	.rc
 .lay:	lea	LogFrames(pc),a0	; (for tests: "frames N")
 	suba.l	a1,a1
@@ -1109,10 +1148,26 @@ FramesLayout:
 	bhi.s	.done
 	move.l	d2,g_LayTarget(a4)
 	lea	g_FrNode-4(a4),a0
-	move.l	(a0,d2.l*4),g_LayRoot(a4)
+	move.l	(a0,d2.l*4),a1
+	move.l	a1,g_LayRoot(a4)
 	move.l	d2,d0
 	bsr	ViewSlot
+	bclr	#NF_FRDIRTY,n_Flags(a1)	; a frame filled anew: from its top
+	beq.s	.cln
+	clr.l	g_ScrollY-g_View(a0)
+	clr.l	g_FocusLink-g_View(a0)
+	moveq	#-1,d0
+	move.l	d0,g_FocusIdx-g_View(a0)
+	clr.l	g_HoverLink-g_View(a0)
+	clr.l	g_PressLink-g_View(a0)
+	clr.l	g_BandsOk-g_View(a0)
+	bra.s	.lo
+.cln:	tst.l	g_FrOnlyDirty(a4)	; (the others: only if their width
+	beq.s	.lo			;  changed)
 	move.l	g_PageW-g_View(a0),d0
+	cmp.l	g_LayWidth-g_View(a0),d0
+	beq.s	.sc
+.lo:	move.l	g_PageW-g_View(a0),d0
 	jsr	LayoutDocument
 	beq.s	.stop
 	move.l	d2,d0			; (its scroll position: within it)
@@ -1575,4 +1630,178 @@ FrameAt:
 .no:	moveq	#0,d0
 .x:	movem.l	(sp)+,d2-d3
 	tst.l	d0
+	rts
+
+;--------------------------------------------------------------------
+; FramesSame - is URL a0 the page of frames shown, its frames' URLs
+; (after a <1>) aside?  Then only its frames that change are loaded
+; (FrameLoad, nav.s).
+; Out: d0 = 1 if so (CCR set)
+;--------------------------------------------------------------------
+FramesSame:
+	tst.l	g_FrViews(a4)
+	beq.s	.no
+	tst.l	g_Blank(a4)
+	bne.s	.no
+	lea	g_PageUrl(a4),a1
+.c:	move.b	(a0)+,d0
+	beq.s	.e
+	cmp.b	#FR_SEP,d0
+	beq.s	.e
+	cmp.b	(a1)+,d0
+	beq.s	.c
+	bra.s	.no
+.e:	move.b	(a1),d1			; (the other's own URL ends there too)
+	beq.s	.yes
+	cmp.b	#FR_SEP,d1
+	beq.s	.yes
+.no:	moveq	#0,d0
+	rts
+.yes:	moveq	#1,d0
+	rts
+
+;--------------------------------------------------------------------
+; FramesUpdate - (FrameLoad) each frame of the page shown gets the
+; document g_FrOv now gives it, or its own: those that change are
+; filled anew (to be laid out again: NF_FRDIRTY), the others stay as
+; they are.  g_PageUrl gets g_FrOv after the page's own URL.
+; Out: d0 = frames filled anew
+;--------------------------------------------------------------------
+FramesUpdate:
+	movem.l	d2-d3/a2-a3/a5,-(sp)
+	lea	-FR_SAVE(sp),sp		; what fetching changes (FramesCompose)
+	lea	g_DcHdr(a4),a0
+	move.l	sp,a1
+	moveq	#52/4-1,d0
+.s1:	move.l	(a0)+,(a1)+
+	dbf	d0,.s1
+	lea	g_DcETag(a4),a0
+	move.l	#(ETAG_MAX+LASTMOD_MAX)/4-1,d0
+.s2:	move.l	(a0)+,(a1)+
+	dbf	d0,.s2
+	move.l	g_ProgressHook(a4),-(sp)
+	clr.l	g_ProgressHook(a4)
+	move.l	g_PageCharset(a4),-(sp)
+	move.l	g_RespFrom(a4),-(sp)
+	moveq	#0,d3			; d3 = filled anew
+	jsr	FramesPage
+	beq	.url
+	move.l	d0,a5			; a5 = the frameset
+	move.l	d0,a2
+.walk:	move.l	n_First(a2),d0		; (only framesets and frames have
+	cmp.l	a5,a2			;  frames in them)
+	beq.s	.t
+	cmp.w	#TAG_FRAMESET,n_Tag(a2)
+	beq.s	.t
+	cmp.w	#TAG_FRAME,n_Tag(a2)
+	beq.s	.t
+	moveq	#0,d0
+.t:	tst.l	d0
+	bne.s	.go
+.up:	cmp.l	a5,a2
+	beq	.url
+	move.l	n_Next(a2),d0
+	bne.s	.go
+	move.l	n_Parent(a2),a2
+	bra.s	.up
+.go:	move.l	d0,a2
+	cmp.b	#DN_ELEMENT,n_Type(a2)
+	bne.s	.up
+	cmp.w	#TAG_FRAME,n_Tag(a2)
+	bne.s	.walk
+	tst.l	g_TkAbort(a4)		; (stopped: no more)
+	bne	.url
+	move.l	a2,a0			; a frame: the URL it shows,
+	lea	SVxSrc(pc),a1
+	jsr	DomGetAttr
+	move.l	d0,d2			; d2 = it
+	beq.s	.walk
+	move.l	a2,a0			; ... the one it is to show
+	lea	SVxFrame(pc),a1
+	jsr	DomGetAttr
+	tst.l	d0
+	beq.s	.walk
+	move.l	d0,a0
+	bsr	FrOvFind
+	bne.s	.cmp
+	move.l	a2,a0
+	lea	SVxDef(pc),a1
+	jsr	DomGetAttr
+	tst.l	d0
+	beq	.walk
+.cmp:	move.l	d0,a0
+	move.l	d2,a1
+	bsr	FrSame
+	bne	.walk			; (the same: as it is)
+	move.l	a2,a0			; another: filled anew (its base,
+	lea	SVxBase(pc),a1		;  how deep)
+	jsr	DomGetAttr
+	move.l	d0,-(sp)
+	moveq	#0,d1
+	move.l	a2,a0
+.dp:	move.l	n_Parent(a0),a0
+	cmp.l	a5,a0
+	beq.s	.dpx
+	cmp.w	#TAG_FRAMESET,n_Tag(a0)
+	bne.s	.dp
+	addq.l	#1,d1
+	bra.s	.dp
+.dpx:	clr.l	n_First(a2)		; (its document goes)
+	clr.l	n_Last(a2)
+	move.l	a2,a0
+	bsr	FrClearVx
+	move.l	(sp)+,d0
+	move.l	a2,a0
+	bsr	FrameFill
+	addq.l	#1,d3
+	bra	.walk			; (into it: its frames already right)
+.url:	lea	g_PageUrl(a4),a0	; the frames' URLs after the page's
+.e:	move.b	(a0),d0
+	beq.s	.ov
+	cmp.b	#FR_SEP,d0
+	beq.s	.ov
+	addq.l	#1,a0
+	bra.s	.e
+.ov:	lea	g_FrOv(a4),a1
+	lea	g_PageUrl+URL_MAX-1(a4),a2
+.oc:	cmp.l	a2,a0
+	bhs.s	.ox
+	move.b	(a1)+,(a0)+
+	bne.s	.oc
+.ox:	clr.b	(a0)
+	move.l	(sp)+,g_RespFrom(a4)
+	move.l	(sp)+,g_PageCharset(a4)
+	move.l	(sp)+,g_ProgressHook(a4)
+	move.l	sp,a0
+	lea	g_DcHdr(a4),a1
+	moveq	#52/4-1,d0
+.r1:	move.l	(a0)+,(a1)+
+	dbf	d0,.r1
+	lea	g_DcETag(a4),a1
+	move.l	#(ETAG_MAX+LASTMOD_MAX)/4-1,d0
+.r2:	move.l	(a0)+,(a1)+
+	dbf	d0,.r2
+	lea	FR_SAVE(sp),sp
+	move.l	d3,d0
+	movem.l	(sp)+,d2-d3/a2-a3/a5
+	rts
+
+; FrClearVx - (FramesUpdate) the "vx" attributes of element a0 go
+; (FrameFill gives them anew)
+FrClearVx:
+	move.l	a2,-(sp)
+	lea	n_Data-at_Next(a0),a1	; (a1: the one before; its at_Next)
+.l:	move.l	at_Next(a1),d0
+	beq.s	.x
+	move.l	d0,a0
+	move.l	at_Name(a0),a2
+	cmp.b	#'v',(a2)
+	bne.s	.n
+	cmp.b	#'x',1(a2)
+	bne.s	.n
+	move.l	at_Next(a0),at_Next(a1)	; out of the list
+	bra.s	.l
+.n:	move.l	a0,a1
+	bra.s	.l
+.x:	move.l	(sp)+,a2
 	rts

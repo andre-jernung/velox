@@ -263,7 +263,14 @@ link (or a GET form) in a frame whose target, else its document's
 the page again with that entry changed (`FrameNav`); `_top`, `_blank`
 and unknown names load the whole window. So the history, the caches
 and the pages kept see one page as always, and Back undoes a frame's
-navigation. `NavLoad` splits the URL (`FrameSplit`): the page's own goes
+navigation. When the page shown is that frameset (`FramesSame`: the
+same URL before the <1>), `NavGo` does not load it anew but runs
+`FrameLoad`: each frame whose document is to change (its `vxsrc`
+against what the URL gives it, else its own `vxdef`) is filled anew
+(`FramesUpdate`), and only those frames are laid out again (from their
+top; `NF_FRDIRTY`, `g_FrOnlyDirty`); the other frames stay as they are,
+scroll positions and all. Back and Forward between such states work
+the same way. Reload loads it all. `NavLoad` splits the URL (`FrameSplit`): the page's own goes
 to `g_NavUrl` (fetching, the disk cache), the frames' to `g_FrOv`;
 `g_NavKey`, the whole, keys page files. `UrlResolve` ignores what
 follows a byte 1 in a base, and the URL gadget does not show it.
