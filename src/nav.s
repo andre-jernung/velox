@@ -24,7 +24,7 @@
 	xref	GuiProgress,TaskAbort,TaskStart,ImagesLoad,TaskBusy,TaskNow
 	xref	HtmlBegin,HtmlMore,IsValidUtf8,GuiRelayout,GuiLayout
 	xref	PageRestore,KeepDrop,ImagesAgain,PfLoad,PfSave,PfSaveKept,DcHash
-	xref	DcTouch
+	xref	DcTouch,GuiBlank,GuiUnblank
 
 HIST_MAX	equ	HIST_ENTRIES
 NAV_HISTORY	equ	1
@@ -97,6 +97,7 @@ NavGo:
 .load:	move.l	d3,g_NavFlags(a4)
 	moveq	#-1,d0
 	move.l	d0,g_NavUndo(a4)
+	jsr	GuiBlank		; (the page left: gone from the window)
 	lea	NavLoad(pc),a0
 	jsr	TaskStart
 .x0:	movem.l	(sp)+,d2-d3/a2
@@ -695,13 +696,21 @@ NavLoad:
 	bne.s	.stop			; stays
 	tst.l	g_AbortReq(a4)
 	beq.s	.err
-.stop:	tst.l	g_NavStopped(a4)	; (a new page: no error page meanwhile)
+.stop:	tst.l	g_NavStopped(a4)	; Esc, Reload: the page left comes
+	bne.s	.unb			; back if it is still there (a new
+	tst.l	g_AbortReq(a4)		; page: it stays blank)
+	beq.s	.st0
+.unb:	jsr	GuiUnblank
+.st0:	tst.l	g_NavStopped(a4)	; (a new page: no error page meanwhile)
 	bne.s	.st1
 	tst.l	g_ViewLive(a4)
-	beq	.x
+	bne.s	.st2
+	tst.l	g_Blank(a4)		; (blank for it: stopped all the same,
+	beq	.x			;  the history as it was)
+	bra.s	.st2
 .st1:	tst.l	g_ViewLive(a4)
 	beq.s	.err
-	clr.l	g_NetSigHook(a4)
+.st2:	clr.l	g_NetSigHook(a4)
 	clr.l	g_ProgressHook(a4)
 	lea	LogStop(pc),a0
 	lea	g_NavUrl(a4),a1
@@ -2089,6 +2098,7 @@ ShowKept:
 	jsr	GuiPageWidth
 	cmp.l	g_LayWidth(a4),d0
 	bne.s	.lay
+	clr.l	g_Blank(a4)
 	moveq	#1,d0			; the runs are those of the page
 	move.l	d0,g_ViewLive(a4)
 	move.l	g_ScrollY(a4),d0	; (the window may be smaller now)

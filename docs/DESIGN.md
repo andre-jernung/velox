@@ -64,6 +64,16 @@ on a stack of their own in the same process.
   up with the knob when painting is slower than the mouse.
 - **The busy pointer** shows only while the window cannot answer: a
   DNS lookup of a new host.
+- **A new page: blank at once.** When a new page is to be loaded
+  (`NavGo`), the window shows a blank page with its address
+  (`GuiBlank`) until the new one is laid out: the page left is not
+  scrolled, hovered or clicked meanwhile (`g_Blank` gates those), and
+  stays in memory until the new one replaces it. Esc or Reload before
+  that brings it back as it was (`GuiUnblank`).
+- **The progress bar** at the right end of the status line shows while
+  the loader has a job: the page's bytes (of its Content-Length), then
+  its images (of their count); not known, a block goes back and forth
+  (on INTUITICKS). It goes when the loader is idle.
 - **The TLS process.** All of AmiSSL's crypto (the handshake, each
   record decrypted or encrypted) runs in a process of its own below the
   window's priority, one job at a time (`TwRun`: `SSL_connect`,

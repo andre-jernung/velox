@@ -42,6 +42,7 @@ bmh_Height		equ	2
 	xdef	ImgListFree,ImagesAgain
 	xref	KeepEvict,DcPeek
 	xref	PageAlloc,DomGetAttr,UrlResolve,HttpGetCached,ParseDec,BufFree
+	xref	GuiProgSet
 	xref	G,BusyEvents,PicInfo,PicDecode,PicFree,PalInit,PicToBitMap,PicAlloc,BufAppend,BufClear,GuiStatus,GuiRelayout,GuiRefresh,GuiPageWidth,GuiPaintImage
 	xref	FmtDec,StrCopy,LogEvent,ImgNetHook
 
@@ -555,6 +556,10 @@ ImagesStep:
 	jsr	FmtDec
 	lea	g_StatusBuf(a4),a0
 	jsr	GuiStatus
+	move.l	g_ImgNext(a4),d0	; (and the progress bar)
+	subq.l	#1,d0
+	move.l	g_ImgCount(a4),d1
+	jsr	GuiProgSet
 	; enough chip memory left?
 	move.l	#CHIP_RESERVE,d0
 	bsr	ChipRoom

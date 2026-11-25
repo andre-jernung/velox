@@ -1068,6 +1068,17 @@ g_TwCertKnown	rs.l	1		; TlsVerify took a known certificate
 g_TwHost	rs.b	HOST_MAX	; the host of a TW_CONNECT (TlsVerify)
 g_TwBuf		rs.b	CONN_BUFSIZE	; TW_READ / TW_WRITE data
 g_TwNet		rs.b	TW_NET		; bytes between socket and BIOs
+; the view while a new page loads (gui.s GuiBlank)
+g_Blank		rs.l	1		; 0: the page shown; 1: blank, the page
+					; left still there (Esc brings it back);
+					; 2: blank, that page gone
+; the progress bar at the right of the status line (gui.s)
+g_PrgOn		rs.l	1		; shown
+g_PrgDone	rs.l	1		; ... so much of
+g_PrgAll	rs.l	1		; ... all (0 or less: not known: a
+g_PrgAnim	rs.l	1		;     block goes back and forth)
+g_PenFill	rs.l	1		; the screen's FILLPEN, SHADOWPEN
+g_PenShadow	rs.l	1
 g_SIZEOF	rs.b	0
 
 ;--------------------------------------------------------------------

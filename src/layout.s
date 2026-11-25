@@ -61,8 +61,8 @@ LayoutDocument:
 	jsr	LogEvent
 	move.l	g_LayWidth(a4),d0
 	addq.l	#1,g_LayGen(a4)
-	move.l	g_PageBg(a4),g_LPageBg(a4)
-	clr.l	g_LPageBgRec(a4)	; (the page background image: <body>)
+	move.l	#$ffffff,g_LPageBg(a4)	; (white unless <body> or <html> say
+	clr.l	g_LPageBgRec(a4)	;  otherwise; not the last page's)
 	clr.l	g_LPageBgRep(a4)
 	tst.l	g_CssHasMq(a4)		; media queries: matches depend on
 	beq.s	.nomq			; the width
@@ -125,6 +125,7 @@ LayoutDocument:
 	clr.l	g_FindRun(a4)		; (they pointed into the old runs)
 	clr.l	g_SelShown(a4)
 	clr.l	g_SelOn(a4)
+	clr.l	g_Blank(a4)		; (a page shown: not blank)
 	moveq	#1,d0
 	move.l	d0,g_ViewLive(a4)	; the runs can be painted
 	bsr.s	LayFree			; (the old ones)

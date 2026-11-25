@@ -17,6 +17,7 @@
 
 	xdef	GuiOpen,GuiClose,GuiEventLoop,GuiPaintAll,GuiStatus,GuiPaintNode,GuiPaintImage
 	xdef	GuiSetUrl,GuiSetTitle,GuiScrollTo,GuiNetHook,GuiBusy
+	xdef	GuiBlank,GuiUnblank,GuiProgSet
 	xdef	GuiLayout,BusyEvents,GuiRelayout,GuiRefresh,GuiPageWidth,GuiAbout,DrawStatus,ImgNetHook,GuiProgress
 	IFD	PROFILE
 	xref	ProfRead,ProfLog
@@ -89,6 +90,7 @@ GuiOpen:
 	movem.l	(sp)+,a0
 	move.l	d0,g_VisualInfo(a4)
 	beq	.fail
+	bsr	ScreenPens
 	bsr	FontsInit
 	beq	.fail
 	lea	DtName(pc),a1		; optional: images
@@ -678,6 +680,8 @@ GuiPaintAll:
 ; on the screen are painted (all of them if that is not known)
 ;--------------------------------------------------------------------
 GuiRefresh:
+	tst.l	g_Blank(a4)		; a new page loading: blank
+	bne	PaintBlank
 	movem.l	d2-d6/a2-a3,-(sp)
 	tst.l	g_Window(a4)
 	beq	.x
@@ -2244,14 +2248,17 @@ DrawStatus:
 	move.l	a2,d5
 	move.l	g_Window(a4),a2
 	bsr	InnerBox		; to the right edge
-	move.l	d4,d0
+	tst.l	g_PrgOn(a4)		; (not under the progress bar)
+	beq.s	.cl
+	sub.l	#PROG_W+4,d2
+.cl:	move.l	d4,d0
 	move.l	g_StatusY(a4),d1
 	move.l	d5,a1
 	cmp.l	d0,d2
 	blt.s	.x
 	GFX	RectFill
 .x:	movem.l	(sp)+,d2-d5/a2
-	rts
+	bra	ProgDraw		; (over the text's end, if long)
 
 ; GuiStatus - set and show the status line
 ; In: a0 = text
@@ -2260,6 +2267,258 @@ GuiStatus:
 	move.l	#STATUS_MAX-1,d0
 	jsr	StrCopyN
 	bra	DrawStatus
+
+;--------------------------------------------------------------------
+; The progress bar, at the right end of the status line while
+; something loads: filled as far as known (the page's bytes, then its
+; images), else a block going back and forth (INTUITICKS)
+;--------------------------------------------------------------------
+PROG_W		equ	64		; its width
+
+; GuiProgSet - show progress d0 of d1 (d1 <= 0: not known)
+GuiProgSet:
+	move.l	d0,g_PrgDone(a4)
+	move.l	d1,g_PrgAll(a4)
+	moveq	#1,d0
+	move.l	d0,g_PrgOn(a4)
+	bra.s	ProgDraw
+
+; ProgOff - (event loop: nothing loads) the bar goes
+ProgOff:
+	clr.l	g_PrgOn(a4)
+	bra	DrawStatus		; (cleared to the right end)
+
+; ProgTick - (INTUITICKS) progress not known: the block moves on
+ProgTick:
+	tst.l	g_PrgOn(a4)
+	beq.s	.x
+	tst.l	g_PrgAll(a4)
+	bgt.s	.x
+	addq.l	#3,g_PrgAnim(a4)
+	bra.s	ProgDraw
+.x:	rts
+
+; ProgDraw - draw the bar (nothing if it is off)
+ProgDraw:
+	tst.l	g_PrgOn(a4)
+	beq	.x0
+	movem.l	d2-d7/a2-a3,-(sp)
+	move.l	g_Window(a4),d0
+	beq	.x
+	move.l	d0,a2
+	move.l	wd_RPort(a2),a3		; a3 = RastPort
+	bsr	InnerBox		; d2 = right, d3 = bottom
+	move.l	d2,d6
+	subq.l	#4,d6			; d6 = x1
+	move.l	d6,d4
+	sub.l	#PROG_W-1,d4		; d4 = x0
+	move.l	g_PageX(a4),d0		; (a window too narrow: none)
+	add.l	#PROG_W,d0
+	cmp.l	d0,d4
+	blt	.x
+	move.l	g_StatusY(a4),d5
+	addq.l	#2,d5			; d5 = y0
+	move.l	d3,d7
+	subq.l	#2,d7			; d7 = y1
+	move.l	d5,d0
+	addq.l	#2,d0
+	cmp.l	d0,d7
+	blt	.x
+	move.l	a3,a1			; the frame
+	move.l	g_PenShadow(a4),d0
+	GFX	SetAPen
+	move.l	a3,a1
+	move.l	d4,d0
+	move.l	d5,d1
+	GFX	Move
+	move.l	a3,a1
+	move.l	d6,d0
+	move.l	d5,d1
+	GFX	Draw
+	move.l	a3,a1
+	move.l	d6,d0
+	move.l	d7,d1
+	GFX	Draw
+	move.l	a3,a1
+	move.l	d4,d0
+	move.l	d7,d1
+	GFX	Draw
+	move.l	a3,a1
+	move.l	d4,d0
+	move.l	d5,d1
+	GFX	Draw
+	addq.l	#1,d4			; inside it
+	subq.l	#1,d6
+	addq.l	#1,d5
+	subq.l	#1,d7
+	move.l	d6,d2
+	sub.l	d4,d2
+	addq.l	#1,d2			; d2 = its width
+	move.l	g_PrgAll(a4),d1
+	ble.s	.unk
+	move.l	g_PrgDone(a4),d0	; known: filled from the left
+	bpl.s	.pos
+	moveq	#0,d0
+.pos:	cmp.l	d1,d0
+	bls.s	.f
+	move.l	d1,d0
+.f:	mulu.l	d2,d3:d0
+	divu.l	d1,d3:d0
+	move.l	d0,d3			; d3 = filled width
+	moveq	#0,d1			; d1 = from
+	bra.s	.draw
+.unk:	move.l	d2,d3			; not known: a quarter of it, back
+	lsr.l	#2,d3			; and forth
+	sub.l	d3,d2			; d2 = the way it goes
+	move.l	g_PrgAnim(a4),d0
+	move.l	d2,d1
+	add.l	d1,d1
+	beq.s	.in
+.m:	cmp.l	d1,d0
+	blo.s	.in
+	sub.l	d1,d0
+	bra.s	.m
+.in:	move.l	d0,g_PrgAnim(a4)
+	cmp.l	d2,d0			; coming back
+	bls.s	.o
+	sub.l	d1,d0
+	neg.l	d0
+.o:	move.l	d0,d1
+.draw:	move.l	d1,-(sp)		; empty left of it,
+	move.l	d4,d0
+	move.l	d4,d2
+	add.l	d1,d2
+	subq.l	#1,d2
+	moveq	#0,d1
+	bsr.s	PBox
+	move.l	d4,d0			; the filled part,
+	add.l	(sp)+,d0
+	move.l	d0,d2
+	add.l	d3,d2
+	subq.l	#1,d2
+	move.l	g_PenFill(a4),d1
+	bsr.s	PBox
+	move.l	d2,d0			; empty right of it
+	addq.l	#1,d0
+	move.l	d6,d2
+	moveq	#0,d1
+	bsr.s	PBox
+.x:	movem.l	(sp)+,d2-d7/a2-a3
+.x0:	rts
+
+; PBox - (ProgDraw: a3 = RastPort) fill x d0..d2, y d5..d7 with pen d1
+; if d0 <= d2 (d0, d2 kept)
+PBox:
+	cmp.l	d0,d2
+	blt.s	.x
+	movem.l	d0/d2-d3,-(sp)
+	move.l	a3,a1
+	move.l	d1,d0
+	GFX	SetAPen
+	movem.l	(sp),d0/d2
+	move.l	a3,a1
+	move.l	d5,d1
+	move.l	d7,d3
+	GFX	RectFill
+	movem.l	(sp)+,d0/d2-d3
+.x:	rts
+
+;--------------------------------------------------------------------
+; GuiBlank - (event loop) a new page is to be loaded: the page shown
+; leaves the window at once, which stays blank (its address in the
+; URL gadget) until the new one is laid out.  The page left stays in
+; memory until the new one comes, and comes back if the load is
+; stopped before (GuiUnblank).
+;--------------------------------------------------------------------
+GuiBlank:
+	tst.l	g_Blank(a4)
+	bne.s	.p
+	moveq	#2,d0			; (no page shown: none comes back)
+	tst.l	g_ViewLive(a4)
+	beq.s	.s
+	moveq	#1,d0
+.s:	move.l	d0,g_Blank(a4)
+	clr.l	g_ViewLive(a4)		; (its runs: not used meanwhile)
+.p:	lea	g_NavUrl(a4),a0
+	bsr	GuiSetUrl
+	moveq	#0,d0			; (how much: not known yet)
+	moveq	#-1,d1
+	bsr	GuiProgSet
+	bra.s	PaintBlank
+
+; GuiUnblank - (loader) stopped while blank: the page left comes back
+; as it was, if it is still there
+GuiUnblank:
+	cmp.l	#1,g_Blank(a4)
+	bne.s	.x
+	clr.l	g_Blank(a4)
+	lea	g_PageUrl(a4),a0
+	bsr	GuiSetUrl
+	bsr	GuiPageWidth
+	cmp.l	g_LayWidth(a4),d0
+	bne	GuiRelayout		; (another width meanwhile)
+	moveq	#1,d0
+	move.l	d0,g_ViewLive(a4)
+	bra	GuiPaintAll
+.x:	rts
+
+; PaintBlank - the page area blank (white), the scroller with nothing
+; to scroll, the status line
+PaintBlank:
+	movem.l	d2-d3/a2-a3,-(sp)
+	move.l	g_Window(a4),d0
+	beq.s	.x
+	move.l	#$ffffff,d0
+	bsr	GetPen
+	move.l	g_Window(a4),a0
+	move.l	wd_RPort(a0),a1
+	GFX	SetAPen
+	move.l	g_Window(a4),a0
+	move.l	wd_RPort(a0),a1
+	move.l	g_PageX(a4),d0
+	move.l	g_PageY(a4),d1
+	move.l	d0,d2
+	add.l	g_PageW(a4),d2
+	subq.l	#1,d2
+	move.l	d1,d3
+	add.l	g_PageH(a4),d3
+	subq.l	#1,d3
+	GFX	RectFill
+	move.l	g_GadScroll(a4),d0
+	beq.s	.ns
+	move.l	d0,a0
+	clr.l	ScrTagTop+4
+	move.l	g_PageH(a4),ScrTagTotal+4
+	move.l	g_PageH(a4),ScrTagVis+4
+	move.l	g_Window(a4),a1
+	suba.l	a2,a2
+	lea	ScrTags,a3
+	GT	GT_SetGadgetAttrsA
+.ns:	bsr	DrawStatus
+.x:	movem.l	(sp)+,d2-d3/a2-a3
+ScrollNone:
+	rts
+
+; ScreenPens - the screen's FILLPEN and SHADOWPEN (progress bar)
+ScreenPens:
+	moveq	#3,d0
+	move.l	d0,g_PenFill(a4)
+	moveq	#1,d0
+	move.l	d0,g_PenShadow(a4)
+	move.l	g_Screen(a4),a0
+	INTUI	GetScreenDrawInfo
+	tst.l	d0
+	beq.s	.x
+	move.l	d0,a1
+	move.l	dri_Pens(a1),a0
+	moveq	#0,d0
+	move.w	FILLPEN*2(a0),d0
+	move.l	d0,g_PenFill(a4)
+	move.w	SHADOWPEN*2(a0),d0
+	move.l	d0,g_PenShadow(a4)
+	move.l	g_Screen(a4),a0
+	INTUI	FreeScreenDrawInfo
+.x:	rts
 
 ; UpdateScroller - give the scroller the document size and position
 UpdateScroller:
@@ -2285,6 +2544,8 @@ UpdateScroller:
 
 ; GuiScrollTo - scroll the page so that document line d0 is at the top
 GuiScrollTo:
+	tst.l	g_Blank(a4)		; (blank: nothing to scroll)
+	bne	ScrollNone
 	movem.l	d2-d3,-(sp)
 	move.l	g_DocHeight(a4),d1
 	sub.l	g_PageH(a4),d1
@@ -2356,7 +2617,11 @@ GuiScrollTo:
 ; what changed.  From the event loop while the loader is in a layout
 ; (a new window size): that one starts again (g_LayAgain).
 GuiRelayout:
-	tst.l	g_LayBusy(a4)
+	tst.l	g_TkIn(a4)		; blank, a new size (event loop): the
+	bne.s	.lb			; page left is laid out if it comes
+	tst.l	g_Blank(a4)		; back (GuiUnblank), the new one when
+	bne	PaintBlank		; it is shown
+.lb:	tst.l	g_LayBusy(a4)
 	beq.s	.go
 	tst.l	g_TkIn(a4)
 	bne.s	.go
@@ -2485,7 +2750,12 @@ GuiEventLoop:
 	lea	g_NavNext(a4),a0
 	jsr	NavGo
 	bra.s	.loop
-.idle:	jsr	ImagesReap		; (a stopped load's decoder)
+.idle:	tst.l	g_PrgOn(a4)		; nothing loads: no progress bar
+	beq.s	.ir
+	jsr	TaskBusy
+	bne.s	.ir
+	bsr	ProgOff
+.ir:	jsr	ImagesReap		; (a stopped load's decoder)
 	move.l	d0,d2
 	jsr	TaskLoopWait
 	move.l	d0,d3
@@ -2621,6 +2891,7 @@ HandleEvent:
 	bra	GuiScrollTo
 .ngd:	cmp.l	#IDCMP_INTUITICKS,d2	; a meta refresh counting down
 	bne.s	.nt
+	bsr	ProgTick		; (and the progress bar moving)
 	tst.l	g_RefreshTicks(a4)
 	beq.s	.x
 	subq.l	#1,g_RefreshTicks(a4)
@@ -2676,6 +2947,8 @@ OnGadget:
 
 ; OnKey - raw keys: cursor up/down, space, backspace, mouse wheel
 OnKey:
+	tst.l	g_Blank(a4)		; blank (a new page loading): only the
+	bne.s	.blank			; commands, Esc and Back
 	tst.l	g_EditField(a4)		; a field being edited gets keys first
 	beq.s	.noedit
 	move.l	d3,d0
@@ -2691,7 +2964,7 @@ OnKey:
 	bne	.x
 	cmp.w	#$80,d3			; ignore key releases
 	bhs	.x
-	move.w	d4,d0			; Ctrl / Amiga + key: commands
+.cmd:	move.w	d4,d0			; Ctrl / Amiga + key: commands
 	and.w	#QUAL_COMMAND,d0
 	beq.s	.plain
 	cmp.w	#RAW_L,d3
@@ -2740,6 +3013,15 @@ OnKey:
 	beq.s	.x
 	move.l	d0,a0
 	bra	Activate
+.blank:	cmp.w	#$80,d3
+	bhs.s	.x
+	move.w	d4,d0
+	and.w	#QUAL_COMMAND,d0
+	bne	.cmd
+	cmp.w	#RAW_ESC,d3
+	beq	ToImagesStop
+	cmp.w	#RAW_BACKSPACE,d3
+	beq	ToNavBack
 .x:	rts
 .scroll:
 	moveq	#0,d0
@@ -3010,6 +3292,8 @@ LinkAt:
 
 ; OnHover - show the link under the mouse in the status line
 OnHover:
+	tst.l	g_Blank(a4)		; (blank: no links)
+	bne	ScrollNone
 	tst.l	g_SelOn(a4)		; selecting
 	beq.s	.nosel
 	jmp	SelMove
@@ -3109,6 +3393,8 @@ AboutEasy:
 
 ; OnClick - follow a link / use a control on button release over it
 OnClick:
+	tst.l	g_Blank(a4)		; (blank: no links)
+	bne	ScrollNone
 	cmp.w	#IECODE_LBUTTON,d3
 	bne.s	.up
 	bsr	LinkAt
@@ -3215,7 +3501,10 @@ BusyEvents:
 	ext.l	d6
 	GT	GT_ReplyIMsg
 	cmp.l	#IDCMP_INTUITICKS,d2	; (a meta refresh waits)
-	beq.s	.next
+	bne.s	.ntk
+	bsr	ProgTick
+	bra.s	.next
+.ntk:
 	cmp.l	#IDCMP_REFRESHWINDOW,d2
 	bne.s	.nr
 	move.l	g_Window(a4),a0
@@ -3224,9 +3513,11 @@ BusyEvents:
 	moveq	#-1,d0
 	GT	GT_EndRefresh
 	clr.l	g_BandsOk(a4)		; (painted now, or after the load)
+	tst.l	g_Blank(a4)
+	bne.s	.pa
 	tst.l	g_ViewLive(a4)
 	beq.s	.next
-	bsr	GuiPaintAll
+.pa:	bsr	GuiPaintAll
 	bra.s	.next
 .nr:	bsr	IsViewEvent
 	beq.s	.other
@@ -3459,6 +3750,9 @@ VarWindow:	dc.b	"Velox/Window",0
 ; In: d0 = bytes so far, d1 = all bytes or -1
 ;--------------------------------------------------------------------
 GuiProgress:
+	movem.l	d0-d1,-(sp)		; the bar (it shows less than a KB)
+	bsr	GuiProgSet
+	movem.l	(sp)+,d0-d1
 	movem.l	d2,-(sp)
 	lsr.l	#8,d0			; KB
 	lsr.l	#2,d0

@@ -134,7 +134,11 @@ KeepClear:
 ; history entry if it can be, else freed
 ;--------------------------------------------------------------------
 PageLeave:
-	tst.l	g_PagePool(a4)
+	tst.l	g_Blank(a4)		; blank meanwhile: nothing comes back
+	beq.s	.nb			; now (GuiUnblank)
+	moveq	#2,d0
+	move.l	d0,g_Blank(a4)
+.nb:	tst.l	g_PagePool(a4)
 	beq.s	.free
 	bsr.s	PageKeep
 	bne.s	.x
