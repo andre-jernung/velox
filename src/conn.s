@@ -6,6 +6,16 @@
 ; g_AbortMask, so the user can interrupt a transfer.  When one of those
 ; signals arrives, g_NetSigHook (if set) decides whether to abort.
 ;
+; TLS: AmiSSL's crypto takes seconds on a 68020 (a handshake), half a
+; second for a 16 KB record.  It runs in a process of its own (the TLS
+; process, TlsChild), below the window's priority, one job at a time
+; (TwRun): SSL_connect, SSL_read, SSL_write on SSLs whose BIOs are
+; memory BIOs.  Velox's task carries the bytes between the sockets
+; (which belong to it) and those BIOs (TlsDo), and serves the window
+; while the process works.  A job of a page that was stopped goes on to
+; its end; the connection closed meanwhile leaves its SSL to the
+; process to free (ConnClose), and the next job waits for it.
+;
 
 	include	"velox.i"
 	include	"dos/dostags.i"
@@ -26,6 +36,17 @@ AmiSSL_GetAmiSSLExtBase	equ	TAG_USER+$0e
 AF_INET		equ	2
 SOCK_STREAM	equ	1
 INADDR_NONE	equ	-1
+
+TW_CONNECT	equ	1		; TLS process jobs (g_TwOp)
+TW_READ		equ	2
+TW_WRITE	equ	3
+TW_QUIT		equ	4
+
+SSL_ERROR_WANT_READ	equ	2
+SSL_ERROR_WANT_WRITE	equ	3
+SSL_ERROR_SYSCALL	equ	5
+SSL_ERROR_ZERO_RETURN	equ	6
+BIO_CTRL_PENDING	equ	10
 
 FIONBIO		equ	$8004667e
 SOL_SOCKET	equ	$ffff
@@ -69,7 +90,7 @@ TlsChildTags:	dc.l	NP_Entry,TlsChild
 	dc.l	NP_StackSize,65536
 	dc.l	NP_Priority,-1
 	dc.l	TAG_DONE
-TlsChildName:	dc.b	"Velox TLS setup",0
+TlsChildName:	dc.b	"Velox TLS",0
 	even
 	section	code,code
 
@@ -224,10 +245,10 @@ ConnOpen:
 	bra.s	.x
 
 ;--------------------------------------------------------------------
-; TlsPrepare - (the network is used) open AmiSSL and have the SSL
-; context made by a process of its own below the window's priority
-; (TlsChild): SSL_CTX_new takes 6.6 s on a stock A1200, and nothing
-; waits for it unless a TLS connection needs it first (TlsInit)
+; TlsPrepare - (the network is used) open AmiSSL and start the TLS
+; process (TlsChild), which first makes the SSL context: SSL_CTX_new
+; takes 6.6 s on a stock A1200, and nothing waits for it unless a TLS
+; connection needs it first (TlsInit)
 ; g_SslState: 0 not yet, 2 being made, 1 ready, -1 no AmiSSL
 ;--------------------------------------------------------------------
 TlsPrepare:
@@ -272,11 +293,8 @@ TlsPrepare:
 	DOS	CreateNewProc
 	tst.l	d0
 	bne.s	.xx
-	move.l	g_TlsSigBit(a4),d0	; no process: made here
-	EXEC	FreeSignal
-.here:	moveq	#-1,d0
-	move.l	d0,g_TlsSigBit(a4)
-	bsr	TlsCtx
+	bsr	TlsSigFree		; no process: made here (and the
+.here:	bsr	TlsCtx			; jobs done here)
 	bsr	TlsMade
 	bra.s	.xx
 .fail:	bsr	TlsExit
@@ -285,7 +303,11 @@ TlsPrepare:
 .xx:	movem.l	(sp)+,d2/a2
 .x:	rts
 
-; TlsChild - the process that makes the context (shares Velox's AmiSSL)
+; TlsChild - the TLS process (shares Velox's AmiSSL): makes the
+; context, signals (g_TlsSig), then does the jobs Velox gives it
+; (TwRun), signalling the end of each, until TW_QUIT (TwQuit).  It
+; ends at once if there is no context, and after making it if it has
+; no signal for jobs (g_TwTask 0: Velox does them itself)
 TlsChild:
 	lea	G,a4
 	clr.l	g_TlsOk(a4)
@@ -298,16 +320,85 @@ TlsChild:
 	bne.s	.done
 	bsr	TlsCtx
 	move.l	d0,g_TlsOk(a4)
-	SSL	OPENSSL_thread_stop	; (its per task OpenSSL state: else a
+	beq.s	.stop
+	moveq	#-1,d0
+	EXEC	AllocSignal
+	move.l	d0,g_TwSigBit(a4)
+	bmi.s	.stop
+	moveq	#0,d1
+	bset	d0,d1
+	move.l	d1,g_TwSig(a4)
+	suba.l	a1,a1
+	EXEC	FindTask
+	move.l	d0,g_TwTask(a4)
+	move.l	g_TlsMain(a4),a1	; ready
+	move.l	g_TlsSig(a4),d0
+	EXEC	Signal
+.wait:	move.l	g_TwSig(a4),d0
+	EXEC	Wait
+	cmp.l	#TW_QUIT,g_TwOp(a4)
+	beq.s	.quit
+	tst.l	g_TwBusy(a4)
+	beq.s	.wait
+	bsr	TwExec
+	EXEC	Forbid
+	tst.l	g_TwFree(a4)		; its connection closed meanwhile?
+	beq.s	.sig
+	EXEC	Permit
+	clr.l	g_TwFree(a4)
+	move.l	g_TwSSL(a4),a0
+	SSL	SSL_free
+	EXEC	Forbid
+.sig:	clr.l	g_TwBusy(a4)		; (with the signal: TwRun checks
+	move.l	g_TlsMain(a4),a1	;  g_TwBusy before it waits)
+	move.l	g_TlsSig(a4),d0
+	EXEC	Signal
+	EXEC	Permit
+	bra.s	.wait
+.quit:	move.l	g_TwSigBit(a4),d0
+	EXEC	FreeSignal
+	clr.l	g_TwSig(a4)
+.stop:	SSL	OPENSSL_thread_stop	; (its per task OpenSSL state: else a
 	suba.l	a0,a0			;  later task at the same address gets
 	move.l	g_AmiSSLBase(a4),a6	;  it, and AmiSSL fails there)
 	jsr	_LVOCleanupAmiSSLA(a6)
 .done:	EXEC	Forbid			; (gone before Velox goes on)
+	clr.l	g_TwTask(a4)
 	move.l	g_TlsMain(a4),a1
 	move.l	g_TlsSig(a4),d0
 	EXEC	Signal
 	moveq	#0,d0
 	rts
+
+; TwExec - do the job g_TwOp on g_TwSSL (in the TLS process, or in
+; Velox if there is none): g_TwRet, g_TwErr
+TwExec:
+	move.l	g_TwSSL(a4),a0
+	move.l	g_TwOp(a4),d0
+	cmp.l	#TW_CONNECT,d0
+	bne.s	.rw
+	move.l	g_TwDelay(a4),d1	; (tests)
+	ble.s	.c
+	DOS	Delay
+.c:	move.l	g_TwSSL(a4),a0
+	SSL	SSL_connect
+	bra.s	.r
+.rw:	lea	g_TwBuf(a4),a1
+	cmp.l	#TW_READ,d0
+	bne.s	.wr
+	move.l	g_TwLen(a4),d0
+	SSL	SSL_read
+	bra.s	.r
+.wr:	move.l	g_TwLen(a4),d0
+	SSL	SSL_write
+.r:	move.l	d0,g_TwRet(a4)
+	clr.l	g_TwErr(a4)
+	tst.l	d0
+	bgt.s	.x
+	move.l	g_TwSSL(a4),a0		; (in this task: its error queue)
+	SSL	SSL_get_error
+	move.l	d0,g_TwErr(a4)
+.x:	rts
 
 ; TlsMade - the context was made (g_TlsOk / g_SslCtx): ready, or no
 ; AmiSSL after all
@@ -322,14 +413,42 @@ TlsMade:
 	move.l	d0,g_SslState(a4)
 	rts
 
-; TlsChildDone - the child signalled: its signal freed, the result
+; TlsChildDone - the TLS process signalled: the context made, the
+; process waiting for jobs (or gone: its signal freed)
 TlsChildDone:
+	tst.l	g_TwTask(a4)
+	bne.s	TlsMade
+	bsr	TlsSigFree
+	bra.s	TlsMade
+
+; TlsSigFree - free g_TlsSig (if allocated)
+TlsSigFree:
+	tst.l	g_TlsSig(a4)
+	beq.s	.x
+	clr.l	g_TlsSig(a4)
 	move.l	g_TlsSigBit(a4),d0
-	bmi.s	.n
 	EXEC	FreeSignal
-	moveq	#-1,d0
-	move.l	d0,g_TlsSigBit(a4)
-.n:	bra.s	TlsMade
+.x:	rts
+
+; TwQuit - end the TLS process (its job first, if one still runs)
+TwQuit:
+	tst.l	g_TwTask(a4)
+	beq.s	TlsSigFree
+.b:	tst.l	g_TwBusy(a4)
+	beq.s	.q
+	move.l	g_TlsSig(a4),d0
+	EXEC	Wait
+	bra.s	.b
+.q:	moveq	#TW_QUIT,d0
+	move.l	d0,g_TwOp(a4)
+	move.l	g_TwTask(a4),a1
+	move.l	g_TwSig(a4),d0
+	EXEC	Signal
+.w:	tst.l	g_TwTask(a4)
+	beq.s	TlsSigFree
+	move.l	g_TlsSig(a4),d0
+	EXEC	Wait
+	bra.s	.w
 
 ;--------------------------------------------------------------------
 ; TlsInit - AmiSSL and the SSL context, for a TLS connection: made now
@@ -420,7 +539,21 @@ TlsCtx:
 	sgt	d0
 	and.l	#1,d0
 	move.l	d0,g_Tls13(a4)
-	lea	VarCiphers(pc),a0	; Velox/TlsCiphers: TLS 1.3 suites
+	lea	VarDelay(pc),a0		; Velox/TlsDelay: ticks each handshake
+	move.l	a0,d1			; job waits in the TLS process (tests:
+	lea	g_TlsVar(a4),a0		; a slow handshake)
+	move.l	a0,d2
+	moveq	#127,d3
+	moveq	#0,d4
+	DOS	GetVar
+	tst.l	d0
+	ble.s	.nd
+	lea	g_TlsVar(a4),a0
+	move.l	a0,d1
+	lea	g_TwDelay(a4),a0
+	move.l	a0,d2
+	DOS	StrToLong
+.nd:	lea	VarCiphers(pc),a0	; Velox/TlsCiphers: TLS 1.3 suites
 	move.l	a0,d1			; (tests, or a server that wants
 	lea	g_TlsVar(a4),a0		;  others)
 	move.l	a0,d2
@@ -441,6 +574,7 @@ MasterName:	dc.b	"amisslmaster.library",0
 TlsGroups:	dc.b	"X25519:P-256",0
 VarCiphers:	dc.b	"Velox/TlsCiphers",0
 VarTls13:	dc.b	"Velox/Tls13",0
+VarDelay:	dc.b	"Velox/TlsDelay",0
 TlsSuites:	dc.b	"TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:"
 		dc.b	"TLS_AES_256_GCM_SHA384",0
 TlsCiphers:	dc.b	"ECDHE+CHACHA20:ECDHE+AESGCM+AES128:ECDHE+AES128:"
@@ -459,16 +593,13 @@ DbgW:		dc.b	"SSL_write error ",0
 TlsExit:
 	cmp.l	#2,g_SslState(a4)	; the context still being made: wait
 	bne.s	.nc
-	move.l	g_TlsSigBit(a4),d0
-	bmi.s	.nc
+	tst.l	g_TlsSig(a4)
+	beq.s	.nc
 	move.l	g_TlsSig(a4),d0
 	EXEC	Wait
-	move.l	g_TlsSigBit(a4),d0
-	EXEC	FreeSignal
-	moveq	#-1,d0
-	move.l	d0,g_TlsSigBit(a4)
 	clr.l	g_SslState(a4)
-.nc:	move.l	g_SslCtx(a4),d0
+.nc:	bsr	TwQuit			; the TLS process gone
+	move.l	g_SslCtx(a4),d0
 	beq.s	.noctx
 	move.l	d2,-(sp)		; the sessions kept
 	moveq	#TLS_SESS-1,d2
@@ -515,10 +646,9 @@ TlsHandshake:
 	move.l	g_SslCtx(a4),a0
 	SSL	SSL_new
 	move.l	d0,c_SSL(a2)
-	beq.s	.fail
-	move.l	d0,a0
-	move.l	c_Sock(a2),d0
-	SSL	SSL_set_fd
+	beq	.fail
+	bsr	TlsBios			; (the bytes go through Velox)
+	beq	.fail
 	move.l	c_SSL(a2),a0		; SNI: SSL_set_tlsext_host_name
 	moveq	#55,d0			; SSL_CTRL_SET_TLSEXT_HOSTNAME
 	moveq	#0,d1			; TLSEXT_NAMETYPE_host_name
@@ -548,19 +678,14 @@ TlsHandshake:
 	lea	LogSessUse(pc),a0	; (for tests)
 	move.l	g_TlsHost(a4),a1
 	jsr	LogEvent
-.conn:	moveq	#1,d0			; (seconds of crypto on a 68020: the
-	jsr	GuiBusy			;  busy pointer meanwhile)
-	move.l	c_SSL(a2),a0
-	SSL	SSL_connect
-	move.l	d0,-(sp)
-	moveq	#0,d0
-	jsr	GuiBusy
-	move.l	(sp)+,d0
-	cmp.l	#1,d0
-	beq.s	.ok
-	bsr	TlsWait			; waiting for the server?
-	bgt.s	.conn
-	beq.s	.x0			; (aborted, timed out)
+.conn:	clr.l	g_TwCertKnown(a4)
+	move.l	a2,a0			; (in the TLS process: seconds of
+	moveq	#TW_CONNECT,d0		;  crypto on a 68020)
+	move.l	g_TlsHost(a4),a1
+	bsr	TlsDo
+	bgt.s	.ok
+	cmp.l	#ERR_TLS,g_Error(a4)	; (stopped, timed out: no more)
+	bne.s	.x0
 	move.l	c_SSL(a2),a0		; failed: was it the certificate?
 	SSL	SSL_get_verify_result
 	tst.l	d0
@@ -584,7 +709,14 @@ TlsHandshake:
 .fail:	SETERR	ERR_TLS
 .x0:	moveq	#0,d0
 	bra.s	.x
-.ok:	move.l	c_SSL(a2),a0		; (for tests: "tls host 1" when the
+.ok:	move.l	g_TwCertKnown(a4),d0	; (for tests: a job left by a
+	cmp.l	c_SSL(a2),d0		;  page stopped sets its own SSL)
+	bne.s	.ok1
+	lea	LogCertOk(pc),a0
+	move.l	g_TlsHost(a4),a1
+	move.l	#$80000000,d0
+	jsr	LogEvent
+.ok1:	move.l	c_SSL(a2),a0		; (for tests: "tls host 1" when the
 	SSL	SSL_session_reused	;  session was resumed)
 	lea	LogTls(pc),a0
 	move.l	g_TlsHost(a4),a1
@@ -619,7 +751,8 @@ LogTls13:	dc.b	"tls13",0
 ; (and the certificate noted if it is good).  The proof that the server
 ; has its key (its signature over the handshake) is checked as always.
 ; The host name must be the same, character for character (a hash
-; could be matched by a domain made for it).
+; could be matched by a domain made for it).  It runs in the TLS
+; process: the host is g_TwHost, set with the job (TwRun).
 ; Out: d0 = 1 good, 0 not
 ;--------------------------------------------------------------------
 TlsVerify:
@@ -659,10 +792,7 @@ TlsVerify:
 	move.l	d0,g_CertMdOk(a4)
 	bsr	CertFind
 	beq.s	.full
-	lea	LogCertOk(pc),a0	; (for tests)
-	move.l	g_TlsHost(a4),a1
-	move.l	#$80000000,d0
-	jsr	LogEvent
+	move.l	g_TwSSL(a4),g_TwCertKnown(a4)	; (TlsHandshake logs it)
 	moveq	#1,d0
 	bra.s	.x
 .full:	move.l	a5,a0
@@ -680,7 +810,7 @@ TlsVerify:
 
 CO_SIZEOF	equ	32+HOST_MAX	; an entry: SHA-256, host name
 
-; CertFind - is g_CertMd noted for g_TlsHost?  Out: d0 = 1 if so (CCR)
+; CertFind - is g_CertMd noted for g_TwHost?  Out: d0 = 1 if so (CCR)
 CertFind:
 	movem.l	d2/a2,-(sp)
 	lea	g_CertOk(a4),a2
@@ -694,7 +824,7 @@ CertFind:
 	dbne	d0,.c
 	bne.s	.n
 	lea	32(a2),a0
-	move.l	g_TlsHost(a4),a1
+	lea	g_TwHost(a4),a1
 .h:	move.b	(a0)+,d0
 	cmp.b	(a1)+,d0
 	bne.s	.n
@@ -708,7 +838,7 @@ CertFind:
 .x:	movem.l	(sp)+,d2/a2
 	rts
 
-; CertAdd - note g_CertMd for g_TlsHost (instead of the oldest), and
+; CertAdd - note g_CertMd for g_TwHost (instead of the oldest), and
 ; keep the list in the disk cache's directory
 CertAdd:
 	move.l	a2,-(sp)
@@ -726,7 +856,7 @@ CertAdd:
 	moveq	#8-1,d0
 .c:	move.l	(a0)+,(a1)+
 	dbf	d0,.c
-	move.l	g_TlsHost(a4),a0
+	lea	g_TwHost(a4),a0
 	move.l	#HOST_MAX-1,d0
 	jsr	StrCopyN
 	move.l	(sp)+,a2
@@ -902,24 +1032,232 @@ TlsKeepSession:
 	rts
 
 ;--------------------------------------------------------------------
-; TlsWait - after an AmiSSL call on Conn a2 returned d0 (<= 0): if it
-; only has to wait for the socket (non-blocking), wait for it
-; Out: d0 = 1 to try again, 0 if the wait failed (g_Error set), -1 on
-;      any other error (CCR set)
+; TlsBios - (a2 = Conn with its SSL) give the SSL memory BIOs: what it
+; reads and writes goes through Velox (TlsDo), not the socket
+; Out: d0 = 0 if out of memory (CCR set)
 ;--------------------------------------------------------------------
-TlsWait:
-	move.l	c_SSL(a2),a0
-	SSL	SSL_get_error
-	moveq	#0,d1			; readable
-	cmp.l	#2,d0			; SSL_ERROR_WANT_READ
-	beq.s	.w
-	moveq	#1,d1			; writable
-	cmp.l	#3,d0			; SSL_ERROR_WANT_WRITE
-	beq.s	.w
-	moveq	#-1,d0
+TlsBios:
+	SSL	BIO_s_mem
+	move.l	d0,a0
+	SSL	BIO_new
+	move.l	d0,c_RBio(a2)
+	beq.s	.x
+	SSL	BIO_s_mem
+	move.l	d0,a0
+	SSL	BIO_new
+	move.l	d0,c_WBio(a2)
+	bne.s	.set
+	move.l	c_RBio(a2),a0
+	SSL	BIO_free
+	moveq	#0,d0
 	rts
-.w:	move.l	c_Sock(a2),d0
-	bra	WaitSocket
+.set:	move.l	a2,-(sp)		; (the SSL's now)
+	move.l	c_SSL(a2),a0
+	move.l	c_RBio(a2),a1
+	move.l	d0,a2
+	SSL	SSL_set_bio
+	move.l	(sp)+,a2
+	moveq	#1,d0
+.x:	rts
+
+;--------------------------------------------------------------------
+; TlsDo - job d0 on TLS connection a0, done by the TLS process:
+; TW_CONNECT (a1 = host name), TW_READ (into c_Buf), TW_WRITE (d1 <=
+; CONN_BUFSIZE bytes from a1).  What the SSL writes goes to the socket,
+; what the socket brings to the SSL, until the job is done; the window
+; is served meanwhile.
+; Out: d0 > 0 done (SSL_xxx's result), 0 at end of stream (TW_READ),
+;      -1 failed (g_Error set: ERR_TLS if the handshake failed) (CCR)
+;--------------------------------------------------------------------
+TlsDo:
+	movem.l	d2-d5/a2-a3,-(sp)
+	move.l	a0,a2
+	move.l	d0,d4			; d4 = the job
+	move.l	d1,d5			; d5 = bytes
+	move.l	a1,a3
+	cmp.l	#TW_READ,d4
+	bne.s	.run
+	move.l	#CONN_BUFSIZE,d5
+.run:	move.l	d4,d0
+	move.l	c_SSL(a2),a0
+	move.l	d5,d1
+	move.l	a3,a1
+	bsr	TwRun
+	beq	.fail
+	bsr	TlsFlush		; what it wrote: to the server
+	beq	.fail
+	move.l	g_TwRet(a4),d0
+	bgt.s	.done
+	move.l	g_TwErr(a4),d0
+	cmp.l	#SSL_ERROR_WANT_READ,d0
+	beq.s	.recv
+	cmp.l	#SSL_ERROR_WANT_WRITE,d0
+	beq.s	.run
+	cmp.l	#TW_READ,d4		; (closed without close_notify, as
+	bne.s	.err			;  many servers do: the end too)
+	cmp.l	#SSL_ERROR_ZERO_RETURN,d0
+	beq.s	.eos
+	cmp.l	#SSL_ERROR_SYSCALL,d0
+	beq.s	.eos
+.err:	moveq	#ERR_TLS,d0
+	cmp.l	#TW_READ,d4
+	bne.s	.e1
+	moveq	#ERR_RECV,d0
+.e1:	cmp.l	#TW_WRITE,d4
+	bne.s	.e2
+	moveq	#ERR_SEND,d0
+.e2:	move.l	d0,g_Error(a4)
+	bra.s	.fail
+.recv:	move.l	c_Sock(a2),d0		; more from the server
+	moveq	#0,d1
+	bsr	WaitSocket
+	beq.s	.fail
+	move.l	c_Sock(a2),d0
+	lea	g_TwNet(a4),a0
+	move.l	#TW_NET,d1
+	moveq	#0,d2
+	SOCK	recv
+	tst.l	d0
+	bmi.s	.rerr
+	beq.s	.closed
+	move.l	c_RBio(a2),a0
+	lea	g_TwNet(a4),a1
+	SSL	BIO_write
+	bra	.run
+.closed:
+	cmp.l	#TW_READ,d4
+	bne.s	.err
+.eos:	moveq	#0,d0
+	bra.s	.x
+.rerr:	SETERR	ERR_RECV
+	bra.s	.fail
+.done:	cmp.l	#TW_READ,d4
+	bne.s	.x
+	move.l	d0,d2
+	lea	g_TwBuf(a4),a0
+	lea	c_Buf(a2),a1
+	EXEC	CopyMem
+	move.l	d2,d0
+	bra.s	.x
+.fail:	moveq	#-1,d0
+.x:	movem.l	(sp)+,d2-d5/a2-a3
+	tst.l	d0
+	rts
+
+; TlsFlush - (a2 = Conn) send what its SSL wrote to its memory BIO
+; Out: d0 = 0 if sending failed (g_Error set) (CCR)
+TlsFlush:
+	movem.l	d2-d3/a3,-(sp)
+.l:	move.l	c_WBio(a2),a0
+	moveq	#BIO_CTRL_PENDING,d0
+	moveq	#0,d1
+	suba.l	a1,a1
+	SSL	BIO_ctrl
+	tst.l	d0
+	ble.s	.ok
+	cmp.l	#TW_NET,d0
+	bls.s	.n
+	move.l	#TW_NET,d0
+.n:	move.l	c_WBio(a2),a0
+	lea	g_TwNet(a4),a1
+	SSL	BIO_read
+	move.l	d0,d3
+	ble.s	.ok
+	lea	g_TwNet(a4),a3
+.s:	move.l	c_Sock(a2),d0
+	moveq	#1,d1
+	bsr	WaitSocket
+	beq.s	.x
+	move.l	c_Sock(a2),d0
+	move.l	a3,a0
+	move.l	d3,d1
+	moveq	#0,d2
+	SOCK	send
+	tst.l	d0
+	ble.s	.err
+	add.l	d0,a3
+	sub.l	d0,d3
+	bgt.s	.s
+	bra.s	.l
+.err:	SETERR	ERR_SEND
+	moveq	#0,d0
+	bra.s	.x
+.ok:	moveq	#1,d0
+.x:	movem.l	(sp)+,d2-d3/a3
+	rts
+
+;--------------------------------------------------------------------
+; TwRun - have the TLS process do job d0 on SSL a0 (TW_CONNECT: a1 =
+; host name; TW_WRITE: d1 bytes from a1; TW_READ: up to d1 bytes into
+; g_TwBuf) and wait for it; the window is served meanwhile.  Without
+; the process the job is done here.
+; Out: d0 = 1 done (g_TwRet, g_TwErr), 0 if the loader was stopped
+;      (g_Error = ERR_ABORT; the job goes on: ConnClose leaves its SSL
+;      to the process) (CCR)
+;--------------------------------------------------------------------
+TwRun:
+	movem.l	d2-d3/a2-a3,-(sp)
+	move.l	d0,d2
+	move.l	a0,a2
+	move.l	d1,d3
+	move.l	a1,a3
+.idle:	tst.l	g_TwBusy(a4)		; a job of a page stopped: its end
+	beq.s	.go			; first
+	bsr	TwWait
+	bne.s	.idle
+	bra.s	.x
+.go:	move.l	d2,g_TwOp(a4)
+	move.l	a2,g_TwSSL(a4)
+	move.l	d3,g_TwLen(a4)
+	cmp.l	#TW_WRITE,d2
+	bne.s	.nw
+	move.l	a3,a0
+	lea	g_TwBuf(a4),a1
+	move.l	d3,d0
+	EXEC	CopyMem
+.nw:	cmp.l	#TW_CONNECT,d2		; (the host for TlsVerify: set only
+	bne.s	.nc			;  now, the job before may have
+	move.l	a3,a0			;  used it)
+	lea	g_TwHost(a4),a1
+	move.l	#HOST_MAX-1,d0
+	jsr	StrCopyN
+.nc:	tst.l	g_TwTask(a4)
+	bne.s	.task
+	bsr	TwExec			; (no process: here)
+	bra.s	.ok
+.task:	moveq	#0,d0			; (a signal left from a job of a
+	move.l	g_TlsSig(a4),d1		;  page stopped: gone)
+	EXEC	SetSignal
+	moveq	#1,d0
+	move.l	d0,g_TwBusy(a4)
+	move.l	g_TwTask(a4),a1
+	move.l	g_TwSig(a4),d0
+	EXEC	Signal
+.w:	tst.l	g_TwBusy(a4)
+	beq.s	.ok
+	bsr	TwWait
+	bne.s	.w
+	bra.s	.x
+.ok:	moveq	#1,d0
+.x:	movem.l	(sp)+,d2-d3/a2-a3
+	rts
+
+; TwWait - wait for the TLS process's signal (in the loader the window
+; is served meanwhile)
+; Out: d0 = 0 if the loader was stopped (g_Error = ERR_ABORT) (CCR)
+TwWait:
+	move.l	g_TlsSig(a4),d0
+	tst.l	g_TkIn(a4)
+	beq.s	.own
+	jsr	TaskWaitSig
+	tst.l	d0
+	bne.s	.x
+	SETERR	ERR_ABORT
+	moveq	#0,d0
+.x:	rts
+.own:	EXEC	Wait
+	moveq	#1,d0
+	rts
 
 ;--------------------------------------------------------------------
 ; DnsCached - the address of host name a0 if it was looked up before
@@ -1032,6 +1370,17 @@ ConnClose:
 	move.l	a0,a2
 	move.l	c_SSL(a2),d0
 	beq.s	.nossl
+	EXEC	Forbid
+	tst.l	g_TwBusy(a4)		; its job still under way (the page
+	beq.s	.own			; was stopped): the TLS process frees
+	move.l	c_SSL(a2),d0		; it when done
+	cmp.l	g_TwSSL(a4),d0
+	bne.s	.own
+	moveq	#1,d0
+	move.l	d0,g_TwFree(a4)
+	EXEC	Permit
+	bra.s	.nossl
+.own:	EXEC	Permit
 	bsr	TlsKeepSession		; (resumed next time)
 	move.l	c_SSL(a2),a0
 	SSL	SSL_free
@@ -1132,19 +1481,18 @@ ConnWrite:
 	move.l	d0,d3
 .l:	tst.l	d3
 	beq.s	.ok
-	move.l	c_SSL(a2),d0
+	tst.l	c_SSL(a2)
 	beq.s	.plain
-	move.l	d0,a0			; TLS
+	move.l	d3,d1			; TLS: a buffer at a time (EPIPE
+	cmp.l	#CONN_BUFSIZE,d1	; here: the server gave up waiting
+	bls.s	.t			; for a slow handshake)
+	move.l	#CONN_BUFSIZE,d1
+.t:	move.l	a2,a0
 	move.l	a3,a1
-	move.l	d3,d0
-	SSL	SSL_write
-	tst.l	d0
+	moveq	#TW_WRITE,d0
+	bsr	TlsDo
 	bgt.s	.sent
-	bsr	TlsWait			; (the same again when it can go)
-	bgt.s	.l
-	beq.s	.fail
-	bra.s	.err			; (EPIPE here: the server gave up
-					;  waiting for a slow handshake)
+	bra.s	.fail
 .plain:	move.l	c_Sock(a2),d0
 	bmi.s	.err
 	moveq	#1,d1
@@ -1186,48 +1534,35 @@ ConnFill:
 	bra.s	.got
 .sock:	move.l	c_Sock(a2),d0
 	bmi.s	.err
-	tst.l	c_SSL(a2)		; TLS with data already decrypted:
-	beq.s	.wait			; no need to wait for the socket
-	move.l	c_SSL(a2),a0
-	SSL	SSL_pending
-	tst.l	d0
-	bgt.s	.tls
-.wait:	move.l	c_Sock(a2),d0
-	moveq	#0,d1
-	bsr	WaitSocket
-	beq.s	.fail
 	tst.l	c_SSL(a2)
-	beq.s	.recv
-.tls:	move.l	c_SSL(a2),a0
+	beq.s	.wait
+	move.l	c_SSL(a2),a0		; TLS: data decrypted already is
+	SSL	SSL_pending		; only copied (here); else the TLS
+	tst.l	d0			; process decrypts the next record
+	ble.s	.tjob
+	move.l	c_SSL(a2),a0
 	lea	c_Buf(a2),a1
 	move.l	#CONN_BUFSIZE,d0
 	SSL	SSL_read
 	tst.l	d0
-	ble.s	.tno
-	tst.l	c_Sess(a2)		; the first data: the session tickets
+	bgt.s	.tgot
+.tjob:	move.l	a2,a0
+	moveq	#TW_READ,d0
+	bsr	TlsDo
+	bmi.s	.fail
+	beq.s	.got
+.tgot:	tst.l	c_Sess(a2)		; the first data: the session tickets
 	beq.s	.got			; came before it; keep the session now
 	move.l	d0,-(sp)		; (closed without close_notify, as many
 	bsr	TlsKeepSession		;  servers do, it cannot be resumed)
 	clr.l	c_Sess(a2)
 	move.l	(sp)+,d0
 	bra.s	.got
-.tno:
-	move.l	d0,-(sp)		; why not?  closed = end of stream
-	move.l	c_SSL(a2),a0
-	SSL	SSL_get_error
-	cmp.l	#6,d0			; SSL_ERROR_ZERO_RETURN
-	beq.s	.eos1
-	cmp.l	#5,d0			; SSL_ERROR_SYSCALL (closed without
-	beq.s	.eos1			;   close_notify, as many servers do)
-	movem.l	(sp)+,d0
-	bsr	TlsWait			; a record not complete yet: wait
-	bgt.s	.tls
+.wait:	move.l	c_Sock(a2),d0
+	moveq	#0,d1
+	bsr	WaitSocket
 	beq.s	.fail
-	bra.s	.err
-.eos1:	addq.l	#4,sp
-.eos:	moveq	#0,d0
-	bra.s	.got
-.recv:	move.l	c_Sock(a2),d0
+	move.l	c_Sock(a2),d0
 	lea	c_Buf(a2),a0
 	move.l	#CONN_BUFSIZE,d1
 	moveq	#0,d2

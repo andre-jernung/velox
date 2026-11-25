@@ -63,7 +63,19 @@ on a stack of their own in the same process.
   the last is painted (`g_ScrollPend`, `ScrollFlush`), so the page keeps
   up with the knob when painting is slower than the mouse.
 - **The busy pointer** shows only while the window cannot answer: a
-  DNS lookup and the crypto inside `SSL_connect`.
+  DNS lookup of a new host.
+- **The TLS process.** All of AmiSSL's crypto (the handshake, each
+  record decrypted or encrypted) runs in a process of its own below the
+  window's priority, one job at a time (`TwRun`: `SSL_connect`,
+  `SSL_read`, `SSL_write`). Its SSLs have memory BIOs: the sockets stay
+  Velox's (bsdsocket sockets belong to the task that made them), and
+  `TlsDo` carries the bytes between them and the BIOs while the window
+  is served. Data already decrypted is copied without a job. A job
+  cannot be cut short: when its page is stopped it runs to its end,
+  the connection closed meanwhile leaves its SSL to the process to free
+  (`g_TwFree`), and the next job (or quitting) waits for it.
+  `Velox/TlsDelay` (ticks, tests only) makes each handshake job (two
+  or more a handshake) that much slower.
 - **Stopping.** `NavGo` returns at once. A link to another page stops the
   load in progress (`TaskAbort`): the loader's waits fail with
   `ERR_ABORT` and it unwinds through its normal error paths, closing
@@ -103,9 +115,9 @@ A1200 (it took 4.25 s): selectors 0.95 s, declarations 0.5 s, the rest
   not for every element.
 
 Host names that were already looked up are cached, because
-`gethostbyname` blocks. What still blocks: DNS for a new host, the
-crypto of the TLS handshake, and decrypting each TLS record (up to 16
-KB: half a second with ChaCha20 on a stock A1200).
+`gethostbyname` blocks. What still blocks: DNS for a new host. The TLS
+crypto (a handshake: seconds; a 16 KB record: half a second with
+ChaCha20 on a stock A1200) runs in the TLS process.
 
 ### Disk cache
 
@@ -442,10 +454,11 @@ with `WritePixelArray`, with no colour cube and no dithering.
   handshake 6.2 s (mostly the X25519 key exchange and checking the
   certificate), a resumed one 3.1 s, and data goes at 28 KB/s with
   ChaCha20-Poly1305 (13 KB/s with AES-256-GCM). What Velox does about it:
-  - the SSL context is made by a process of its own below the window's
-    priority as soon as the network is first used (`TlsPrepare`), so the
-    window never waits for it and it is usually ready by the first
-    https page;
+  - the SSL context is made by the TLS process as soon as the network
+    is first used (`TlsPrepare`), so the window never waits for it and
+    it is usually ready by the first https page; the process then does
+    all the crypto, so the window answers during handshakes and
+    downloads (it only takes longer);
   - ChaCha20-Poly1305 first, then AES-128-GCM (TLS 1.3 and 1.2): twice
     as fast as AES without AES instructions; SHA-256 rather than SHA-384;
   - RSA signatures first (cheap to verify; a server with both kinds of

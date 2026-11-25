@@ -2409,12 +2409,19 @@ ClampScroll:
 	moveq	#0,d0
 .x:	rts
 
-; GuiSetUrl - show a URL in the URL gadget
+; GuiSetUrl - show a URL in the URL gadget, unless the user is typing
+; in it (a page that comes meanwhile does not overwrite what is typed)
 ; In: a0 = URL
 GuiSetUrl:
-	move.l	a0,UrlSetTags+4
 	move.l	g_GadUrl(a4),d0
-	beq.s	.x
+	beq.s	UrlX
+	move.l	d0,a1
+	btst	#7,gg_Flags+1(a1)	; GFLG_SELECTED: active
+	bne.s	UrlX
+; UrlPut - (gui.s) a0 = URL: shown in the URL gadget even if active
+UrlPut:	move.l	a0,UrlSetTags+4
+	move.l	g_GadUrl(a4),d0
+	beq.s	UrlX
 	move.l	d0,a0
 	move.l	g_Window(a4),a1
 	movem.l	a2-a3,-(sp)
@@ -2422,7 +2429,7 @@ GuiSetUrl:
 	lea	UrlSetTags,a3
 	GT	GT_SetGadgetAttrsA
 	movem.l	(sp)+,a2-a3
-.x:	rts
+UrlX:	rts
 
 ; GuiSetTitle - In: a0 = window title (kept by the caller)
 GuiSetTitle:
@@ -2849,7 +2856,7 @@ ActivateUrl:
 	bra.s	.peek
 .set:	clr.b	(a3,d4.l)
 	move.l	a3,a0
-	bsr	GuiSetUrl
+	bsr	UrlPut
 	move.l	g_GadUrl(a4),d0
 	beq.s	.x
 	move.l	d0,a0

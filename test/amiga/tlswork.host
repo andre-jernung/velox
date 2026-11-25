@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+"""Host side of tlswork.script: each TLS handshake job (two or more a
+handshake) takes 6 s more in the TLS process (Velox/TlsDelay 300).
+Keys are answered meanwhile; a page stopped during a handshake (Back),
+then another TLS page: shown once the handshake left behind has ended;
+Ctrl-Q during a handshake: Velox ends cleanly."""
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from xdrive import Amiga, wait_log  # noqa: E402
+
+r = sys.argv[1]
+log = os.path.join(r, "tlswork.log")
+out = open(os.path.join(r, "tlswork.driver"), "w")
+S = "https://localhost:8443/"
+H = "http://127.0.0.1:8080/"
+C = "hello-close?w%d-" % int(time.time())   # (not in the disk cache:
+                                          #  other tests fetch hello-close)
+
+
+def step(msg):
+    out.write(msg + "\n")
+    out.flush()
+
+
+def lines():
+    return open(log, "rb").read().decode("latin-1").split("\n")
+
+
+def count(prefix):
+    return len([x for x in lines() if x.startswith(prefix)])
+
+
+def go(a, url):
+    g = count("go ")
+    a.key("ctrl+l")
+    a.type(url)
+    a.key("Return")
+    wait_log(log, "go ", g + 1, timeout=30)
+
+
+def keys_until(a, done, most=120):
+    """Press Down every 0.3 s until done() holds; Out: (seconds it took,
+    the longest a key waited for its "key 77" line)."""
+    t0 = time.time()
+    worst = 0
+    while not done():
+        if time.time() - t0 > most:
+            raise AssertionError("not done after %d s" % most)
+        n = lines().count("key 77")
+        t = time.time()
+        a.key("Down")
+        while lines().count("key 77") <= n and time.time() - t < 10:
+            time.sleep(0.02)
+        worst = max(worst, time.time() - t)
+        time.sleep(0.3)
+    return time.time() - t0, worst
+
+
+try:
+    a = Amiga()
+    wait_log(log, "page " + H + "index.html", timeout=120)
+    time.sleep(1)
+    # 1. the window answers during a (slow) handshake
+    go(a, S + C + "1")
+    took, worst = keys_until(a, lambda: count("page " + S + C + "1"))
+    step("TLS page shown after %.1f s" % took)
+    if took < 6:
+        raise AssertionError("the handshake was not slow (%.1f s)" % took)
+    if worst > 1.0:
+        raise AssertionError("a key waited %.1f s" % worst)
+    step("keys answered during the handshake")
+    time.sleep(1)
+    # 2. stopped during a handshake: another page at once; then a TLS
+    # page again, after the handshake left behind
+    t = count("tls ")
+    go(a, S + C + "2")
+    time.sleep(1)
+    k = count("page " + H + "index.html")
+    t0 = time.time()
+    a.key("BackSpace")      # (Back: no typing, which takes seconds)
+    wait_log(log, "page " + H + "index.html", k + 1, timeout=30)
+    if time.time() - t0 > 1.5:
+        raise AssertionError("the page after the one stopped took %.1f s"
+                             % (time.time() - t0))
+    if count("page " + S + C + "2"):
+        raise AssertionError("the page stopped was shown")
+    step("a page stopped during its handshake: the next comes at once")
+    go(a, S + C + "3")
+    wait_log(log, "page " + S + C + "3", timeout=60)
+    if count("tls ") != t + 1:
+        raise AssertionError("handshakes: %r" % [x for x in lines() if x.startswith("tls ")])
+    step("the next TLS page after it: shown")
+    time.sleep(1)
+    # 3. quit during a handshake
+    go(a, S + C + "4")
+    time.sleep(1)
+    a.key("ctrl+q")
+    step("ok")
+except Exception as e:
+    step("FAIL " + repr(e))
+    try:
+        Amiga().key("ctrl+q")
+    except Exception:
+        pass

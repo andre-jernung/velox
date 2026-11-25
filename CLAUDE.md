@@ -104,6 +104,14 @@ and a single event dispatch point.
   `g_PageBg`...) before the end, where the new runs replace those shown.
   LayPoll keeps all registers (LayoutNode's a1 is live there: this bug
   happened).
+- AmiSSL's crypto runs in the TLS process (conn.s, `TwRun`), at the
+  same time as Velox's task. What runs there (`TwExec`, `TlsVerify`,
+  `CertFile`) uses only the `g_Tw*`/`g_Cert*` globals, no shared
+  scratch, and logs nothing (`LogEvent` would interleave with Velox's).
+  Velox's task makes only cheap AmiSSL calls itself (BIOs,
+  `SSL_pending`, sessions), never on the SSL of a job under way, and
+  anything a job reads (its host, its data) is set after `TwRun` has
+  waited for the job before: a job of a stopped page runs on to its end.
 - A page is its arena (`PageAlloc`), its buffers and the globals listed
   in `KeepTab` (keep.s): pages are kept for Back by copying those, and
   saved to disk as page files (pagefile.s). A new per-page global goes

@@ -1,0 +1,25 @@
+; tlswork: TLS crypto runs in the TLS process (test/amiga/tlswork.host):
+; with each handshake made slow (Velox/TlsDelay) the window answers
+; meanwhile; a page stopped during a handshake leaves it to finish, and
+; the next TLS page waits for it; quitting during one waits for it too.
+; No memory may be lost (the SSL left to the process is freed).
+Echo >VELOX:r/tlswork.txt "tlswork"
+; warm-up run (one-time OS allocations: fonts, CLI, AmiSSL ...)
+Run >NIL: VELOX:velox https://localhost:8443/hello
+Wait 15
+Status >ENV:vpid COMMAND=VELOX:velox
+Break $vpid C
+Wait 3
+Delete >NIL: ENV:vpid
+Avail >NIL: FLUSH
+Echo >>VELOX:r/tlswork.txt "mem_before " NOLINE
+Avail >>VELOX:r/tlswork.txt TOTAL
+SetEnv Velox/TlsDelay 300
+Echo >VELOX:r/tlswork.start ""
+VELOX:velox http://127.0.0.1:8080/index.html LOG=VELOX:r/tlswork.log
+Echo >>VELOX:r/tlswork.txt "exit rc=$RC"
+UnSetEnv Velox/TlsDelay
+Avail >NIL: FLUSH
+Echo >>VELOX:r/tlswork.txt "mem_after " NOLINE
+Avail >>VELOX:r/tlswork.txt TOTAL
+Echo >>VELOX:r/tlswork.txt "done"

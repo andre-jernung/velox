@@ -45,6 +45,7 @@ URL_MAX		equ	2048		; max URL length incl. NUL
 LINE_MAX	equ	1024		; max HTTP header line we keep
 HOST_MAX	equ	256
 CONN_BUFSIZE	equ	4096
+TW_NET		equ	8192		; (conn.s: socket <-> TLS BIOs)
 ETAG_MAX	equ	128		; ETag value kept
 LASTMOD_MAX	equ	40		; Last-Modified value kept
 DCPATH_MAX	equ	256		; disk cache: a file's path
@@ -149,6 +150,8 @@ c_Pos		rs.l	1		; read position in c_Buf
 c_End		rs.l	1		; end of valid data in c_Buf
 c_Sess		rs.l	1		; TLS: its entry in g_TlsSess (conn.s)
 c_SessGen	rs.l	1		; ... that entry's ts_Gen then
+c_RBio		rs.l	1		; TLS: its memory BIOs (bytes from
+c_WBio		rs.l	1		; ... and to the server; the SSL's)
 c_Buf		rs.b	CONN_BUFSIZE
 CONN_SIZEOF	rs.b	0
 
@@ -1046,6 +1049,25 @@ g_TlsMain	rs.l	1		; ... to this task,
 g_TlsOk		rs.l	1		; ... its result,
 g_TlsErrno	rs.l	1		; ... its errno
 g_TlsVar	rs.b	128		; ... Velox/TlsCiphers
+; the TLS process (conn.s): it does all of AmiSSL's crypto, one job at
+; a time; Velox carries the bytes between the sockets and its BIOs
+g_TwTask	rs.l	1		; the process (0: none, jobs run here)
+g_TwSig		rs.l	1		; ... its signal for a job,
+g_TwSigBit	rs.l	1		; ... (bit)
+g_TwOp		rs.l	1		; the job: TW_CONNECT, TW_READ, ...
+g_TwSSL		rs.l	1		; ... its SSL,
+g_TwLen		rs.l	1		; ... bytes (TW_READ, TW_WRITE),
+g_TwRet		rs.l	1		; ... SSL_xxx's result,
+g_TwErr		rs.l	1		; ... SSL_get_error (result <= 0)
+g_TwBusy	rs.l	1		; a job is under way
+g_TwFree	rs.l	1		; ... its connection was closed: the
+					;     process frees its SSL
+g_TwDelay	rs.l	1		; Velox/TlsDelay (tests)
+g_TwCertKnown	rs.l	1		; TlsVerify took a known certificate
+					; (for this SSL)
+g_TwHost	rs.b	HOST_MAX	; the host of a TW_CONNECT (TlsVerify)
+g_TwBuf		rs.b	CONN_BUFSIZE	; TW_READ / TW_WRITE data
+g_TwNet		rs.b	TW_NET		; bytes between socket and BIOs
 g_SIZEOF	rs.b	0
 
 ;--------------------------------------------------------------------

@@ -5,7 +5,13 @@ _LVOSSL_CTX_new	equ	-6072
 _LVOSSL_CTX_free	equ	-6078
 _LVOSSL_new	equ	-6546
 _LVOSSL_free	equ	-6582
-_LVOSSL_set_fd	equ	-6186
+_LVOSSL_set_bio	equ	-6204
+_LVOBIO_s_mem	equ	-1542
+_LVOBIO_new	equ	-1398
+_LVOBIO_free	equ	-1404
+_LVOBIO_read	equ	-1416
+_LVOBIO_write	equ	-1428
+_LVOBIO_ctrl	equ	-1446
 _LVOSSL_connect	equ	-6594
 _LVOSSL_read	equ	-6600
 _LVOSSL_write	equ	-6612
