@@ -7,8 +7,8 @@ A small, fast web browser for classic AmigaOS 3.x, written entirely in
 
 - AmigaOS 3.1 or newer, 68020 or better
 - A TCP/IP stack with bsdsocket.library (Roadshow, AmiTCP, Miami)
-- For https: AmiSSL 5 or newer (AmiSSL 6 recommended), or
-  `velox-proxy.py` running on a modern machine
+- For https: AmiSSL 6, or `velox-proxy.py` running on a modern
+  machine
 - Nothing more for images: Velox decodes JPEG, PNG, GIF and WebP
   itself. Other formats (ILBM, BMP ...) go through the picture
   datatypes the system has.
@@ -41,9 +41,10 @@ A small, fast web browser for classic AmigaOS 3.x, written entirely in
 - History, bookmarks, local `file:` pages, a home page, find in page
 - Frames: a frameset shows its frames' pages side by side or stacked
   (as its cols and rows say, nested framesets too), each scrolling on
-  its own: the mouse wheel scrolls the frame under it, a click makes a
-  frame the one the keys and the scroller move; links with a target load
-  into their frame, and Back undoes that. Iframes are links to their
+  its own, with its own scrollbar where needed: the mouse wheel scrolls
+  the frame under it, a click makes a frame the one the keys and the
+  window's scroller move; a link with a target loads that frame only,
+  and Back undoes that. Iframes are links to their
   pages. `<meta>` refresh redirects
 - Image maps: client side (`usemap`, `<area>` rectangles, circles,
   polygons; Tab steps through the areas) and server side (`ismap`)

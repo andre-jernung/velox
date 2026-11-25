@@ -48,6 +48,7 @@ CONN_BUFSIZE	equ	4096
 TW_NET		equ	8192		; (conn.s: socket <-> TLS BIOs)
 FR_MAX		equ	16		; frames in a page, at most
 FR_GAPS		equ	40		; borders between them, at most
+SB_W		equ	12		; a frame's own scrollbar: its width
 ETAG_MAX	equ	128		; ETag value kept
 LASTMOD_MAX	equ	40		; Last-Modified value kept
 DCPATH_MAX	equ	256		; disk cache: a file's path
@@ -1106,6 +1107,11 @@ g_FrActive	rs.l	1		; the frame the keys and the scroller move
 g_FrHover	rs.l	1		; the frame under the mouse
 g_FrNode	rs.l	FR_MAX		; each: its <frame> element,
 g_FrRect	rs.l	FR_MAX*4	; ... its rectangle (x, y, w, h)
+g_FrSb		rs.l	FR_MAX		; ... its scrollbar: 0 none, 1 when
+					;     needed (scrolling=auto), 2 always
+g_SbDrag	rs.l	1		; gui.s: the frame whose knob is dragged,
+g_SbGrab	rs.l	1		; ... where it was taken
+g_FrLogBuf	rs.b	48		; frames.s: a rectangle logged
 g_FrGapN	rs.l	1		; borders between them,
 g_FrGap		rs.l	FR_GAPS*4	; ... their rectangles
 g_LayTarget	rs.l	1		; layout.s: the view it is for (0: G's)

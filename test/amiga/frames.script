@@ -1,6 +1,46 @@
-; frames: meta refresh and frames (test/amiga/frames.host)
+; frames: meta refresh and frames (test/amiga/frames.host; the mouse
+; commands it writes, frames.goN, run here)
 Echo >VELOX:r/frames.txt "frames"
+FailAt 21
+Delete >NIL: VELOX:r/frames.go#? VELOX:r/frames.end
 Echo >VELOX:r/frames.start ""
-VELOX:velox http://127.0.0.1:8080/index.html LOG=VELOX:r/frames.log
-Echo >>VELOX:r/frames.txt "exit rc=$RC"
+Run >NIL: VELOX:velox http://127.0.0.1:8080/index.html LOG=VELOX:r/frames.log
+Lab w1
+IF EXISTS VELOX:r/frames.end
+  Skip done
+EndIF
+IF NOT EXISTS VELOX:r/frames.go1
+  Wait 1
+  Skip w1 BACK
+EndIF
+Execute VELOX:r/frames.go1
+Lab w2
+IF EXISTS VELOX:r/frames.end
+  Skip done
+EndIF
+IF NOT EXISTS VELOX:r/frames.go2
+  Wait 1
+  Skip w2 BACK
+EndIF
+Execute VELOX:r/frames.go2
+Lab w3
+IF EXISTS VELOX:r/frames.end
+  Skip done
+EndIF
+IF NOT EXISTS VELOX:r/frames.go3
+  Wait 1
+  Skip w3 BACK
+EndIF
+Execute VELOX:r/frames.go3
+Lab w4
+IF EXISTS VELOX:r/frames.end
+  Skip done
+EndIF
+IF NOT EXISTS VELOX:r/frames.go4
+  Wait 1
+  Skip w4 BACK
+EndIF
+Execute VELOX:r/frames.go4
+Lab done
+Wait 3
 Echo >>VELOX:r/frames.txt "done"

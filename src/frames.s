@@ -31,7 +31,7 @@
 	xdef	FramesCompose,FrameNav,FrameSplit,FrameShow
 	xdef	FramesPage,FramesLayout,FramesFree,ViewSelect,ViewSlot,FrameAt
 	xdef	FramesSame,FramesUpdate
-	xref	LayoutDocument
+	xref	LayoutDocument,FmtDec
 	xref	HttpGetCached,HtmlParse,CharsetDetect,DecodeCharset,BufFree
 	xref	PageAlloc,DomNewNode,DomAppend,DomAddAttr,DomGetAttr
 	xref	UrlResolve,StrIPrefix,StrLen,LogEvent,GuiStatus,NavGo
@@ -524,6 +524,7 @@ SVxTarget:	dc.b	"vxtarget",0
 SVxBase:	dc.b	"vxbase",0
 SVxDef:		dc.b	"vxdef",0
 SVxSrc:		dc.b	"vxsrc",0
+SScrolling:	dc.b	"scrolling",0
 	even
 
 ;--------------------------------------------------------------------
@@ -1127,7 +1128,11 @@ FramesLayout:
 	lsl.l	#4,d0
 	add.l	d0,a1
 	movem.l	(a1),d0-d1/d3-d4	; x, y, w, h: another rectangle is
-	cmp.l	g_PageX-g_View(a0),d0	; painted all again
+	lea	g_FrSb-4(a4),a1		; painted all again (its scrollbar:
+	tst.l	(a1,d2.l*4)		; right of the page)
+	beq.s	.nsb
+	sub.l	#SB_W,d3
+.nsb:	cmp.l	g_PageX-g_View(a0),d0
 	bne.s	.chg
 	cmp.l	g_PageY-g_View(a0),d1
 	bne.s	.chg
@@ -1202,6 +1207,7 @@ FramesLayout:
 	rts
 
 LogFrames:	dc.b	"frames",0
+LogFRect:	dc.b	"frect",0
 	even
 
 ; FrLargest - Out: d0 = the frame with the largest area (1..)
@@ -1392,11 +1398,56 @@ FrPlace:
 	bhs.s	.x
 	lea	g_FrNode(a4),a1
 	move.l	a0,(a1,d4.l*4)
+	movem.l	d0-d3,-(sp)		; its scrollbar: scrolling="no": none,
+	lea	SScrolling(pc),a1	; "yes": always, else when needed
+	jsr	DomGetAttr
+	moveq	#1,d1
+	tst.l	d0
+	beq.s	.sa
+	move.l	d0,a0
+	move.b	(a0),d0
+	or.b	#$20,d0
+	cmp.b	#'n',d0
+	bne.s	.sy
+	moveq	#0,d1
+	bra.s	.sa
+.sy:	cmp.b	#'y',d0
+	bne.s	.sa
+	moveq	#2,d1
+.sa:	lea	g_FrSb(a4),a1
+	move.l	d1,(a1,d4.l*4)
+	movem.l	(sp)+,d0-d3
+	cmp.l	#3*SB_W,d2		; (too narrow: none)
+	bhs.s	.wide
+	clr.l	(a1,d4.l*4)
+.wide:	bsr	LogRect
 	lsl.l	#4,d4
 	lea	g_FrRect(a4),a1
 	add.l	d4,a1
 	movem.l	d0-d3,(a1)
 	addq.l	#1,g_FrN(a4)
+.x:	rts
+
+; LogRect - (FrPlace, for tests) "frect N x y w h": frame d4 (from 0)
+; at d0-d3 (d0-d4 kept) (d1 kept)
+LogRect:
+	tst.l	g_LogFH(a4)
+	beq.s	.x
+	movem.l	d0-d4/a2,-(sp)
+	lea	g_FrLogBuf(a4),a0
+	moveq	#4-1,d2
+	move.l	sp,a2
+.n:	move.l	(a2)+,d0
+	jsr	FmtDec
+	move.b	#' ',(a0)+
+	dbf	d2,.n
+	clr.b	-(a0)
+	lea	LogFRect(pc),a0
+	lea	g_FrLogBuf(a4),a1
+	move.l	16(sp),d0
+	addq.l	#1,d0
+	jsr	LogEvent
+	movem.l	(sp)+,d0-d4/a2
 .x:	rts
 
 ; FrGap - (FrGeom) a border at d0/d1 (x, y), d3/d4 (width, height)

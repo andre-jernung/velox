@@ -2706,7 +2706,10 @@ ScreenPens:
 
 ; UpdateScroller - give the scroller the document size and position
 UpdateScroller:
-	tst.l	g_Dragging(a4)		; (while the user drags it, the page
+	tst.l	g_FrN(a4)		; a frame's view: its own scrollbar
+	beq.s	.nsb
+	bsr	PaintSb
+.nsb:	tst.l	g_Dragging(a4)		; (while the user drags it, the page
 	bne.s	.x			;  changing must not move it back)
 	tst.l	g_InFrames(a4)		; (a page of frames: the active one's)
 	bne.s	.x
@@ -3061,6 +3064,12 @@ HandleMessages:
 ; under it, the keys', the scroller's and the menus' the active one;
 ; the others the page's
 FrameRoute:
+	bsr	SbEvent			; a frame's own scrollbar first
+	bne.s	.x
+	bsr.s	FrameRoute1
+	moveq	#0,d0
+.x:	rts
+FrameRoute1:
 	cmp.l	#IDCMP_MOUSEMOVE,d2
 	beq.s	.move
 	cmp.l	#IDCMP_MOUSEBUTTONS,d2
@@ -3120,6 +3129,177 @@ FrameRoute:
 .sel:	jmp	ViewSelect
 .x:	rts
 
+; SbEvent - (FrameRoute) the frames' own scrollbars: a press on one
+; (its frame then the active one): above the knob a page up, below it
+; a page down, on it the knob taken; moves while it is held drag it
+; (g_ScrollPend: ScrollFlush shows the last)
+; Out: d0 = 1 if the event was for a scrollbar (CCR set)
+SbEvent:
+	move.l	g_SbDrag(a4),d0
+	beq.s	.press
+	cmp.l	#IDCMP_MOUSEMOVE,d2
+	beq.s	.drag
+	cmp.l	#IDCMP_MOUSEBUTTONS,d2
+	bne	.no
+	clr.l	g_SbDrag(a4)		; let go
+	bra	.yes
+.drag:	jsr	ViewSelect
+	movem.l	d2-d3,-(sp)
+	move.l	d6,d2			; the knob's top in the trough
+	sub.l	g_SbGrab(a4),d2
+	sub.l	g_PageY(a4),d2
+	bpl.s	.d0
+	moveq	#0,d2
+.d0:	bsr	SbKnob			; d1 = its height
+	move.l	g_PageH(a4),d3
+	sub.l	d1,d3			; d3 = room for it
+	ble.s	.d1
+	move.l	g_DocHeight(a4),d0	; the scroll range
+	sub.l	g_PageH(a4),d0
+	mulu.l	d0,d2
+	divu.l	d3,d2
+	addq.l	#1,d2
+	move.l	d2,g_ScrollPend(a4)
+.d1:	movem.l	(sp)+,d2-d3
+	bra	.yes
+.press:	cmp.l	#IDCMP_MOUSEBUTTONS,d2
+	bne	.no
+	cmp.w	#IECODE_LBUTTON,d3
+	bne	.no
+	move.l	d5,d0
+	move.l	d6,d1
+	jsr	FrameAt
+	beq	.no
+	lea	g_FrSb-4(a4),a0
+	tst.l	(a0,d0.l*4)
+	beq	.no
+	move.l	d0,d1			; in its bar?
+	lsl.l	#4,d1
+	lea	g_FrRect-16(a4),a0
+	add.l	d1,a0
+	move.l	(a0),d1
+	add.l	8(a0),d1
+	sub.l	#SB_W,d1
+	cmp.l	d1,d5
+	blt	.no
+	move.l	d0,g_FrActive(a4)	; its frame: the active one
+	jsr	ViewSelect
+	bsr	UpdateScroller
+	bsr	SbKnob			; above the knob, below it, on it
+	tst.l	d1
+	beq.s	.yes
+	cmp.l	d0,d6
+	blt.s	.up
+	add.l	d0,d1
+	cmp.l	d1,d6
+	bge.s	.down
+	move.l	d6,d1			; on it: taken
+	sub.l	d0,d1
+	move.l	d1,g_SbGrab(a4)
+	move.l	g_FrActive(a4),g_SbDrag(a4)
+	bra.s	.yes
+.up:	move.l	g_ScrollY(a4),d0
+	sub.l	g_PageH(a4),d0
+	add.l	#16,d0
+	bsr	GuiScrollTo
+	bra.s	.yes
+.down:	move.l	g_ScrollY(a4),d0
+	add.l	g_PageH(a4),d0
+	sub.l	#16,d0
+	bsr	GuiScrollTo
+.yes:	moveq	#1,d0
+	rts
+.no:	moveq	#0,d0
+	rts
+
+; SbKnob - (a frame's view in G) its scrollbar's knob
+; Out: d0 = its top (window), d1 = its height (0: nothing to scroll)
+SbKnob:
+	movem.l	d2-d4,-(sp)
+	move.l	g_PageH(a4),d2		; d2 = the trough's height
+	move.l	g_DocHeight(a4),d3
+	moveq	#0,d0
+	moveq	#0,d1
+	cmp.l	d2,d3
+	ble.s	.x
+	move.l	d2,d1			; its height: as much as is seen
+	mulu.l	d2,d1
+	divu.l	d3,d1
+	cmp.l	#8,d1
+	bhs.s	.k
+	moveq	#8,d1
+.k:	cmp.l	d2,d1
+	bls.s	.k2
+	move.l	d2,d1
+.k2:	move.l	d2,d0			; its top: as far as scrolled
+	sub.l	d1,d0
+	move.l	g_ScrollY(a4),d4
+	mulu.l	d4,d0
+	sub.l	d2,d3
+	divu.l	d3,d0
+	add.l	g_PageY(a4),d0
+.x:	movem.l	(sp)+,d2-d4
+	rts
+
+; PaintSb - (a frame's view in G) its own scrollbar, right of its page
+; area: a trough and a knob, or the page's background if it is only
+; there when needed and not needed
+PaintSb:
+	movem.l	d2-d5/a2,-(sp)
+	move.l	g_ViewCur(a4),d0
+	beq	.x
+	lea	g_FrSb-4(a4),a0
+	move.l	(a0,d0.l*4),d5		; d5 = 0 none, 1 when needed, 2 always
+	beq	.x
+	move.l	g_Window(a4),d0
+	beq	.x
+	move.l	d0,a0
+	move.l	wd_RPort(a0),a2		; a2 = RastPort
+	move.l	g_DocHeight(a4),d0
+	cmp.l	g_PageH(a4),d0
+	bgt.s	.bar
+	cmp.l	#2,d5
+	beq.s	.bar
+	move.l	g_PageBg(a4),d0		; not needed: the page's background
+	bsr	GetPen
+	bsr.s	.col
+	bra.s	.x
+.bar:	moveq	#0,d0			; the trough
+	bsr.s	.col
+	bsr	SbKnob
+	tst.l	d1
+	beq.s	.x
+	move.l	d0,d3			; the knob
+	move.l	d1,d5
+	move.l	a2,a1
+	move.l	g_PenShadow(a4),d0
+	GFX	SetAPen
+	move.l	g_PageX(a4),d0
+	add.l	g_PageW(a4),d0
+	addq.l	#2,d0
+	move.l	d3,d1
+	move.l	d0,d2
+	add.l	#SB_W-4,d2
+	add.l	d5,d3
+	subq.l	#1,d3
+	move.l	a2,a1
+	GFX	RectFill
+.x:	movem.l	(sp)+,d2-d5/a2
+	rts
+.col:	move.l	a2,a1			; (the column in pen d0)
+	GFX	SetAPen
+	move.l	g_PageX(a4),d0
+	add.l	g_PageW(a4),d0
+	move.l	g_PageY(a4),d1
+	move.l	d0,d2
+	add.l	#SB_W-1,d2
+	move.l	d1,d3
+	add.l	g_PageH(a4),d3
+	subq.l	#1,d3
+	move.l	a2,a1
+	GFX	RectFill
+	rts
+
 ; FocusTab - (Tab) FocusNext d0; a page of frames: past the last link
 ; of the active frame, on in the next frame (that one active then)
 FocusTab:
@@ -3176,9 +3356,10 @@ ScrollFlush:
 HandleEvent:
 	tst.l	g_FrN(a4)		; a page of frames: the view of the
 	beq.s	HandleEvent1		; event's frame in G, then the page's
-	bsr	FrameRoute		; again
+	bsr	FrameRoute		; again (a frame's scrollbar: the
+	bne.s	.sb			;  event is its)
 	bsr.s	HandleEvent1
-	moveq	#0,d0
+.sb:	moveq	#0,d0
 	jmp	ViewSelect
 HandleEvent1:
 	tst.l	g_ScrollPend(a4)

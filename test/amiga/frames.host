@@ -3,7 +3,8 @@
 not kept in the history); a frameset shows its frames' documents (a
 nested one too, one of height 0 hidden), their relative URLs taken
 against their own; the
-keys scroll the active frame alone; Tab goes on into the next frame; a link
+keys scroll the active frame alone, and so does a click in its own
+scrollbar; Tab goes on into the next frame; a link
 targeting a frame (by <base target>) replaces that frame's document,
 Back brings the one before; a link with target=_top leaves the
 frames."""
@@ -32,6 +33,32 @@ def lines():
 
 def count(prefix):
     return len([x for x in lines() if x.startswith(prefix)])
+
+
+CLICKS = [0]
+
+
+def click(sx, sy):
+    """a click at screen position sx/sy (the Amiga runs frames.goN)"""
+    CLICKS[0] += 1
+    with open(os.path.join(r, "frames.go%d" % CLICKS[0]), "w") as f:
+        f.write("VELOX:mouse %d %d\nWait 1\nVELOX:mouse %d %d DOWN\n"
+                "VELOX:mouse %d %d UP\n" % (sx, sy, sx, sy, sx, sy))
+    time.sleep(3)
+
+
+def rects():
+    """the frames shown: {N: (x, y, w, h)} (window), and the window's
+    origin on the screen"""
+    fr = {}
+    for x in lines():
+        p = x.split()
+        if p and p[0] == "frect":
+            fr[int(p[5])] = tuple(int(v) for v in p[1:5])
+    ls = lines()
+    px = int([l for l in ls if l.startswith("pagex ")][-1].split()[1])
+    py = int([l for l in ls if l.startswith("pagey ")][-1].split()[1])
+    return fr, px - fr[1][0], py - fr[1][1]
 
 
 def go(a, url):
@@ -81,6 +108,25 @@ try:
     time.sleep(1)
     a.shot(os.path.join(r, "frames1.png"))
 
+    # its own scrollbar: a click below the knob, a page further; the
+    # navigation frame's (it all fits: no knob) does nothing
+    fr, ox, oy = rects()
+    x, y, w, h = fr[3]
+    sc = [int(l.split()[1]) for l in lines() if l.startswith("scroll ")]
+    n = count("fscroll ")
+    click(ox + x + w - 6, oy + y + h - 6)
+    wait_log(log, "fscroll ", n + 1, timeout=10)
+    sc2 = [int(l.split()[1]) for l in lines() if l.startswith("scroll ")]
+    if lines() and [l for l in lines() if l.startswith("fscroll ")][-1] != "fscroll 3" or sc2[-1] <= sc[-1] + 50:
+        raise AssertionError("its scrollbar: %r -> %r" % (sc[-1:], sc2[-1:]))
+    x, y, w, h = fr[1]
+    n = count("fscroll ")
+    click(ox + x + w - 6, oy + y + h - 6)
+    if count("fscroll ") != n:
+        raise AssertionError("a scrollbar with nothing to scroll scrolled")
+    step("a frame's own scrollbar: a page further (%d -> %d)" % (sc[-1], sc2[-1]))
+    a.shot(os.path.join(r, "frames1b.png"))
+
     # Tab: past the active frame's links (none), on in the next frame;
     # <base target="main">: the link replaces the main frame's document
     a.key("Tab")
@@ -126,3 +172,4 @@ except Exception as e:
         Amiga().key("ctrl+q")
     except Exception:
         pass
+open(os.path.join(r, "frames.end"), "w").close()

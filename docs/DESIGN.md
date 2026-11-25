@@ -251,7 +251,14 @@ it the active one; keys, the scroller and menus the active one's; the
 wheel the one under the mouse), and the page's back after; `TaskAbort`
 puts the page's in G before the loader runs. `GuiRefresh` paints each
 frame's view, then the borders, the scroller showing the active frame
-(at first the largest). Tab goes on from the last link of the active
+(at first the largest). Each frame has a scrollbar of its own, drawn
+by Velox (not an Intuition gadget: frames come and go with the page),
+SB_W pixels right of its page area: `scrolling="no"` none, `"yes"`
+always, else shown when the frame's page is taller than the frame
+(the room is kept either way, so a frame is laid out once). A press on
+it (`SbEvent`) makes its frame the active one and pages up or down, or
+takes the knob, which is then dragged (through `g_ScrollPend`, as the
+window's scroller). Tab goes on from the last link of the active
 frame to the next frame's (`FocusTab`). A page of frames is not saved
 as a page file, and a page of frames kept for Back keeps its DOM and
 is laid out again when shown (`FramesFree` when it is left).
