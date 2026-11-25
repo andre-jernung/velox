@@ -1,7 +1,9 @@
 #!/bin/sh
 # Fetch and build the Velox toolchain into tools/bin and tools/ndk.
 # Needs: git, curl, gcc, make, 7z or lha, python3 with venv (python3.13-venv).
-# NDK31=DIR uses a local Commodore NDK 3.1 instead of fetching NDK 3.2.
+# The NDK is Commodore's NDK 3.1, from the Amiga Developer CD 2.1 archive
+# in ndk/adcd.lha (not committed: copyrighted), or NDK31=DIR (the folder
+# holding Includes&Libs).
 set -eu
 cd "$(dirname "$0")"
 # unlha ARCHIVE: unpack into the current directory
@@ -16,6 +18,18 @@ mkdir -p src/vlink/objects
 make -C src/vlink
 cp src/vasm/vasmm68k_mot src/vasm/vobjdump src/vlink/vlink bin/
 
+if [ ! -d ndk/Include_I ] && [ -z "${NDK31:-}" ] && [ -f ../ndk/adcd.lha ]; then
+	# NDK 3.1 from the Developer CD archive
+	if [ ! -d "src/adcd/NDK/NDK_3.1/Includes&Libs" ]; then
+		mkdir -p src/adcd
+		if command -v 7z >/dev/null; then
+			(cd src/adcd && 7z x -y ../../../ndk/adcd.lha "NDK/NDK_3.1/*" >/dev/null)
+		else
+			(cd src/adcd && lha xqf ../../../ndk/adcd.lha "NDK/NDK_3.1/*")
+		fi
+	fi
+	NDK31=src/adcd/NDK/NDK_3.1
+fi
 if [ ! -d ndk/Include_I ] && [ -n "${NDK31:-}" ]; then
 	# a local Commodore NDK 3.1 (NDK31=path, the folder holding
 	# Includes&Libs): it has .fd files but no lvo/*.i, so make those
@@ -29,11 +43,9 @@ if [ ! -d ndk/Include_I ] && [ -n "${NDK31:-}" ]; then
 	done
 fi
 if [ ! -d ndk/Include_I ]; then
-	curl -L -o src/NDK3.2.lha https://aminet.net/dev/misc/NDK3.2.lha
-	mkdir -p src/ndk
-	(cd src/ndk && unlha ../NDK3.2.lha)
-	cp -r src/ndk/Include_I src/ndk/FD src/ndk/SFD ndk/
-	cp -r "src/ndk/SANA+RoadshowTCP-IP/sfd" ndk/net_sfd
+	echo "no NDK 3.1: put the Amiga Developer CD 2.1 archive in ndk/adcd.lha" >&2
+	echo "or give NDK31=DIR (the folder holding Includes&Libs)" >&2
+	exit 1
 fi
 # AmiSSL 6 for the emulated test system (TLS tests)
 if [ ! -d src/amissl/AmiSSL ]; then

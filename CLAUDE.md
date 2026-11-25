@@ -61,9 +61,13 @@ and a single event dispatch point.
   coming in 4 parts, and Back to it kept.
 - `OS=3.2 test/emu.sh --auto` runs the same tests on AmigaOS 3.2 (Kickstart
   3.2 and Workbench/Classes/Fonts disks from the user's 3.2 CD in
-  `~/amiga/os32/cd`). Run both before calling GUI or image work done.
+  `~/amiga/os32/cd`). It takes long, so run it only before a release;
+  for each change, the 3.1 suite is enough.
 - Toolchain lives in `tools/` and is not committed. `tools/bootstrap.sh`
-  rebuilds it (vasm, vlink, and the AmigaOS 3.2 NDK from Aminet).
+  rebuilds it (vasm, vlink, and the NDK 3.1 from the Amiga Developer CD
+  archive `ndk/adcd.lha`, which is copyrighted and never committed;
+  `tools/fd2lvo.py` makes its LVO includes from the .fd files), or
+  `NDK31=DIR`. Use no library function newer than V40 (3.1).
   `tools/venv` holds amitools (xdftool, vamos).
 - System packages needed: `fs-uae`, `python3.13-venv` and `xvfb` (apt).
   This is a Qubes AppVM, so they belong in the TemplateVM.

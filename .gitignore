@@ -4,7 +4,9 @@ tools/src/
 tools/ndk/
 tools/venv/
 tools/amiga/
-# Kickstart ROMs are copyrighted - never commit
+# the Amiga Developer CD archive (NDK 3.1) and Kickstart ROMs are
+# copyrighted - never commit
+/ndk/
 /amiga/
 *.rom
 __pycache__/
