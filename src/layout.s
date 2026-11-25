@@ -1228,11 +1228,40 @@ LayoutReplaced:
 ; edge at the next line, and the lines beside it are made narrower
 ; In: d2 = width, d3 = height, d5 = run type, d6 = font code,
 ;     a5 = element, a3 = style
+; A small one (two lines tall at most: an icon, a bullet, a spacer) that
+; the float above it on its side reaches into only by the gap and a
+; quarter of its height goes at the edge, not beside that one: our
+; text is smaller than its CSS pixels, our images are not, so lists
+; with an icon per item (one float each) would else step to the right
 PlaceFloat:
 	movem.l	d2-d7,-(sp)
 	bsr	FlushLine		; (it starts a new line)
 	bsr	ApplyPendingMargin
 	bsr	LineReset
+	moveq	#0,d0			; small?
+	move.b	d6,d0
+	add.w	d0,d0
+	lea	g_FontH(a4),a0
+	move.w	(a0,d0.w),d0
+	add.l	d0,d0
+	cmp.l	d0,d3
+	bhi.s	.far
+	move.l	d3,d1			; d1 = as far as the one above may reach
+	lsr.l	#2,d1
+	addq.l	#4,d1
+	add.l	g_LayY(a4),d1
+	lea	g_FlLBot(a4),a0
+	btst	#3,st_Flags(a3)
+	beq.s	.side
+	lea	g_FlRBot(a4),a0
+.side:	move.l	(a0),d0
+	cmp.l	g_LayY(a4),d0
+	ble.s	.far			; (none beside this line)
+	cmp.l	d1,d0
+	bgt.s	.far
+	move.l	g_LayY(a4),(a0)		; that one ends here
+	bsr	LineReset
+.far:
 	move.l	g_LineR(a4),d0		; never wider than the line
 	sub.l	g_LineL(a4),d0
 	cmp.l	d0,d2

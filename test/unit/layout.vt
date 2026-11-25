@@ -19,3 +19,7 @@ layout test/unit/layout/floats.html 300
 layout test/unit/layout/rowspan.html 300
 # <body link=...>: the links in it get that colour
 layout test/unit/layout/linkcolor.html 300
+# a list with an icon floated in each item: each at the edge, though our
+# smaller text makes the icons reach into the next item; tall floats
+# still go beside the one above
+layout test/unit/layout/iconlist.html 300

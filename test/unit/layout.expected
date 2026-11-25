@@ -213,3 +213,21 @@ text 10 8 24 10 8 f1 s1 ccc0000 L "red"
 text 10 40 24 10 8 f1 s0 c000000 "and"
 text 10 72 72 10 8 f1 s1 ccc0000 L "still red"
 
+# a list with an icon floated in each item: each at the edge, though our
+# smaller text makes the icons reach into the next item; tall floats
+# still go beside the one above
+layout test/unit/layout/iconlist.html 300 => 
+height 99
+img  1 10 12 12 12 f1 s0 c000000
+text 1 28 24 10 8 f1 s1 c0000ee L "One"
+img  12 10 12 12 12 f1 s0 c000000
+text 12 28 24 10 8 f1 s1 c0000ee L "Two"
+img  23 278 12 12 12 f1 s0 c000000
+text 23 28 40 10 8 f1 s1 c0000ee L "Three"
+img  34 278 12 12 12 f1 s0 c000000
+text 34 10 32 10 8 f1 s1 c0000ee L "Four"
+img  45 8 40 40 40 f1 s0 c000000
+text 45 54 32 10 8 f1 s0 c000000 "Tall"
+img  55 54 40 40 40 f1 s0 c000000
+text 55 100 48 10 8 f1 s0 c000000 "Beside"
+
