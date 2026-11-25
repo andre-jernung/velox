@@ -26,7 +26,8 @@ A small, fast web browser for classic AmigaOS 3.x, written entirely in
   GET and POST
 - Images: JPEG (baseline and progressive), PNG (all kinds, with
   transparency), GIF and WebP (lossy, lossless, with alpha) decoded by
-  Velox itself, dithered to the screen's colours, transparency kept;
+  Velox itself, dithered to the screen's colours (backgrounds: the
+  nearest colour, so text on them stays readable), transparency kept;
   other formats through datatypes.library. Loaded while the page is
   already usable.
 - Background images (HTML `background`, CSS `background-image` and

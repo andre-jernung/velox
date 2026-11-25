@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Host side of bg.script: wait for the images, take a screenshot."""
+"""Host side of bg.script: wait for the images, take a screenshot; the
+body's background in it is not dithered."""
 import os
 import sys
 import time
@@ -19,6 +20,19 @@ try:
         raise AssertionError("not all 3 backgrounds decoded")
     time.sleep(2)
     a.shot(os.path.join(r, "bg.png"))
+    # backgrounds are not dithered (text on them would be hard to read):
+    # the body's (two colours between the screen's) is one colour below
+    # the content (PIL is in the system's Python, not in tools/venv)
+    import subprocess
+    n = int(subprocess.run(["/usr/bin/python3", "-I", "-c", """
+import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert("RGB")
+print(len(set(im.getpixel((x, y)) for x in range(560, 790) for y in range(380, 480))))
+""", os.path.join(r, "bg.png")], capture_output=True, text=True, check=True).stdout)
+    out.write("body background: %d colour(s)\n" % n)
+    if n != 1:
+        raise AssertionError("the body's background is dithered")
     a.key("ctrl+q")
     out.write("ok\n")
 except Exception as e:

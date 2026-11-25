@@ -426,8 +426,9 @@ DecodeBg:
 	blo.s	.tl
 .t:	rts
 
-; BgKey - g_ImgKey of background image g_ImgUrl: the URL, "|bg|" and
-; the screen's colours (decoded, it is tiled to its natural size)
+; BgKey - g_ImgKey of background image g_ImgUrl: the URL, "|bf|" and
+; the screen's colours (decoded, it is tiled to its natural size, and
+; not dithered: "|bg|" was dithered)
 BgKey:
 	jsr	PalInit			; (g_PalSig)
 	lea	g_ImgUrl(a4),a0
@@ -435,7 +436,7 @@ BgKey:
 	jsr	StrCopy
 	move.b	#'|',(a1)+
 	move.b	#'b',(a1)+
-	move.b	#'g',(a1)+
+	move.b	#'f',(a1)+
 	move.b	#'|',(a1)+
 	move.l	a1,a0
 	move.l	g_PalSig(a4),d0

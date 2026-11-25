@@ -375,7 +375,10 @@ picbm.s turns the pixels into a bitmap like the screen's. It obtains a
 colour cube of pens once, with 2 to 6 levels by the screen depth, and
 scales to the size shown (nearest pixel). It dithers with a 4x4 ordered
 matrix through tables, and pixels less than half opaque go into a mask
-plane. Other formats (ILBM, BMP ...) still go through datatypes.library.
+plane. Background images are not dithered but take the nearest colour
+(a fifth row of the tables, without thresholds): text on a dithered
+background is hard to read. Their pixels kept in the disk cache are
+keyed `URL|bf|PalSig` (`|bg|` was dithered). Other formats (ILBM, BMP ...) still go through datatypes.library.
 Images that cannot be decoded keep their placeholder box (with
 width/height) or show their alt text.
 

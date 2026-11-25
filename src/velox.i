@@ -995,7 +995,7 @@ g_Bands		rs.l	BANDS_MAX	; signature of each band on the screen
 g_BandsNew	rs.l	BANDS_MAX	; ... and of the runs now
 g_Vis		rs.l	VIS_MAX		; indexes of the runs being painted
 g_GifPal	rs.l	256		; colour table, as ARGB
-g_DitTab	rs.b	3*4*4*256	; dither tables (picbm.s)
+g_DitTab	rs.b	3*5*4*256	; dither tables (picbm.s)
 g_C2pLo		rs.l	256		; c2p: a pen's bits, planes 0-3,
 g_C2pHi		rs.l	256		; ... 4-7 (just after)
 g_PngAbs	rs.b	1022		; |v| of -510..510, 255 at most

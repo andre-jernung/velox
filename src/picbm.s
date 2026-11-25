@@ -5,8 +5,10 @@
 ; blue, L by its depth: 2 to 6), obtained once (PalInit).  Images are
 ; scaled (nearest pixel) and dithered to the cube with a 4x4 ordered
 ; dither through tables: the index of a pixel's cube colour is
-; DitTab[R][row][column][red] + ...[green] + ...[blue].  Pixels less
-; than half opaque are left out by a mask plane.
+; DitTab[R][row][column][red] + ...[green] + ...[blue].  Backgrounds
+; are not dithered (text on a dithered background is hard to read):
+; the fifth row of the tables has no thresholds, only the nearest
+; colour.  Pixels less than half opaque are left out by a mask plane.
 ;
 ; PicToBitMap runs in the image decoder process (img.s); PalInit and
 ; PalFree in Velox's own.
@@ -22,7 +24,8 @@
 	ENDC
 	xref	PicAlloc,PicFreeMem
 
-DIT_CH		equ	4*4*256		; one channel: 4 rows, 4 columns
+DIT_CH		equ	5*4*256		; one channel: 4 rows (and the plain
+					; one), 4 columns
 TRUE_DEPTH	equ	15		; this deep and more: true colour
 ; cybergraphics.library (CyberGraphX, Picasso96), not in the NDK
 _LVOWritePixelArray	equ	-126
@@ -96,17 +99,16 @@ PalInit:
 	mulu.w	d7,d0
 	move.l	d0,g_PalCount(a4)
 	; the dither tables: level = (v * (L-1) + threshold) >> 8,
-	; times L*L (red), L (green), 1 (blue)
+	; times L*L (red), L (green), 1 (blue); row 4: threshold 128,
+	; the nearest level
 	lea	g_DitTab(a4),a2
 	moveq	#3-1,d6			; channels
 	move.l	d7,d5
 	mulu.w	d7,d5			; d5 = multiplier: L*L, L, 1
-.ch:	lea	Bayer(pc),a1
-	moveq	#16-1,d4		; rows and columns
+.ch:	lea	Thresh(pc),a1
+	moveq	#20-1,d4		; rows and columns
 .pos:	moveq	#0,d3
-	move.b	(a1)+,d3
-	lsl.l	#4,d3
-	addq.l	#8,d3			; d3 = threshold
+	move.b	(a1)+,d3		; d3 = threshold
 	moveq	#0,d2			; value
 .v:	move.l	d7,d0
 	subq.l	#1,d0
@@ -178,7 +180,9 @@ Level32:
 
 ; levels of the cube by screen depth
 Levels:	dc.b	2,2,2,2,3,3,4,5,6
-Bayer:	dc.b	0,8,2,10, 12,4,14,6, 3,11,1,9, 15,7,13,5
+; thresholds: the 4x4 Bayer matrix (b * 16 + 8), then none (128)
+Thresh:	dc.b	8,136,40,168, 200,72,232,104, 56,184,24,152, 248,120,216,88
+	dc.b	128,128,128,128
 	even
 CubeTags:	dc.l	OBP_Precision,PRECISION_IMAGE,TAG_DONE
 CgxName:	dc.b	"cybergraphics.library",0
@@ -304,7 +308,10 @@ PicToBitMap:
 	lea	(a1,d0.l*4),a1		; a1 = source row
 	moveq	#3,d0			; a5 = the dither tables of this row
 	and.l	d3,d0
-	lsl.l	#8,d0
+	tst.l	g_DecTile(a4)		; (a background: the plain row)
+	beq.s	.dr
+	moveq	#4,d0
+.dr:	lsl.l	#8,d0
 	lsl.l	#2,d0
 	lea	g_DitTab(a4),a5
 	add.l	d0,a5
