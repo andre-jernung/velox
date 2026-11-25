@@ -9,19 +9,28 @@
 ; Coordinates are document pixels; y grows down from 0.  Text width is
 ; measured through g_MeasureFn, so the same code is tested headless.
 ;
+; A layout of a big page takes seconds on a 68020, so in the loader it
+; gives the window a turn between elements (LayPoll).  The window keeps
+; showing the runs of the last layout meanwhile: the new ones are made
+; in g_LRuns/g_LAnchors (the page background in g_LPageBg...) and
+; replace them at the end.  A load stopped meanwhile, or a new window
+; width (g_LayAgain), leaves the layout at once (the stack as it was at
+; the start: nothing but page memory and those buffers is taken).
+;
 
 	include	"velox.i"
 
 	xdef	LayoutDocument,LayoutChildren,LayoutNode,LayoutBlockContent
 	xdef	FlushLine,LineReset,AddMargin,AddRun,RunCount,RunPtr,Measure
 	xdef	ApplyPendingMargin,IntAttr,ClearFloats,FindAnchor
+	xdef	LayRunCount,LayRunPtr
 	xref	BufAppend
 	IFD	PROFILE
 	xref	ProfRead
 	ENDC
 	xref	StyleRoot,StyleCompute,BufClear,BufReserve,PageAlloc,FmtDec,StyleOf
 	xref	DomGetAttr,ParseDec,LayoutTable,CssApply
-	xref	FormIsControl,FormControlSize,CssInvalidate
+	xref	FormIsControl,FormControlSize,CssInvalidate,TaskPoll,BufFree,LogEvent
 
 	IFNE	RUN_SIZEOF-32
 	FAIL	"RunCount/RunPtr assume RUN_SIZEOF = 32"
@@ -34,20 +43,27 @@ MAX_LAYDEPTH	equ	200
 	section	code,code
 
 ;--------------------------------------------------------------------
-; LayoutDocument - lay out g_Doc
+; LayoutDocument - lay out g_Doc (into g_Runs, g_Anchors, g_DocHeight,
+; g_PageBg...: all at once at the end)
 ; In:  d0 = width in pixels
-; Out: d0 = 0 when out of memory
+; Out: d0 = 1 laid out, 0 if left unfinished: the load stopped
+;      (g_TkAbort) or the width changed (g_LayAgain) (CCR set)
 ;--------------------------------------------------------------------
 LayoutDocument:
-	movem.l	d2/a2,-(sp)
+	movem.l	d2-d7/a2-a3/a5,-(sp)
 	PROFB	15
+	move.l	sp,g_LaySP(a4)		; (LayPoll leaves from here)
+	moveq	#1,d1
+	move.l	d1,g_LayBusy(a4)
 	move.l	d0,g_LayWidth(a4)
+	lea	LogLayout(pc),a0	; (for tests: "layout WIDTH")
+	suba.l	a1,a1
+	jsr	LogEvent
+	move.l	g_LayWidth(a4),d0
 	addq.l	#1,g_LayGen(a4)
-	clr.l	g_ViewLive(a4)		; the runs change
-	clr.l	g_PageBgRec(a4)		; (the page background image: <body>)
-	clr.l	g_FindRun(a4)
-	clr.l	g_SelShown(a4)
-	clr.l	g_SelOn(a4)
+	move.l	g_PageBg(a4),g_LPageBg(a4)
+	clr.l	g_LPageBgRec(a4)	; (the page background image: <body>)
+	clr.l	g_LPageBgRep(a4)
 	tst.l	g_CssHasMq(a4)		; media queries: matches depend on
 	beq.s	.nomq			; the width
 	cmp.l	g_CssCacheW(a4),d0
@@ -55,13 +71,12 @@ LayoutDocument:
 	move.l	d0,g_CssCacheW(a4)
 	jsr	CssInvalidate
 .nomq:
-	lea	g_Runs(a4),a0
+	lea	g_LRuns(a4),a0
 	jsr	BufClear
-	lea	g_Anchors(a4),a0
+	lea	g_LAnchors(a4),a0
 	jsr	BufClear
 	clr.l	g_LayY(a4)
 	clr.l	g_PendMargin(a4)
-	clr.l	g_DocHeight(a4)
 	clr.l	g_LayAlign(a4)
 	clr.l	g_LayWhite(a4)
 	clr.l	g_Marker(a4)
@@ -93,14 +108,61 @@ LayoutDocument:
 	bsr	FlushLine
 .done:	lea	STYLE_SIZEOF(sp),sp
 	bsr	ClearFloats		; (floats reach down too)
+	; the new runs replace those shown
+	lea	g_Runs(a4),a0
+	lea	g_LRuns(a4),a1
+	moveq	#2*BUF_SIZEOF/4-1,d0	; (g_Anchors follows each)
+.sw:	move.l	(a0),d1
+	move.l	(a1),(a0)+
+	move.l	d1,(a1)+
+	dbf	d0,.sw
 	move.l	g_LayY(a4),d0
 	add.l	g_PendMargin(a4),d0
 	move.l	d0,g_DocHeight(a4)
+	move.l	g_LPageBg(a4),g_PageBg(a4)
+	move.l	g_LPageBgRec(a4),g_PageBgRec(a4)
+	move.l	g_LPageBgRep(a4),g_PageBgRep(a4)
+	clr.l	g_FindRun(a4)		; (they pointed into the old runs)
+	clr.l	g_SelShown(a4)
+	clr.l	g_SelOn(a4)
 	moveq	#1,d0
 	move.l	d0,g_ViewLive(a4)	; the runs can be painted
+	bsr.s	LayFree			; (the old ones)
+	moveq	#1,d0
+LayOut:	clr.l	g_LayBusy(a4)
 	PROFE	15
-	movem.l	(sp)+,d2/a2
+	movem.l	(sp)+,d2-d7/a2-a3/a5
+	tst.l	d0
 	rts
+
+LogLayout:	dc.b	"layout",0
+	even
+
+; LayFree - free g_LRuns, g_LAnchors
+LayFree:
+	lea	g_LRuns(a4),a0
+	jsr	BufFree
+	lea	g_LAnchors(a4),a0
+	jmp	BufFree
+
+; LayPoll - (between elements) the window first: in the loader, yield
+; if a window message waits; leave the layout if the load stopped (not
+; by Esc: the page shown stays, so it is finished) or the width changed
+; meanwhile (all registers kept: LayoutNode's a1 is the parent's style)
+LayPoll:
+	movem.l	d0-d1/a0-a1,-(sp)
+	jsr	TaskPoll
+	beq.s	.go
+	tst.l	g_NavStopped(a4)
+	beq.s	.leave
+.go:	tst.l	g_LayAgain(a4)
+	bne.s	.leave
+	movem.l	(sp)+,d0-d1/a0-a1
+	rts
+.leave:	move.l	g_LaySP(a4),sp		; (back in LayoutDocument)
+	bsr.s	LayFree
+	moveq	#0,d0
+	bra.s	LayOut
 
 ;--------------------------------------------------------------------
 ; LayoutChildren - lay out all children of a node
@@ -136,6 +198,7 @@ LayoutNode:
 	bra	.x
 .elem:	cmp.b	#DN_ELEMENT,d0
 	bne	.x
+	bsr	LayPoll			; (the window first)
 	cmp.l	#MAX_LAYDEPTH,g_LayDepth(a4)
 	bhs	.x
 	addq.l	#1,g_LayDepth(a4)
@@ -214,7 +277,7 @@ RecordAnchors:
 	add.l	g_PendMargin(a4),d1
 	move.l	d1,-(sp)
 	move.l	d0,-(sp)
-	lea	g_Anchors(a4),a0
+	lea	g_LAnchors(a4),a0
 	move.l	sp,a1
 	moveq	#8,d0
 	jsr	BufAppend
@@ -322,13 +385,13 @@ LayoutBlock:
 .pagebg:
 	tst.l	d0
 	bmi.s	.pbi
-	move.l	d0,g_PageBg(a4)
+	move.l	d0,g_LPageBg(a4)
 .pbi:	move.l	st_BgImg(a3),d1
 	beq	.nobg
-	move.l	d1,g_PageBgRec(a4)
+	move.l	d1,g_LPageBgRec(a4)
 	moveq	#0,d1
 	move.b	st_BgRep(a3),d1
-	move.l	d1,g_PageBgRep(a4)
+	move.l	d1,g_LPageBgRep(a4)
 	bra	.nobg
 .rect:
 	bsr	ApplyPendingMargin
@@ -346,7 +409,7 @@ LayoutBlock:
 	moveq	#0,d0
 	move.b	st_BgRep(a3),d0
 	move.l	d0,ru_Len(a0)
-	bsr	RunCount
+	bsr	LayRunCount
 	subq.l	#1,d0
 	move.l	d0,d7			; index of the rectangle
 	bsr	LineReset
@@ -363,7 +426,7 @@ LayoutBlock:
 	tst.l	d7
 	bmi.s	.norect
 	move.l	d7,d0
-	bsr	RunPtr
+	bsr	LayRunPtr
 	move.l	g_LayY(a4),d0
 	sub.l	ru_Y(a0),d0
 	move.w	d0,ru_H(a0)
@@ -543,7 +606,7 @@ ApplyPendingMargin:
 LineReset:
 	bsr	LineBounds
 	move.l	g_LineL(a4),g_LineX(a4)
-	bsr	RunCount
+	bsr	LayRunCount
 	move.l	d0,g_LineStart(a4)
 	clr.l	g_LineAsc(a4)
 	clr.l	g_LineDesc(a4)
@@ -570,13 +633,13 @@ FlushLine:
 .pos:	cmp.l	#ALIGN_CENTER,d0
 	bne.s	.place
 	asr.l	#1,d4
-.place:	bsr	RunCount
+.place:	bsr	LayRunCount
 	move.l	d0,d6
 	move.l	g_LineStart(a4),d5
 .l:	cmp.l	d6,d5
 	bhs.s	.adv
 	move.l	d5,d0
-	bsr	RunPtr
+	bsr	LayRunPtr
 	move.l	d2,d0
 	add.l	d3,d0
 	moveq	#0,d1
@@ -865,12 +928,12 @@ PlaceText:
 	add.l	g_SpaceW(a4),d3
 .nosp:	; extend the previous run if it is the same style and the text
 	; continues it in memory (words of one text node)
-	bsr	RunCount
+	bsr	LayRunCount
 	move.l	d0,d7
 	cmp.l	g_LineStart(a4),d7
 	bls.s	.new
 	subq.l	#1,d0
-	bsr	RunPtr
+	bsr	LayRunPtr
 	move.l	a0,a5
 	cmp.b	#RT_TEXT,ru_Type(a5)
 	bne.s	.new
@@ -1249,11 +1312,23 @@ PlaceBox:
 ; Out: d0 = run pointer or 0 (CCR set).  Pointers to runs are only
 ;      valid until the next AddRun.
 AddRun:
+	lea	g_LRuns(a4),a0
+	moveq	#RUN_SIZEOF,d0
+	jsr	BufReserve
+	bne.s	.ok
+	tst.l	g_Runs+buf_Data(a4)	; no memory: the runs shown go first
+	beq.s	.x			; (the window shows nothing until the
+	clr.l	g_ViewLive(a4)		;  end of the layout)
+	clr.l	g_FindRun(a4)
+	clr.l	g_SelShown(a4)
+	clr.l	g_SelOn(a4)
 	lea	g_Runs(a4),a0
+	jsr	BufFree
+	lea	g_LRuns(a4),a0
 	moveq	#RUN_SIZEOF,d0
 	jsr	BufReserve
 	beq.s	.x
-	move.l	buf_Data(a0),a1
+.ok:	move.l	buf_Data(a0),a1
 	add.l	buf_Len(a0),a1
 	add.l	#RUN_SIZEOF,buf_Len(a0)
 	move.l	a1,d0
@@ -1263,15 +1338,27 @@ AddRun:
 	tst.l	d0
 .x:	rts
 
-; RunCount - Out: d0 = number of runs
+; RunCount - Out: d0 = number of runs (those shown)
 RunCount:
 	move.l	g_Runs+buf_Len(a4),d0
 	lsr.l	#5,d0			; RUN_SIZEOF = 32
 	rts
 
-; RunPtr - In: d0 = index; Out: a0 = run
+; RunPtr - In: d0 = index; Out: a0 = run (of those shown)
 RunPtr:
 	move.l	g_Runs+buf_Data(a4),a0
+	lsl.l	#5,d0
+	add.l	d0,a0
+	rts
+
+; LayRunCount, LayRunPtr - the same for the runs being made
+LayRunCount:
+	move.l	g_LRuns+buf_Len(a4),d0
+	lsr.l	#5,d0
+	rts
+
+LayRunPtr:
+	move.l	g_LRuns+buf_Data(a4),a0
 	lsl.l	#5,d0
 	add.l	d0,a0
 	rts

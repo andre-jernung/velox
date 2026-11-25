@@ -967,6 +967,15 @@ g_PfPieces	rs.l	4		; ... what to write: offset, bytes, twice
 g_PfFH		rs.l	1		; ... reading from this file,
 g_PfGen		rs.l	1		; ... g_LayGen when it began
 g_LayGen	rs.l	1		; layout.s: counts the layouts
+g_LRuns		rs.b	BUF_SIZEOF	; ... the runs being made (then g_Runs)
+g_LAnchors	rs.b	BUF_SIZEOF	; ... and the anchors (then g_Anchors)
+g_LPageBg	rs.l	1		; ... the page background found so far
+g_LPageBgRec	rs.l	1
+g_LPageBgRep	rs.l	1
+g_LaySP		rs.l	1		; ... the stack to leave a layout with
+g_LayBusy	rs.l	1		; ... a layout is under way
+g_LayAgain	rs.l	1		; ... the width changed meanwhile: again
+g_ScrollPend	rs.l	1		; gui.s: a scroller move to show: top + 1
 g_PfPtr		rs.l	1		; ... or from here
 g_PageUrl	rs.b	URL_MAX		; URL of the page shown
 g_NavUrl	rs.b	URL_MAX		; URL being loaded

@@ -1,0 +1,7 @@
+; linkspeed (manual): a real forum (needs internet): the front page, then
+; a thread; a timeline of each load and how fast the window answers keys
+; meanwhile (SPEED=real [PROFILE=1] test/emu.sh --auto linkspeed)
+Echo >VELOX:r/linkspeed.txt "linkspeed"
+Echo >VELOX:r/linkspeed.start ""
+VELOX:velox https://safir.amigaos.se/ LOG=VELOX:r/linkspeed.log
+Echo >>VELOX:r/linkspeed.txt "done"

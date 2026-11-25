@@ -15,7 +15,7 @@
 	IFD	PROFILE
 	xref	ProfRead
 	ENDC
-	xref	Alloc,Free,HttpCloseKept,LogEvent,G,TaskWaitSig
+	xref	Alloc,Free,HttpCloseKept,LogEvent,G,TaskWaitSig,GuiBusy
 
 AmiSSL_SocketBase	equ	TAG_USER+$01
 AmiSSL_ErrNoPtr		equ	TAG_USER+$0b
@@ -121,8 +121,14 @@ ConnOpen:
 	bsr	DnsCached
 	move.l	d0,d3
 	bne.s	.addr
-	move.l	a2,a0			; (this blocks: hence the cache)
+	moveq	#1,d0			; (this blocks: hence the cache; the
+	jsr	GuiBusy			;  busy pointer meanwhile)
+	move.l	a2,a0
 	SOCK	gethostbyname
+	move.l	d0,-(sp)
+	moveq	#0,d0
+	jsr	GuiBusy
+	move.l	(sp)+,d0
 	tst.l	d0
 	beq.s	.noresolve
 	move.l	d0,a0
@@ -515,9 +521,14 @@ TlsHandshake:
 	lea	LogSessUse(pc),a0	; (for tests)
 	move.l	g_TlsHost(a4),a1
 	jsr	LogEvent
-.conn:
+.conn:	moveq	#1,d0			; (seconds of crypto on a 68020: the
+	jsr	GuiBusy			;  busy pointer meanwhile)
 	move.l	c_SSL(a2),a0
 	SSL	SSL_connect
+	move.l	d0,-(sp)
+	moveq	#0,d0
+	jsr	GuiBusy
+	move.l	(sp)+,d0
 	cmp.l	#1,d0
 	beq.s	.ok
 	bsr	TlsWait			; waiting for the server?

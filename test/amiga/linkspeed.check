@@ -1,0 +1,5 @@
+#!/bin/sh
+# linkspeed: the timeline the host driver wrote
+d=$(dirname "$1")
+cat "$d/linkspeed.driver" 2>/dev/null
+grep -q done "$1"

@@ -94,8 +94,15 @@ and a single event dispatch point.
   `TaskPoll`, `BgRun`, so any network call or image decode. Don't keep
   data in shared scratch globals (`g_LinkUrl`, `g_UrlTmp2`,
   `g_StatusBuf`, `g_Line`) across such a call, because window handlers
-  use them meanwhile (this bug happened). Never yield inside a layout:
-  the view must always match the runs.
+  use them meanwhile (this bug happened). A layout yields too
+  (`LayPoll`, before each element) and may be left there for good (the
+  stack reset to `LayoutDocument`'s, when the load stops or the width
+  changes): code inside a layout keeps its state on the stack or in
+  layout globals, takes nothing but page memory and `g_LRuns`/
+  `g_LAnchors`, and writes no view global (`g_Runs`, `g_DocHeight`,
+  `g_PageBg`...) before the end, where the new runs replace those shown.
+  LayPoll keeps all registers (LayoutNode's a1 is live there: this bug
+  happened).
 - A page is its arena (`PageAlloc`), its buffers and the globals listed
   in `KeepTab` (keep.s): pages are kept for Back by copying those, and
   saved to disk as page files (pagefile.s). A new per-page global goes

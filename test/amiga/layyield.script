@@ -1,0 +1,21 @@
+; layyield: the window answers while a page takes seconds to lay out
+; (test/amiga/layyield.host); a new page while one is laid out is shown
+; at once; no memory may be lost (the layout left halfway)
+Echo >VELOX:r/layyield.txt "layyield"
+; warm-up run (one-time OS allocations: fonts, CLI, ...)
+Run >NIL: VELOX:velox http://127.0.0.1:8080/index.html
+Wait 8
+Status >ENV:vpid COMMAND=VELOX:velox
+Break $vpid C
+Wait 2
+Delete >NIL: ENV:vpid
+Avail >NIL: FLUSH
+Echo >>VELOX:r/layyield.txt "mem_before " NOLINE
+Avail >>VELOX:r/layyield.txt TOTAL
+Echo >VELOX:r/layyield.start ""
+VELOX:velox http://127.0.0.1:8080/index.html LOG=VELOX:r/layyield.log
+Echo >>VELOX:r/layyield.txt "exit rc=$RC"
+Avail >NIL: FLUSH
+Echo >>VELOX:r/layyield.txt "mem_after " NOLINE
+Avail >>VELOX:r/layyield.txt TOTAL
+Echo >>VELOX:r/layyield.txt "done"

@@ -42,11 +42,28 @@ on a stack of their own in the same process.
   loop sleeps in `WaitSelect` on the window, Ctrl-C and the loader's
   socket or signal, and resumes the loader when that is ready.
 - **Computing.** While it computes, the loader yields whenever a window
-  message is waiting (`TaskPoll`; the parser checks every 32 tokens).
+  message is waiting (`TaskPoll`; the parser checks every 32 tokens,
+  the layout before each element).
 - **No locking.** Control changes hands only at those points. There the
-  DOM, the runs and the view are always consistent: a layout never
-  yields. So window messages need no special handling while something
+  DOM, the runs and the view are always consistent. A layout builds its
+  runs in buffers of its own (`g_LRuns`, `g_LAnchors`, the page
+  background in `g_LPageBg...`) and puts them in place of those shown
+  only at its end, so the window keeps painting, scrolling and hit
+  testing the last layout's runs meanwhile. If memory runs short, the
+  runs shown are freed first and the view is blank until the layout
+  ends. So window messages need no special handling while something
   loads: scrolling, typing, clicking all work as usual.
+- **Layout interrupted.** A new window size while the loader lays out
+  sets `g_LayAgain`; a new page stops the load. Either way the layout
+  is left at its next element: `LayPoll` restores the stack saved at
+  the start of `LayoutDocument` (a layout takes nothing but page memory
+  and those buffers, which are freed), and `GuiLayout` starts again
+  for the new width. Esc lets the layout finish: the page stays.
+- **Scroller drags** are coalesced: of the scroller moves waiting, only
+  the last is painted (`g_ScrollPend`, `ScrollFlush`), so the page keeps
+  up with the knob when painting is slower than the mouse.
+- **The busy pointer** shows only while the window cannot answer: a
+  DNS lookup and the crypto inside `SSL_connect`.
 - **Stopping.** `NavGo` returns at once. A link to another page stops the
   load in progress (`TaskAbort`): the loader's waits fail with
   `ERR_ABORT` and it unwinds through its normal error paths, closing
@@ -87,7 +104,8 @@ A1200 (it took 4.25 s): selectors 0.95 s, declarations 0.5 s, the rest
 
 Host names that were already looked up are cached, because
 `gethostbyname` blocks. What still blocks: DNS for a new host, the
-crypto of the TLS handshake, and one layout of a big page.
+crypto of the TLS handshake, and decrypting each TLS record (up to 16
+KB: half a second with ChaCha20 on a stock A1200).
 
 ### Disk cache
 
@@ -436,3 +454,6 @@ with `WritePixelArray`, with no colour cube and no dithering.
   accelerator it takes a second or two. On slow machines, `PROXY=` with
   tools/velox-proxy.py avoids TLS on the Amiga entirely. The emulator
   tests run the 68020 unthrottled.
+  A full handshake with a server whose certificates are all ECDSA P-384
+  (Let's Encrypt's E-chain, as on safir.amigaos.se) takes about 34 s on
+  a stock A1200: checking the chain dominates.

@@ -87,16 +87,16 @@ HtmlMore:
 .loop:	move.b	(a2),d0
 	beq	.done
 	move.l	a2,g_TokStart(a4)
-	tst.l	g_ParseFinal(a4)
+	addq.l	#1,d4			; the window first (also when the
+	and.w	#31,d4			; page is all there: from the cache)
+	bne.s	.tc
+	jsr	TaskPoll
+	bne	.done
+.tc:	tst.l	g_ParseFinal(a4)
 	bne.s	.go
 	move.l	a2,a0			; all of it there yet?
 	bsr	TokenComplete
 	beq	.done
-	addq.l	#1,d4
-	and.w	#31,d4
-	bne.s	.go
-	jsr	TaskPoll		; the window first
-	bne	.done
 .go:	move.b	(a2),d0
 	cmp.b	#'<',d0
 	bne.s	.text

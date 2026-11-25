@@ -19,10 +19,10 @@
 	xdef	NavRefresh,PageFixups,CopyAddress,ViewSource,FragCheck
 	xref	FindAnchor
 	xref	ClipCopy
-	xref	GuiStatus,GuiSetUrl,GuiSetTitle,GuiRefresh,GuiBusy,GuiNetHook
+	xref	GuiStatus,GuiSetUrl,GuiSetTitle,GuiRefresh,GuiNetHook
 	xref	GuiPageWidth,GuiScrollTo,LogEvent,CssLoad,BufFree,ImagesStart
 	xref	GuiProgress,TaskAbort,TaskStart,ImagesLoad,TaskBusy,TaskNow
-	xref	HtmlBegin,HtmlMore,IsValidUtf8,GuiRelayout
+	xref	HtmlBegin,HtmlMore,IsValidUtf8,GuiRelayout,GuiLayout
 	xref	PageRestore,KeepDrop,ImagesAgain,PfLoad,PfSave,PfSaveKept,DcHash
 
 HIST_MAX	equ	HIST_ENTRIES
@@ -379,6 +379,8 @@ IncShow:
 	moveq	#2,d0			; (the page shown)
 	move.l	d0,g_LoadPhase(a4)
 	bsr	ShowPage
+	tst.l	g_ViewLive(a4)		; (another page while laid out)
+	beq.s	.x
 	bsr	IncTime
 	lea	LogShown(pc),a0		; (for tests)
 	lea	g_PageUrl(a4),a1
@@ -560,8 +562,6 @@ NavLoad:
 	jsr	LogEvent
 	lea	MsgLoading(pc),a0
 	bsr	StatusWithUrl
-	moveq	#1,d0
-	jsr	GuiBusy
 	lea	g_NavUrl(a4),a0
 	lea	AboutPrefix(pc),a1
 	jsr	StrIPrefix
@@ -731,6 +731,10 @@ NavLoad:
 	tst.l	g_Quit(a4)
 	bne	.x
 	bsr	ShowPage
+	tst.l	g_TkAbort(a4)		; another page while laid out: not
+	beq.s	.shown			; shown (Esc: shown, then stopped)
+	tst.l	g_NavStopped(a4)
+	beq	.stop
 .shown:	cmp.l	#401,g_PageStatus(a4)	; a password is needed
 	bne.s	.hist
 	lea	MsgAuth(pc),a0
@@ -738,8 +742,6 @@ NavLoad:
 .hist:	bsr	NavHistory
 .img:	moveq	#-1,d0
 	move.l	d0,g_NavUndo(a4)
-	moveq	#0,d0
-	jsr	GuiBusy
 	clr.l	g_NoCache(a4)
 	moveq	#2,d0			; then its images
 	move.l	d0,g_LoadPhase(a4)
@@ -752,8 +754,6 @@ NavLoad:
 .nohist:
 	moveq	#-1,d0
 	move.l	d0,g_NavUndo(a4)
-	moveq	#0,d0
-	jsr	GuiBusy
 .x:	clr.l	g_NoCache(a4)
 	clr.l	g_LoadPhase(a4)
 	clr.l	g_ProgressHook(a4)
@@ -1655,8 +1655,8 @@ ShowPage:
 	clr.l	g_FocusLink(a4)
 	moveq	#-1,d0
 	move.l	d0,g_FocusIdx(a4)
-	jsr	GuiPageWidth
-	jsr	LayoutDocument
+	jsr	GuiLayout		; (stopped meanwhile: not shown)
+	beq	.inc
 	clr.l	g_FragPend(a4)
 	move.l	g_WantScroll(a4),d0	; back/forward: old position
 	bpl.s	.scr

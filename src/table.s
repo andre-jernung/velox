@@ -13,7 +13,7 @@
 
 	xdef	LayoutTable
 	xref	StyleCompute,CssApply,LayoutBlockContent,LayoutNode,StyleOf
-	xref	LineReset,AddRun,RunPtr,RunCount,ApplyPendingMargin
+	xref	LineReset,AddRun,LayRunPtr,LayRunCount,ApplyPendingMargin
 	xref	Measure,DomGetAttr,ParseDec,FormIsControl,FormControlSize
 	xref	ClearFloats
 
@@ -577,12 +577,12 @@ LayoutTable:
 	lea	tb_Rect(a3),a0
 	move.l	(a0,d4.l*4),d0
 	bmi.s	.f2
-	jsr	RunPtr
+	jsr	LayRunPtr
 	move.w	d2,ru_H(a0)
 .f2:	lea	tb_Box(a3),a0
 	move.l	(a0,d4.l*4),d0
 	bmi.s	.fix
-	jsr	RunPtr
+	jsr	LayRunPtr
 	move.w	d2,ru_H(a0)
 	bra.s	.fix
 .fixd:	bsr	RsFix
@@ -598,11 +598,11 @@ LayoutTable:
 	sub.l	tb_Top(a3),d2
 	move.l	tb_TabRect(a3),d0
 	bmi.s	.t2
-	jsr	RunPtr
+	jsr	LayRunPtr
 	move.w	d2,ru_H(a0)
 .t2:	move.l	tb_TabBox(a3),d0
 	bmi.s	.done
-	jsr	RunPtr
+	jsr	LayRunPtr
 	move.w	d2,ru_H(a0)
 .done:	clr.l	g_PendMargin(a4)
 	jsr	LineReset
@@ -626,7 +626,7 @@ BoxRun:
 	move.w	tb_X0+2(a3),ru_X(a0)
 	move.w	tb_Width+2(a3),ru_W(a0)
 	jsr	LineReset		; (uses d0)
-	jsr	RunCount
+	jsr	LayRunCount
 	subq.l	#1,d0
 	movem.l	(sp)+,d2-d3
 	rts
@@ -661,7 +661,7 @@ CellRun:
 	move.l	d3,d0
 	sub.l	d2,d0
 	move.w	d0,ru_W(a0)
-	jsr	RunCount
+	jsr	LayRunCount
 	subq.l	#1,d0
 	movem.l	(sp)+,d4-d5
 	rts
@@ -976,12 +976,12 @@ RsFix:
 	lea	tb_RsRect(a3),a0
 	move.l	(a0,d3.l*4),d0
 	bmi.s	.b
-	jsr	RunPtr
+	jsr	LayRunPtr
 	move.w	d2,ru_H(a0)
 .b:	lea	tb_RsBox(a3),a0
 	move.l	(a0,d3.l*4),d0
 	bmi.s	.n
-	jsr	RunPtr
+	jsr	LayRunPtr
 	move.w	d2,ru_H(a0)
 .n:	addq.l	#1,d3
 	bra.s	.l

@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+"""Host side of linkspeed.script: a timeline of each page load (log lines
+with the time they appeared) and the window's answer time to a key
+(Down, every 0.6 s) while it loads."""
+import os
+import sys
+import threading
+import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from xdrive import Amiga, wait_log  # noqa: E402
+
+r = sys.argv[1]
+log = os.path.join(r, "linkspeed.log")
+out = open(os.path.join(r, "linkspeed.driver"), "w")
+seen = []          # (time, line)
+stop = False
+
+
+def watch():
+    pos = 0
+    buf = ""
+    while not stop:
+        try:
+            with open(log, encoding="latin-1") as f:
+                f.seek(pos)
+                s = f.read()
+                pos = f.tell()
+        except OSError:
+            s = ""
+        if s:
+            buf += s
+            *lines, buf = buf.split("\n")
+            t = time.time()
+            for l in lines:
+                seen.append((t, l))
+        time.sleep(0.02)
+
+
+def load(a, url, until, keys=True, most=600):
+    """Go to url; press Down every 0.6 s until a line starting with
+    `until` appears (or `most` seconds went by); write the timeline and
+    the key answer times."""
+    n0 = len(seen)
+    t0 = time.time()
+    a.key("ctrl+l")
+    a.type(url)
+    a.key("Return")
+    sent = []
+    while True:
+        if any(l.startswith(until) for _, l in seen[n0:]):
+            break
+        if time.time() - t0 > most:
+            break
+        if keys:
+            sent.append(time.time())
+            a.key("Down")
+        time.sleep(0.6)
+    time.sleep(1)
+    out.write("== %s\n" % url)
+    keyl = []
+    for t, l in seen[n0:]:
+        if l.startswith("key "):
+            if l == "key 77":
+                keyl.append(t)
+            continue
+        if l.startswith(("recv ", "paint ", "scroll ", "pagex", "pagey")):
+            continue
+        out.write("%6.2f %s\n" % (t - t0, l[:90]))
+    lat = []
+    for s, k in zip(sent, keyl):
+        lat.append((s - t0, k - s))
+    worst = sorted(lat, key=lambda x: -x[1])[:6]
+    out.write("keys: %d sent, %d answered; slowest: %s\n" % (
+        len(sent), len(keyl),
+        ", ".join("%.1f s at %.1f" % (d, s) for s, d in worst)))
+    out.flush()
+
+
+try:
+    threading.Thread(target=watch, daemon=True).start()
+    a = Amiga()
+    wait_log(log, "images ", timeout=900)
+    time.sleep(3)
+    load(a, "https://safir.amigaos.se/main.php?d=showthread&f=1&thread=18189&page=0", "images ", most=150)
+    time.sleep(8)       # (the server closes idle connections after 5 s)
+    load(a, "https://safir.amigaos.se/main.php?d=showthread&f=1&thread=18184&page=0", "images ", most=150)
+    time.sleep(2)
+    a.key("ctrl+q")
+    out.write("ok\n")
+except Exception as e:
+    out.write("FAIL %r\n" % e)
+    try:
+        Amiga().key("ctrl+q")
+    except Exception:
+        pass
+stop = True

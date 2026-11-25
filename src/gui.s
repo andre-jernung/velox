@@ -17,7 +17,7 @@
 
 	xdef	GuiOpen,GuiClose,GuiEventLoop,GuiPaintAll,GuiStatus,GuiPaintNode,GuiPaintImage
 	xdef	GuiSetUrl,GuiSetTitle,GuiScrollTo,GuiNetHook,GuiBusy
-	xdef	BusyEvents,GuiRelayout,GuiRefresh,GuiPageWidth,GuiAbout,DrawStatus,ImgNetHook,GuiProgress
+	xdef	GuiLayout,BusyEvents,GuiRelayout,GuiRefresh,GuiPageWidth,GuiAbout,DrawStatus,ImgNetHook,GuiProgress
 	IFD	PROFILE
 	xref	ProfRead,ProfLog
 	ENDC
@@ -2353,21 +2353,47 @@ GuiScrollTo:
 	rts
 
 ; GuiRelayout - lay the page out for the current width and repaint
-; what changed
+; what changed.  From the event loop while the loader is in a layout
+; (a new window size): that one starts again (g_LayAgain).
 GuiRelayout:
-	PROFB	11
-	bsr	GuiPageWidth
-	jsr	LayoutDocument
+	tst.l	g_LayBusy(a4)
+	beq.s	.go
+	tst.l	g_TkIn(a4)
+	bne.s	.go
+	moveq	#1,d0
+	move.l	d0,g_LayAgain(a4)
+	rts
+.go:	PROFB	11
+	bsr.s	GuiLayout
 	PROFE	11
 	IFD	PROFILE
 	jsr	ProfLog			; (each relayout's time)
 	ENDC
+	tst.l	d0			; stopped meanwhile: the view stays
+	beq.s	.x
 	move.l	g_ScrollY(a4),d0
 	clr.l	g_ScrollY(a4)
 	bsr	ClampScroll
 	move.l	d0,g_ScrollY(a4)
 	bsr	GuiRefresh
 	jmp	FragCheck		; (a #fragment that just came)
+.x:	rts
+
+; GuiLayout - lay the page out for the current width; again if the
+; window gets another size meanwhile
+; Out: d0 = 0 if the load stopped meanwhile (the runs shown stay)
+;      (CCR set)
+GuiLayout:
+.go:	clr.l	g_LayAgain(a4)
+	bsr	GuiPageWidth
+	jsr	LayoutDocument
+	bne.s	.x
+	tst.l	g_TkAbort(a4)
+	bne.s	.stop
+	tst.l	g_LayAgain(a4)
+	bne.s	.go
+.stop:	moveq	#0,d0
+.x:	rts
 
 ; ClampScroll - In/Out: d0 = scroll position kept in range
 ClampScroll:
@@ -2515,12 +2541,32 @@ HandleMessages:
 	bsr	HandleEvent
 	tst.l	g_Quit(a4)
 	beq.s	.next
-.x:	movem.l	(sp)+,d2-d7/a2
+.x:	bsr	ScrollFlush
+	movem.l	(sp)+,d2-d7/a2
 	rts
 
+; ScrollFlush - show the scroller move kept by HandleEvent, if any
+ScrollFlush:
+	move.l	g_ScrollPend(a4),d0
+	beq.s	.x
+	clr.l	g_ScrollPend(a4)
+	subq.l	#1,d0
+	bra	GuiScrollTo
+.x:	rts
+
 ; HandleEvent - d2 = class, d3 = code, d4 = qualifier, a2 = IAddress,
-; d5/d6 = mouse position
+; d5/d6 = mouse position.  Moves of the scroller being dragged are
+; only noted (g_ScrollPend): of those waiting, only the last is shown,
+; after the others (ScrollFlush), so the page keeps up with the knob.
 HandleEvent:
+	tst.l	g_ScrollPend(a4)
+	beq.s	.np
+	cmp.l	#IDCMP_MOUSEMOVE,d2
+	bne.s	.fl
+	cmp.l	g_GadScroll(a4),a2
+	beq.s	.np
+.fl:	bsr.s	ScrollFlush
+.np:
 	cmp.l	#IDCMP_RAWKEY,d2	; the user scrolls or types: a pending
 	bne.s	.ngd0			; jump to a #fragment is off
 	cmp.w	#$80,d3			; (presses: not releases)
@@ -2555,7 +2601,9 @@ HandleEvent:
 	cmp.l	g_GadScroll(a4),a2	; scroller being dragged
 	bne	OnHover
 	move.l	d3,d0
-	bra	GuiScrollTo
+	addq.l	#1,d0
+	move.l	d0,g_ScrollPend(a4)
+	rts
 .nm:	cmp.l	#IDCMP_GADGETDOWN,d2
 	bne.s	.ngd
 	cmp.l	g_GadScroll(a4),a2
@@ -3212,7 +3260,8 @@ BusyEvents:
 	beq.s	.stop
 .keep:	bsr	Defer
 	bra	.next
-.done:	moveq	#0,d0
+.done:	bsr	ScrollFlush
+	moveq	#0,d0
 .x:	movem.l	(sp)+,d2-d7/a2
 	rts
 

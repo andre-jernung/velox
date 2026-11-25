@@ -13,6 +13,7 @@ import time
 BIG = bytes((i * 7 + 13) % 251 for i in range(100000))
 HELLO = b"Hello from the Velox test server\n"
 SLOW_HITS = {}                  # requests for each /slow/ image
+LM_HITS = {}                    # requests for each file?lm
 CACHED = {"v": 1, "200": 0, "304": 0}  # /cached: version, replies
 DOCROOT = sys.argv[2] if len(sys.argv) > 2 else "test/www"
 
@@ -67,6 +68,32 @@ class Handler(http.server.BaseHTTPRequestHandler):
             # requests for /slow/ images whose names start with this
             n = p[len("/slowcount/"):]
             self.send(200, b"%d" % sum(v for k, v in SLOW_HITS.items() if k.startswith(n)))
+        elif p.startswith("/hugepage"):
+            # a page whose layout takes seconds even on a fast CPU
+            n = int(p.split("?")[1].split("&")[0]) if "?" in p else 3000
+            css = "".join(".c%d p a { color: #%06x } div.r.c%d > p { margin: 2px %dpx }\n"
+                          % (i, i * 2654435 & 0xffffff, i, i % 9) for i in range(60))
+            # (selectors no index rules out: each <b> and <i> tries them all)
+            css += "".join('div p[lang|="z%d"] b, div p[lang|="z%d"] i { color: #%06x }\n'
+                           % (i, i, i * 40503 & 0xffffff) for i in range(150))
+            rows = []
+            for i in range(n):
+                rows.append('<div class="r c%d"><p>Row %d: lorem <a href="#r%d">ipsum</a> '
+                            '<b>dolor</b> sit amet, <i>consectetur</i> adipiscing elit, sed do '
+                            'eiusmod tempor incididunt ut labore et dolore magna aliqua.</p></div>'
+                            % (i % 60, i, i))
+                if i % 100 == 99:     # (nested tables: laid out more than once)
+                    inner = "<table border=1>" + "".join(
+                        "<tr>" + "".join("<td>in %d.%d</td>" % (r, c) for c in range(3)) + "</tr>"
+                        for r in range(3)) + "</table>"
+                    rows.append("<table border=1>" + "".join(
+                        "<tr>" + "".join("<td>cell %d.%d %s</td>" % (r, c, inner) for c in range(4)) + "</tr>"
+                        for r in range(4)) + "</table>")
+            body = ("<title>Huge</title><style>%s</style><body><h1>Huge</h1>%s<p id=end>End</p>"
+                    % (css, "".join(rows))).encode()
+            self.send(200, body, "text/html")
+        elif p.startswith("/lmhits/"):
+            self.send(200, b"%d" % LM_HITS.get(p[len("/lmhits/"):], 0))
         elif p == "/cached":
             # a page with a validator: 304 when the browser has it
             tag = '"v%d"' % CACHED["v"]
@@ -147,8 +174,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 full = os.path.join(full, "index.html")
             if os.path.isfile(full) and os.path.realpath(full).startswith(os.path.realpath(DOCROOT)):
                 ctype = "text/html; charset=utf-8" if full.endswith(".html") else "application/octet-stream"
+                hdrs = []
+                if p.endswith("?lm"):
+                    # unchanged for long, no max-age: fresh for a while
+                    # (heuristic freshness); its requests are counted
+                    LM_HITS[path] = LM_HITS.get(path, 0) + 1
+                    hdrs = [("Last-Modified", "Mon, 01 Jan 2024 00:00:00 GMT")]
                 with open(full, "rb") as f:
-                    self.send(200, f.read(), ctype)
+                    self.send(200, f.read(), ctype, headers=hdrs)
             else:
                 self.send(404, b"not found\n")
 
