@@ -521,6 +521,8 @@ SHref:		dc.b	"href",0
 STarget:	dc.b	"target",0
 SVxFrame:	dc.b	"vxframe",0
 SVxTarget:	dc.b	"vxtarget",0
+SOnClick:	dc.b	"onclick",0
+SThisDot:	dc.b	"this.",0
 SVxBase:	dc.b	"vxbase",0
 SVxDef:		dc.b	"vxdef",0
 SVxSrc:		dc.b	"vxsrc",0
@@ -682,6 +684,89 @@ FrSame:
 	rts
 
 ;--------------------------------------------------------------------
+; FrTargetOf - (FrameNav) the frame element a0 (a link, a form)
+; targets: what its onclick sets, if that does nothing else
+; (onclick="target='main';", an old idiom of framed sites: in a
+; handler, target is the element's own; no script is run, the text
+; only read), else its target attribute
+; Out: d0 = the name or 0 (CCR set)
+FrTargetOf:
+	movem.l	d2/a0,-(sp)
+	lea	SOnClick(pc),a1
+	jsr	DomGetAttr
+	tst.l	d0
+	beq.s	.attr
+	move.l	d0,a0
+	bsr	FrWs
+	lea	SThisDot(pc),a1		; [this.]target = 'name' [;]
+	bsr	FrWord
+	lea	STarget(pc),a1
+	bsr	FrWord
+	beq.s	.attr
+	bsr	FrWs
+	cmp.b	#'=',(a0)+
+	bne.s	.attr
+	bsr	FrWs
+	move.b	(a0)+,d1		; d1 = its quote
+	cmp.b	#39,d1
+	beq.s	.q
+	cmp.b	#34,d1
+	bne.s	.attr
+.q:	lea	g_FrTgt(a4),a1
+	moveq	#FR_TGT-2,d2
+.c:	move.b	(a0)+,d0
+	beq.s	.attr
+	cmp.b	d1,d0
+	beq.s	.end
+	cmp.b	#92,d0			; (an escape: not a plain name)
+	beq.s	.attr
+	move.b	d0,(a1)+
+	dbf	d2,.c
+	bra.s	.attr
+.end:	clr.b	(a1)
+	bsr	FrWs
+	cmp.b	#';',(a0)
+	bne.s	.e
+	addq.l	#1,a0
+	bsr	FrWs
+.e:	tst.b	(a0)			; nothing else
+	bne.s	.attr
+	lea	g_FrTgt(a4),a0
+	tst.b	(a0)
+	beq.s	.attr
+	move.l	a0,d0
+	bra.s	.x
+.attr:	move.l	4(sp),a0
+	lea	STarget(pc),a1
+	jsr	DomGetAttr
+.x:	movem.l	(sp)+,d2/a0
+	tst.l	d0
+	rts
+
+; FrWs - (FrTargetOf) a0 past white space (d1 kept)
+FrWs:	move.b	(a0),d0
+	beq.s	.x
+	cmp.b	#' ',d0
+	bhi.s	.x
+	addq.l	#1,a0
+	bra.s	FrWs
+.x:	rts
+
+; FrWord - (FrTargetOf) a0 past the word a1 if the text there starts
+; with it (d1 kept)
+; Out: d0 = 1 if so; 0: a0 as it was (CCR set)
+FrWord:	move.l	a0,-(sp)
+.l:	tst.b	(a1)
+	beq.s	.y
+	cmpm.b	(a0)+,(a1)+
+	beq.s	.l
+	move.l	(sp)+,a0
+	moveq	#0,d0
+	rts
+.y:	addq.l	#4,sp
+	moveq	#1,d0
+	rts
+
 ; FrNoFrames - take the <noframes> elements out of the page
 ;--------------------------------------------------------------------
 FrNoFrames:
@@ -718,9 +803,7 @@ FrameNav:
 	beq.s	.cell
 	move.l	d0,d3			; d3 = its frame's name
 	move.l	a2,a0			; the target: its own, else <base
-	lea	STarget(pc),a1		; target>, else its frame
-	jsr	DomGetAttr
-	tst.l	d0
+	bsr	FrTargetOf		; target>, else its frame
 	bne.s	.t
 	move.l	a3,a0
 	lea	SVxTarget(pc),a1

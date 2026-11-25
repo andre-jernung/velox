@@ -164,6 +164,33 @@ try:
     a.key("Return")
     wait_log(log, "page " + U + "second.html", 2, timeout=60)
     step("target=_top leaves the frames")
+
+    # onclick="target='main';" (no target attribute, no <base target>):
+    # the same as target="main", for a link and a form; an onclick doing
+    # more than that is a script, not read: its link stays in its frame
+    J = F + "js.html"
+    go(a, J)
+    wait_log(log, "page " + J, timeout=60)
+    time.sleep(1)
+    for i in range(8):
+        a.key("Tab")
+        time.sleep(0.5)
+        if count("focus " + F + "page2.html"):
+            break
+    wait_log(log, "focus " + F + "page2.html")
+    a.key("Return")
+    wait_log(log, "page " + J + "\x01main\x02" + F + "page2.html", timeout=60)
+    step("onclick target='main' sends a link into that frame")
+    a.key("Tab")
+    wait_log(log, "focus jsgo")
+    a.key("Return")
+    wait_log(log, "page " + J + "\x01main\x02" + F + "page1.html?q=1", timeout=60)
+    step("this.target = \"main\" in a form's onclick: the same")
+    a.key("Tab")
+    wait_log(log, "focus " + F + "head2.html")
+    a.key("Return")
+    wait_log(log, "\x01menu\x02" + F + "head2.html", timeout=60)
+    step("an onclick doing more: the link stays in its frame")
     a.key("ctrl+q")
     step("ok")
 except Exception as e:

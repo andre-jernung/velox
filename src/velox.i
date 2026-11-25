@@ -1116,6 +1116,8 @@ g_FrSb		rs.l	FR_MAX		; ... its scrollbar: 0 none, 1 when
 g_SbDrag	rs.l	1		; gui.s: the frame whose knob is dragged,
 g_SbGrab	rs.l	1		; ... where it was taken
 g_FrLogBuf	rs.b	48		; frames.s: a rectangle logged
+FR_TGT		equ	64
+g_FrTgt		rs.b	FR_TGT		; frames.s: a target an onclick names
 g_FrGapN	rs.l	1		; borders between them,
 g_FrGap		rs.l	FR_GAPS*4	; ... their rectangles
 g_LayTarget	rs.l	1		; layout.s: the view it is for (0: G's)

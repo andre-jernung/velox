@@ -1,0 +1,11 @@
+<html><head><title>Menu</title></head>
+<body bgcolor="#ddeeff">
+<p>Menu (no base target: the targets are set by onclick, as on old
+framed shops)</p>
+<p><a href="page2.html" onclick="target='main';">Page two</a></p>
+<form action="page1.html" onclick='this.target = "main" ;'>
+<input type="hidden" name="q" value="1">
+<input type="submit" name="jsgo" value="Go">
+</form>
+<p><a href="head2.html" onclick="target='main'; track();">Header two</a></p>
+</body></html>

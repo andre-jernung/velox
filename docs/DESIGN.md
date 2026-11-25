@@ -31,6 +31,15 @@ URL --> fetch (http / https via AmiSSL / proxy)
 Each stage is a separate module (`src/<stage>.s`) with a narrow
 interface, so stages can be unit-tested in isolation.
 
+CSS lengths are scaled to our fonts (16 CSS px = one line of the
+normal font, about 11 pixels); images keep their size. So a small
+floated image (an icon per list item) can reach into the next item
+where a desktop browser's taller text leaves it room, and the next
+icon would go beside it, a step further right each item. A float two
+lines tall at most, which the one above on its side reaches into by
+no more than its 4 px gap and a quarter of its own height, goes at the
+edge instead (`PlaceFloat`); taller floats are placed as CSS says.
+
 ### Staying responsive
 
 Velox is one process with one event loop, which always serves the window
@@ -270,7 +279,12 @@ link (or a GET form) in a frame whose target, else its document's
 the page again with that entry changed (`FrameNav`); `_top`, `_blank`
 and unknown names load the whole window. So the history, the caches
 and the pages kept see one page as always, and Back undoes a frame's
-navigation. When the page shown is that frameset (`FramesSame`: the
+navigation. Old framed sites often set the target in script instead:
+`onclick="target='main';"` (in a handler, `target` is the element's
+own). An onclick that does nothing but that (`[this.]target = 'name'`,
+an optional `;`) counts as the target (`FrTargetOf`): no script is
+run, its text is only read, and any other onclick is ignored as
+before. When the page shown is that frameset (`FramesSame`: the
 same URL before the <1>), `NavGo` does not load it anew but runs
 `FrameLoad`: each frame whose document is to change (its `vxsrc`
 against what the URL gives it, else its own `vxdef`) is filled anew

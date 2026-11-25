@@ -43,8 +43,9 @@ A small, fast web browser for classic AmigaOS 3.x, written entirely in
   (as its cols and rows say, nested framesets too), each scrolling on
   its own, with its own scrollbar where needed: the mouse wheel scrolls
   the frame under it, a click makes a frame the one the keys and the
-  window's scroller move; a link with a target loads that frame only,
-  and Back undoes that. Iframes are links to their
+  window's scroller move; a link with a target loads that frame only
+  (also one set by an `onclick="target='main';"`, as old framed sites
+  do), and Back undoes that. Iframes are links to their
   pages. `<meta>` refresh redirects
 - Image maps: client side (`usemap`, `<area>` rectangles, circles,
   polygons; Tab steps through the areas) and server side (`ismap`)
