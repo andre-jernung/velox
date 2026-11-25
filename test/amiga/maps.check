@@ -1,0 +1,5 @@
+#!/bin/sh
+# checks for maps.script; $1 = result file
+d=$(dirname "$1")
+sed 's/^/driver: /' "$d/maps.driver"
+grep -qx ok "$d/maps.driver"

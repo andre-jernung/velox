@@ -1791,6 +1791,10 @@ NavLink:
 	move.l	a0,a2			; a2 = the link
 	bsr	LinkTarget
 	beq.s	.x
+	cmp.l	g_IsMapA(a4),a2		; an ismap image clicked: "?x,y"
+	bne.s	.nism
+	bsr	IsMapPoint
+.nism:
 	lea	g_LinkUrl(a4),a0
 	lea	JsPrefix(pc),a1
 	jsr	StrIPrefix
@@ -1815,6 +1819,30 @@ NavLink:
 	rts
 
 ;--------------------------------------------------------------------
+; IsMapPoint - (NavLink: an ismap image clicked) "?x,y" after
+; g_LinkUrl (its query, if any, replaced)
+IsMapPoint:
+	lea	g_LinkUrl(a4),a0
+.e:	move.b	(a0),d0
+	beq.s	.q
+	cmp.b	#'?',d0
+	beq.s	.q
+	cmp.b	#'#',d0
+	beq.s	.q
+	addq.l	#1,a0
+	bra.s	.e
+.q:	lea	g_LinkUrl+URL_MAX-24(a4),a1	; (room for it)
+	cmp.l	a1,a0
+	bhs.s	.x
+	move.b	#'?',(a0)+
+	move.l	g_IsMapX(a4),d0
+	jsr	FmtDec
+	move.b	#',',(a0)+
+	move.l	g_IsMapY(a4),d0
+	jsr	FmtDec
+	clr.b	(a0)
+.x:	rts
+
 ; LinkTarget - the absolute URL of link a0 (its href against <base>
 ; or the page) in g_LinkUrl
 ; Out: d0 = 0 if there is none (CCR set)

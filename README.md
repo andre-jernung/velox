@@ -45,6 +45,8 @@ A small, fast web browser for classic AmigaOS 3.x, written entirely in
   frame the one the keys and the scroller move; links with a target load
   into their frame, and Back undoes that. Iframes are links to their
   pages. `<meta>` refresh redirects
+- Image maps: client side (`usemap`, `<area>` rectangles, circles,
+  polygons; Tab steps through the areas) and server side (`ismap`)
 - Keyboard navigation for everything; keys typed while a page loads
   are not lost
 - Stays responsive while loading: the page scrolls, and links,

@@ -18,6 +18,7 @@
 	xdef	GuiOpen,GuiClose,GuiEventLoop,GuiPaintAll,GuiStatus,GuiPaintNode,GuiPaintImage
 	xdef	GuiSetUrl,GuiSetTitle,GuiScrollTo,GuiNetHook,GuiBusy
 	xdef	GuiBlank,GuiUnblank,GuiProgSet,GuiBgCame
+	xref	MapHit,MapStep,MapIsArea
 	xref	FrameShow,FramesPage,FramesLayout,FrameAt,ViewSelect,ViewSlot
 	xdef	GuiLayout,BusyEvents,GuiRelayout,GuiRefresh,GuiPageWidth,GuiAbout,DrawStatus,ImgNetHook,GuiProgress
 	IFD	PROFILE
@@ -3353,6 +3354,7 @@ OnKey:
 	cmp.w	#RAW_ENTER,d3
 	bne.s	.scroll
 .follow:
+	clr.l	g_IsMapA(a4)		; (no point clicked: the link itself)
 	move.l	g_FocusLink(a4),d0
 	beq.s	.x
 	move.l	d0,a0
@@ -3510,22 +3512,50 @@ FocusNext:
 	jsr	RunCount
 	move.l	d0,d3
 	move.l	g_FocusIdx(a4),d4
-	tst.l	d2
+	move.l	g_FocusLink(a4),d0	; an area of a map: the map's next
+	beq.s	.l0			; area first
+	move.l	d0,a0
+	jsr	MapIsArea
+	beq.s	.l0
+	tst.l	d4
+	bmi.s	.l0
+	move.l	d4,d0
+	jsr	RunPtr
+	move.l	a0,-(sp)
+	move.l	g_FocusLink(a4),a1
+	move.l	d2,d0
+	jsr	MapStep
+	move.l	(sp)+,a0
+	tst.l	d0
+	bne.s	.fgot
+.l0:	tst.l	d2
 	bpl.s	.l
 	tst.l	d4			; backwards from "no focus": the end
 	bpl.s	.l
 	move.l	d3,d4
 .l:	add.l	d2,d4
-	bmi.s	.none
+	bmi	.none
 	cmp.l	d3,d4
-	bge.s	.none
+	bge	.none
 	move.l	d4,d0
 	jsr	RunPtr
 	move.l	ru_Link(a0),d0
 	beq.s	.l
-	cmp.l	g_FocusLink(a4),d0
+	cmp.b	#RT_IMAGE,ru_Type(a0)	; an image map: its first (last) area
+	bne.s	.nm
+	cmp.l	ru_Text(a0),d0
+	bne.s	.nm
+	move.l	a0,-(sp)
+	suba.l	a1,a1
+	move.l	d2,d0
+	jsr	MapStep
+	move.l	(sp)+,a0
+	tst.l	d0
 	beq.s	.l
-	move.l	a0,a2
+	bra.s	.fgot
+.nm:	cmp.l	g_FocusLink(a4),d0
+	beq.s	.l
+.fgot:	move.l	a0,a2
 	move.l	g_FocusLink(a4),-(sp)	; (the old one: repainted too)
 	move.l	d0,g_FocusLink(a4)
 	move.l	d4,g_FocusIdx(a4)
@@ -3592,6 +3622,7 @@ LogScroll:	dc.b	"scroll",0
 ; In: d5/d6 = mouse x/y; Out: d0 = <a> element or 0, a0 = run
 LinkAt:
 	movem.l	d2-d4,-(sp)
+	clr.l	g_IsMapA(a4)
 	move.l	d5,d2
 	sub.l	g_PageX(a4),d2		; document x
 	bmi.s	.none
@@ -3628,7 +3659,12 @@ LinkAt:
 	add.l	d1,d0
 	cmp.l	d0,d2
 	bge.s	.l
-	move.l	ru_Link(a0),d0
+	cmp.b	#RT_IMAGE,ru_Type(a0)	; an image: its map's area there, or
+	bne.s	.lk			; its link (maps.s)
+	jsr	MapHit
+	beq.s	.l
+	bra.s	.x
+.lk:	move.l	ru_Link(a0),d0
 	bra.s	.x
 .none:	moveq	#0,d0
 .x:	movem.l	(sp)+,d2-d4

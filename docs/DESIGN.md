@@ -268,6 +268,18 @@ to `g_NavUrl` (fetching, the disk cache), the frames' to `g_FrOv`;
 `g_NavKey`, the whole, keys page files. `UrlResolve` ignores what
 follows a byte 1 in a base, and the URL gadget does not show it.
 
+### Image maps
+
+maps.s: an `<img usemap>` is its own link in its run (layout.s), so
+`LinkAt` asks `MapHit` about the point in it: the first `<area>` of
+its `<map>` (by name or id; the last one looked up is kept) whose shape
+holds the point (rect, circle, poly by the even-odd rule, default) is
+the link, followed as any (`NavLink`: href, target, frames). An area
+without href holds the point but is no link. Tab steps through a map's
+areas with an href (`MapStep` from `FocusNext`); the status line shows
+each one's address. An `<img ismap>` in a link notes the point clicked
+(`g_IsMapA`): `NavLink` replaces the link's query with `?x,y`.
+
 ### Kept pages (Back and Forward)
 
 A page that is left is not freed but kept with its history entry
@@ -410,6 +422,7 @@ JS is not on the roadmap yet, but it must stay possible to add. That means:
 | clip.s      | clipboard                                                       |
 | nav.s       | navigation, history, built-in pages, bookmarks, downloads        |
 | frames.s    | framesets: the frames' documents, their rectangles and views     |
+| maps.s      | image maps: the area under the mouse, Tab through the areas      |
 
 Everything is tested on AmigaOS 3.1 and 3.2 (see CLAUDE.md).
 

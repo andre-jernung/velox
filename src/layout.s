@@ -63,6 +63,7 @@ LayoutDocument:
 	jsr	LogEvent
 	move.l	g_LayW(a4),d0
 	addq.l	#1,g_LayGen(a4)
+	clr.l	g_MapImg(a4)		; (maps.s: nodes may be others now)
 	move.l	#$ffffff,g_LPageBg(a4)	; (white unless <body> or <html> say
 	clr.l	g_LPageBgRec(a4)	;  otherwise; not the last page's)
 	clr.l	g_LPageBgRep(a4)
@@ -145,6 +146,21 @@ LayOut:	clr.l	g_LayBusy(a4)
 	movem.l	(sp)+,d2-d7/a2-a3/a5
 	tst.l	d0
 	rts
+
+; IsMapImg - (a0 = the run, a5 = its <img>) has it a usemap?
+; Out: d0 = 1 if so (CCR set) (a0 kept)
+IsMapImg:
+	move.l	a0,-(sp)
+	move.l	a5,a0
+	lea	AnUsemap(pc),a1
+	jsr	DomGetAttr
+	move.l	(sp)+,a0
+	tst.l	d0
+	sne	d0
+	and.l	#1,d0
+	rts
+AnUsemap:	dc.b	"usemap",0
+	even
 
 LogLayout:	dc.b	"layout",0
 	even
@@ -1243,7 +1259,12 @@ PlaceFloat:
 	move.l	a5,ru_Text(a0)
 	move.l	st_Color(a3),ru_Color(a0)
 	move.l	st_Link(a3),ru_Link(a0)
-	move.l	g_LayY(a4),d0		; remember it: bottom and edge
+	cmp.b	#RT_IMAGE,d5		; (an image map: the image, maps.s)
+	bne.s	.nm
+	bsr	IsMapImg
+	beq.s	.nm
+	move.l	a5,ru_Link(a0)
+.nm:	move.l	g_LayY(a4),d0		; remember it: bottom and edge
 	add.l	d3,d0
 	addq.l	#4,d0
 	btst	#3,st_Flags(a3)
@@ -1304,8 +1325,12 @@ PlaceBox:
 	move.l	st_Color(a3),ru_Color(a0)
 	move.l	st_Link(a3),ru_Link(a0)
 	cmp.b	#RT_WIDGET,d5		; controls are their own "link"
+	beq.s	.own
+	cmp.b	#RT_IMAGE,d5		; so is an image map (maps.s)
 	bne.s	.nl
-	move.l	a5,ru_Link(a0)
+	bsr	IsMapImg
+	beq.s	.nl
+.own:	move.l	a5,ru_Link(a0)
 .nl:	bsr	LineMetrics
 	add.l	d2,d7
 	move.l	d7,g_LineX(a4)

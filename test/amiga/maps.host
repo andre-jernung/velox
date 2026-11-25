@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+"""Host side of maps.script: Tab steps through a map's areas; a click
+picks the area there (the first that holds the point; one without href
+is no link); a click on an ismap image adds "?x,y" to its link."""
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from xdrive import Amiga, wait_log  # noqa: E402
+
+r = sys.argv[1]
+log = os.path.join(r, "maps.log")
+out = open(os.path.join(r, "maps.driver"), "w")
+U = "http://127.0.0.1:8080/"
+GO = os.path.join(r, "maps.go")
+
+
+def step(msg):
+    out.write(msg + "\n")
+    out.flush()
+
+
+def lines():
+    return open(log, "rb").read().decode("latin-1").split("\n")
+
+
+def count(prefix):
+    return len([x for x in lines() if x.startswith(prefix)])
+
+
+def origin():
+    ls = lines()
+    x = int([l for l in ls if l.startswith("pagex ")][-1].split()[1])
+    y = int([l for l in ls if l.startswith("pagey ")][-1].split()[1])
+    return x, y
+
+
+CLICKS = [0]
+
+
+def click(px, py):
+    """a click at page position px/py (the Amiga runs maps.goN)"""
+    x, y = origin()
+    x += px
+    y += py
+    CLICKS[0] += 1
+    with open(GO + str(CLICKS[0]), "w") as f:
+        f.write("VELOX:mouse %d %d\nWait 1\nVELOX:mouse %d %d DOWN\n"
+                "VELOX:mouse %d %d UP\n" % (x, y, x, y, x, y))
+    time.sleep(3)
+
+
+def back(page):
+    n = count("page " + U + page)
+    a.key("BackSpace")
+    wait_log(log, "page " + U + page, n + 1, timeout=30)
+    time.sleep(1)
+
+
+try:
+    a = Amiga()
+    wait_log(log, "page " + U + "map.html", timeout=60)
+    wait_log(log, "images ", timeout=60)
+    time.sleep(1)
+    # the keys: the map's areas (with an href) one after the other
+    a.key("Tab")
+    wait_log(log, "focus third.html")
+    a.key("Tab")
+    wait_log(log, "focus second.html")
+    a.key("Tab")
+    wait_log(log, "focus /echo")
+    a.key("shift+Tab")
+    wait_log(log, "focus second.html", 2)
+    step("Tab steps through the areas")
+    a.key("Escape")
+    # the image is at the page's top left (8, 8): the circle first
+    click(8 + 150, 8 + 50)
+    wait_log(log, "page " + U + "third.html", timeout=30)
+    step("a click in the circle: its area")
+    back("map.html")
+    click(8 + 30, 8 + 50)
+    wait_log(log, "page " + U + "second.html", timeout=30)
+    step("a click in the rectangle: its area")
+    back("map.html")
+    n = count("go ")
+    click(8 + 195, 8 + 95)          # (the area without href)
+    time.sleep(3)
+    if count("go ") != n:
+        raise AssertionError("an area without href was followed")
+    step("an area without href: no link")
+    # the ismap image: below the map and a line of text
+    for dy in range(140, 200, 16):     # (4 tries at most: maps.go4..8)
+        click(8 + 20, dy)
+        if count("go " + U + "echo?"):
+            break
+    gl = [x for x in lines() if x.startswith("go " + U + "echo?")]
+    if not gl:
+        raise AssertionError("the ismap image did not add ?x,y")
+    step("an ismap image: " + gl[0][3:])
+    a.key("ctrl+q")
+    step("ok")
+except Exception as e:
+    step("FAIL " + repr(e))
+    try:
+        Amiga().key("ctrl+q")
+    except Exception:
+        pass
+open(os.path.join(r, "maps.end"), "w").close()

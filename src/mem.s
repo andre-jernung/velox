@@ -148,6 +148,7 @@ ArenaFree:
 ;--------------------------------------------------------------------
 PageFree:
 	jsr	FramesFree		; (a page of frames: their views)
+	clr.l	g_MapImg(a4)		; (maps.s)
 	move.l	g_PageFreeHook(a4),d0	; (images free their bitmaps)
 	beq.s	.nohook
 	move.l	d0,a0

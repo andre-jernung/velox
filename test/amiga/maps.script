@@ -1,0 +1,83 @@
+; maps: image maps, client side (usemap) and server side (ismap):
+; clicked (test/amiga/maps.host writes the mouse commands, maps.goN) and
+; with the keys
+Echo >VELOX:r/maps.txt "maps"
+FailAt 21
+Delete >NIL: VELOX:r/maps.go#? VELOX:r/maps.end
+Echo >VELOX:r/maps.start ""
+Run >NIL: VELOX:velox http://127.0.0.1:8080/map.html LOG=VELOX:r/maps.log
+Lab w1
+IF EXISTS VELOX:r/maps.end
+  Skip done
+EndIF
+IF NOT EXISTS VELOX:r/maps.go1
+  Wait 1
+  Skip w1 BACK
+EndIF
+Execute VELOX:r/maps.go1
+Lab w2
+IF EXISTS VELOX:r/maps.end
+  Skip done
+EndIF
+IF NOT EXISTS VELOX:r/maps.go2
+  Wait 1
+  Skip w2 BACK
+EndIF
+Execute VELOX:r/maps.go2
+Lab w3
+IF EXISTS VELOX:r/maps.end
+  Skip done
+EndIF
+IF NOT EXISTS VELOX:r/maps.go3
+  Wait 1
+  Skip w3 BACK
+EndIF
+Execute VELOX:r/maps.go3
+Lab w4
+IF EXISTS VELOX:r/maps.end
+  Skip done
+EndIF
+IF NOT EXISTS VELOX:r/maps.go4
+  Wait 1
+  Skip w4 BACK
+EndIF
+Execute VELOX:r/maps.go4
+Lab w5
+IF EXISTS VELOX:r/maps.end
+  Skip done
+EndIF
+IF NOT EXISTS VELOX:r/maps.go5
+  Wait 1
+  Skip w5 BACK
+EndIF
+Execute VELOX:r/maps.go5
+Lab w6
+IF EXISTS VELOX:r/maps.end
+  Skip done
+EndIF
+IF NOT EXISTS VELOX:r/maps.go6
+  Wait 1
+  Skip w6 BACK
+EndIF
+Execute VELOX:r/maps.go6
+Lab w7
+IF EXISTS VELOX:r/maps.end
+  Skip done
+EndIF
+IF NOT EXISTS VELOX:r/maps.go7
+  Wait 1
+  Skip w7 BACK
+EndIF
+Execute VELOX:r/maps.go7
+Lab w8
+IF EXISTS VELOX:r/maps.end
+  Skip done
+EndIF
+IF NOT EXISTS VELOX:r/maps.go8
+  Wait 1
+  Skip w8 BACK
+EndIF
+Execute VELOX:r/maps.go8
+Lab done
+Wait 3
+Echo >>VELOX:r/maps.txt "done"

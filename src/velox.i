@@ -1112,6 +1112,12 @@ g_LayRoot	rs.l	1		; ... its root (0: g_Doc)
 g_LayW		rs.l	1		; ... the width it lays out for
 g_InFrames	rs.l	1		; gui.s: painting a frame's view
 g_FrAll		rs.l	1		; ... all of each (GuiPaintAll)
+; image maps (maps.s)
+g_MapImg	rs.l	1		; the last <img> asked for,
+g_MapNode	rs.l	1		; ... its <map>
+g_IsMapA	rs.l	1		; an ismap image's link under the mouse,
+g_IsMapX	rs.l	1		; ... the point in the image
+g_IsMapY	rs.l	1
 g_PrgOn		rs.l	1		; shown
 g_PrgDone	rs.l	1		; ... so much of
 g_PrgAll	rs.l	1		; ... all (0 or less: not known: a
