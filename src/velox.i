@@ -37,8 +37,12 @@ VELOX_I	SET	1
 	include	"lvo_amissl.i"
 	include	"tags.i"
 
+; the version (a release raises the last digit) and its date, for $VER
 VERSION_STR	MACRO
-	dc.b	"0.2"
+	dc.b	"0.1.0"
+	ENDM
+VERSION_DATE	MACRO
+	dc.b	"25.11.2026"
 	ENDM
 
 URL_MAX		equ	2048		; max URL length incl. NUL

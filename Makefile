@@ -28,7 +28,7 @@ INCS    := $(wildcard src/*.i)
 TARGET  := build/velox
 VTEST   := build/vtest
 
-.PHONY: all clean size test dist lint
+.PHONY: all clean size test dist lint release
 
 all: $(TARGET) build/wbrun build/mouse
 
@@ -82,6 +82,14 @@ dist: $(TARGET)
 	cp $(TARGET) build/dist/Velox/Velox
 	python3 tools/mkicon.py build/dist/Velox/Velox.info
 	cp tools/velox-proxy.py README.md LICENSE build/dist/Velox/
+
+# release: build/Velox-VERSION.lha and .zip of the dist folder (the
+# version: VERSION_STR in src/velox.i)
+VERSION := $(shell awk -F'"' '/^VERSION_STR/{getline; print $$2; exit}' src/velox.i)
+release: dist
+	python3 tools/mklha.py build/Velox-$(VERSION).lha build/dist/Velox
+	cd build/dist && python3 -c "import shutil; shutil.make_archive('../Velox-$(VERSION)', 'zip', '.', 'Velox')"
+	@ls -l build/Velox-$(VERSION).lha build/Velox-$(VERSION).zip
 
 size: $(TARGET)
 	@s=$$(stat -c %s $(TARGET)); echo "$(TARGET): $$s bytes ($$((s * 100 / $(BUDGET)))% of the $(BUDGET) target)"

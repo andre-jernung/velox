@@ -8,6 +8,9 @@ and a single event dispatch point.
 ## Build
 
 - `make`: assembles `src/*.s` into `build/velox` (Amiga hunk executable)
+- `make release`: `build/Velox-VERSION.lha` and `.zip` of the dist
+  folder, for a GitHub release (VERSION_STR in `src/velox.i`; a release
+  raises the last digit and sets VERSION_DATE).
 - `make size`: size against the 64 KB target. The target can be raised
   when a feature needs it. Keep the code small and optimized, but don't
   give up a realistic solution (correctness, responsiveness) to stay
