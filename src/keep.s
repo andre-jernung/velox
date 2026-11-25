@@ -17,6 +17,7 @@
 	include	"velox.i"
 
 	xdef	PageLeave,PageRestore,KeepEvict,KeepDrop,KeepFreeAll,KeepCopy
+	xref	FramesFree
 	xref	PageFree,Alloc,Free,BufFree,ImgListFree,LogEvent,ArenaFree,PfWrite
 
 	section	code,code
@@ -138,7 +139,8 @@ PageLeave:
 	beq.s	.nb			; now (GuiUnblank)
 	moveq	#2,d0
 	move.l	d0,g_Blank(a4)
-.nb:	tst.l	g_PagePool(a4)
+.nb:	jsr	FramesFree		; (a page of frames: their views)
+	tst.l	g_PagePool(a4)
 	beq.s	.free
 	bsr.s	PageKeep
 	bne.s	.x

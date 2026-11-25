@@ -46,6 +46,8 @@ LINE_MAX	equ	1024		; max HTTP header line we keep
 HOST_MAX	equ	256
 CONN_BUFSIZE	equ	4096
 TW_NET		equ	8192		; (conn.s: socket <-> TLS BIOs)
+FR_MAX		equ	16		; frames in a page, at most
+FR_GAPS		equ	40		; borders between them, at most
 ETAG_MAX	equ	128		; ETag value kept
 LASTMOD_MAX	equ	40		; Last-Modified value kept
 DCPATH_MAX	equ	256		; disk cache: a file's path
@@ -491,8 +493,46 @@ g_MeasureFn	rs.l	1		; d0=font|soft<<8, a0=text, d1=len -> d0=width
 g_FontH		rs.w	FONT_COUNT	; height per font index
 g_FontBase	rs.w	FONT_COUNT	; baseline per font index
 ; layout
+; the view: what is shown in the page area (the page's, or a frame's:
+; frames.s ViewSelect copies a frame's here, g_ViewTop keeps the
+; page's meanwhile); g_View .. g_ViewEnd
+g_View		rs.b	0
 g_Runs		rs.b	BUF_SIZEOF	; display list (Run records)
 g_Anchors	rs.b	BUF_SIZEOF	; id=/name= values and their y (layout)
+g_LayWidth	rs.l	1		; width laid out for
+g_DocHeight	rs.l	1
+g_PageFg	rs.l	1		; default text colour
+g_PageBg	rs.l	1		; page background colour
+g_LinkColor	rs.l	1
+g_FocusLink	rs.l	1		; link with the keyboard focus or 0
+g_FocusIdx	rs.l	1		; its first run, or -1
+g_PageX		rs.l	1		; page view in window coordinates
+g_PageY		rs.l	1
+g_PageW		rs.l	1
+g_PageH		rs.l	1
+g_ScrollY	rs.l	1		; document line at the top of the view
+g_ViewLive	rs.l	1		; the runs are those of the page shown
+g_HoverLink	rs.l	1
+g_PressLink	rs.l	1
+g_FindRun	rs.l	1		; run with the match, or 0
+g_FindIdx	rs.l	1		; its index (-1 none)
+g_FindOff	rs.l	1		; offset of the match in the run
+g_SelOn		rs.l	1		; selecting (button down)
+g_SelShown	rs.l	1		; a selection is drawn
+g_SelA		rs.l	1		; anchor: run, offset
+g_SelAOff	rs.l	1
+g_SelB		rs.l	1		; end: run, offset
+g_SelBOff	rs.l	1
+g_SelFrom	rs.l	1		; scratch
+g_BandsOk	rs.l	1		; g_Bands tells what is on the screen
+g_BandN		rs.l	1		; bands in the view
+g_BandView	rs.l	VIEWKEYS	; ViewKey (gui.s) of g_Bands
+g_Bands		rs.l	BANDS_MAX	; signature of each band on the screen
+g_PageBgRec	rs.l	1		; the page's background image (record)
+g_PageBgRep	rs.l	1		; ... repeated: 1 x, 2 y
+g_ViewEnd	rs.b	0
+VIEW_SIZE	equ	g_ViewEnd-g_View
+g_BgList	rs.l	1		; background image records (img.s)
 g_FragPend	rs.l	1		; scroll to g_FragName once it is there
 g_ParsePos	rs.l	1		; html.s: where HtmlMore goes on
 g_ParseBase	rs.l	1		; the text (this call)
@@ -530,11 +570,6 @@ g_CondETag	rs.b	ETAG_MAX	; the next request: If-None-Match,
 g_CondLM	rs.b	LASTMOD_MAX	; If-Modified-Since
 g_NavStopped	rs.l	1		; the user stopped the load (NavStop)
 g_LoadPhase	rs.l	1		; 1: a new page loads, 2: the shown one
-g_LayWidth	rs.l	1		; width laid out for
-g_DocHeight	rs.l	1
-g_PageFg	rs.l	1		; default text colour
-g_PageBg	rs.l	1		; page background colour
-g_LinkColor	rs.l	1
 g_LayY		rs.l	1		; top of the current line
 g_LayLeft	rs.l	1		; content box of the current block
 g_LayRight	rs.l	1
@@ -578,18 +613,10 @@ g_MeasFont	rs.l	2		; font index / soft style set in g_MeasRP
 g_PaintFont	rs.l	2		; the same for the window RastPort
 g_PenCache	rs.l	PEN_CACHE*2	; $RRGGBB, pen
 g_PenCount	rs.l	1
-g_PageX		rs.l	1		; page view in window coordinates
-g_PageY		rs.l	1
-g_PageW		rs.l	1
-g_PageH		rs.l	1
 g_StatusY	rs.l	1
-g_ScrollY	rs.l	1		; document line at the top of the view
 g_ClipRect	rs.w	4		; struct Rectangle
 g_Quit		rs.l	1
 g_AbortReq	rs.l	1
-g_HoverLink	rs.l	1
-g_FocusLink	rs.l	1		; link with the keyboard focus or 0
-g_FocusIdx	rs.l	1		; its first run, or -1
 g_LogFH		rs.l	1		; LOG=file handle or 0
 ; forms
 g_KeymapBase	rs.l	1
@@ -681,7 +708,6 @@ g_IconBase	rs.l	1
 g_ProxyPort	rs.l	1		; 0 = no proxy
 g_ProxyHost	rs.b	HOST_MAX
 g_VarBuf	rs.b	256
-g_PressLink	rs.l	1
 g_Squeeze	rs.l	1		; laying out a squeezed table
 g_FlLBot	rs.l	1		; left float: bottom (0 = none) ...
 g_FlLEdge	rs.l	1		; ... and its right edge
@@ -701,13 +727,6 @@ g_TestNow	rs.l	1		; fixed clock for tests (0 = real)
 g_CookiesDirty	rs.w	1		; persistent cookies changed
 g_RefreshTicks	rs.l	1		; meta refresh: ticks to go (0 = none)
 g_RefreshUrl	rs.b	URL_MAX		; meta refresh target (relative)
-g_SelOn		rs.l	1		; selecting (button down)
-g_SelShown	rs.l	1		; a selection is drawn
-g_SelA		rs.l	1		; anchor: run, offset
-g_SelAOff	rs.l	1
-g_SelB		rs.l	1		; end: run, offset
-g_SelBOff	rs.l	1
-g_SelFrom	rs.l	1		; scratch
 g_PaintIdx	rs.l	1		; index of the run being painted
 g_PageGen	rs.l	1		; counts the pages shown
 g_Prof		rs.l	PROF_SLOTS		; profiling: ticks of each slot,
@@ -715,9 +734,6 @@ g_ProfT		rs.l	PROF_SLOTS		; ... when it began,
 g_ProfIO	rs.b	IOTV_SIZE	; ... timer.device
 g_ProfEC	rs.l	2		; ... an EClockVal
 g_ProfHz	rs.l	1		; ... ticks a second
-g_PageBgRec	rs.l	1		; the page's background image (record)
-g_PageBgRep	rs.l	1		; ... repeated: 1 x, 2 y
-g_BgList	rs.l	1		; background image records (img.s)
 g_RunImg	rs.l	1		; layout: image of the next RECT run
 g_RunRep	rs.l	1		; ... repeated
 g_CssBase	rs.l	1		; URL of the sheet being used, or 0
@@ -873,7 +889,6 @@ g_VTrans	rs.l	4*4		; type, bits, data, width
 g_InfOut	rs.l	1		; inflate.s: start of the output,
 g_InfOver	rs.l	1		; bytes read past the end,
 g_InfWork	rs.l	1		; working memory
-g_ViewLive	rs.l	1		; the runs are those of the page shown
 g_DnsNext	rs.l	1		; next g_DnsCache entry to replace
 g_DnsCache	rs.b	DNS_ENTRIES*DNS_SIZEOF	; address.l, host name
 g_DecSig	rs.l	1		; image decoder: signal when done,
@@ -930,18 +945,12 @@ g_ImgHash	rs.l	1		; the cached image's file hash
 g_DecDcImg	rs.l	1		; cached pixels an orphan decoder reads
 g_PbmRP		rs.b	rp_SIZEOF	; RastPort on the bitmap
 g_Cube		rs.b	216		; the pens of the colour cube
-g_BandsOk	rs.l	1		; g_Bands tells what is on the screen
-g_BandN		rs.l	1		; bands in the view
-g_BandView	rs.l	VIEWKEYS	; ViewKey (gui.s) of g_Bands
 g_StripBM	rs.l	1		; off-screen strip for painting
 g_StripLI	rs.l	1		; its LayerInfo
 g_StripLayer	rs.l	1		; its layer (0: no strip)
 g_StripW	rs.l	1		; its width
 g_VisN		rs.l	1		; runs in g_Vis, -1: too many
 g_FindOn	rs.l	1		; find in page active
-g_FindRun	rs.l	1		; run with the match, or 0
-g_FindIdx	rs.l	1		; its index (-1 none)
-g_FindOff	rs.l	1		; offset of the match in the run
 g_Find		rs.b	64		; the text being found
 g_StatusText	rs.b	STATUS_MAX
 g_StatusBuf	rs.b	STATUS_MAX
@@ -992,7 +1001,6 @@ g_LinkUrl	rs.b	URL_MAX
 g_BgUrl		rs.b	URL_MAX		; a background image's URL
 g_8FTab		rs.w	4312		; vp8.s: the loop filter's tables
 g_BgAbs		rs.b	URL_MAX		; ... resolved
-g_Bands		rs.l	BANDS_MAX	; signature of each band on the screen
 g_BandsNew	rs.l	BANDS_MAX	; ... and of the runs now
 g_Vis		rs.l	VIS_MAX		; indexes of the runs being painted
 g_GifPal	rs.l	256		; colour table, as ARGB
@@ -1086,6 +1094,24 @@ g_TkT0		rs.l	1		; (profiling: task.s TaskGap)
 g_TkWhere	rs.l	1
 g_RefreshPend	rs.l	1		; GuiRefresh cut short: the rest
 g_CssBusy	rs.l	1		; CssLoad under way (css.s)
+; frames (frames.s): views and rectangles
+g_ViewCur	rs.l	1		; the view in G: 0 the page's, 1.. a frame's
+g_ViewTop	rs.b	VIEW_SIZE	; the page's while a frame's is in G
+g_FrViews	rs.l	1		; the frames' views (AllocVec), or 0
+g_FrViewN	rs.l	1		; ... how many
+g_FrDoc		rs.l	1		; ... of this page (g_Doc)
+g_FrN		rs.l	1		; frames shown
+g_FrActive	rs.l	1		; the frame the keys and the scroller move
+g_FrHover	rs.l	1		; the frame under the mouse
+g_FrNode	rs.l	FR_MAX		; each: its <frame> element,
+g_FrRect	rs.l	FR_MAX*4	; ... its rectangle (x, y, w, h)
+g_FrGapN	rs.l	1		; borders between them,
+g_FrGap		rs.l	FR_GAPS*4	; ... their rectangles
+g_LayTarget	rs.l	1		; layout.s: the view it is for (0: G's)
+g_LayRoot	rs.l	1		; ... its root (0: g_Doc)
+g_LayW		rs.l	1		; ... the width it lays out for
+g_InFrames	rs.l	1		; gui.s: painting a frame's view
+g_FrAll		rs.l	1		; ... all of each (GuiPaintAll)
 g_PrgOn		rs.l	1		; shown
 g_PrgDone	rs.l	1		; ... so much of
 g_PrgAll	rs.l	1		; ... all (0 or less: not known: a

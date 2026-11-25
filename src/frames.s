@@ -1,11 +1,20 @@
 ;
-; frames.s - framesets: the frames' documents in one page
+; frames.s - framesets: the frames' documents in one page, each frame
+; a view of its own
 ;
-; A page that is a <frameset> becomes a table of its frames (columns
-; and rows as its cols and rows say): each frame's document is fetched
-; (through the caches), parsed into the page and put in the frame's
-; cell, its relative URLs made absolute (they are the frame document's,
-; not the page's).  The page scrolls as a whole.
+; A page that is a <frameset> keeps it: each <frame> gets its document,
+; fetched (through the caches) and parsed into the page: its <body>
+; (with its attributes) and its style sheets, its relative URLs made
+; absolute (they are the frame document's, not the page's); a frameset
+; in it in the same way (FramesCompose).
+;
+; Laid out (FramesLayout), the window's page area is cut into the
+; frames' rectangles (rows and cols: pixels, percent, the rest for the
+; "*" ones), and each frame is a view of its own: its runs, its height,
+; its scroll position, its background (the globals from g_View to
+; g_ViewEnd: ViewSelect puts a frame's in G).  The mouse acts on the
+; frame under it, a click makes a frame the active one: the keys and
+; the scroller act on that (gui.s).
 ;
 ; A link (or a form sent with GET) in a frame that targets a frame (by
 ; its target, else the frame document's <base target>, else its own
@@ -20,14 +29,16 @@
 	include	"velox.i"
 
 	xdef	FramesCompose,FrameNav,FrameSplit,FrameShow
+	xdef	FramesPage,FramesLayout,FramesFree,ViewSelect,ViewSlot,FrameAt
+	xref	LayoutDocument
 	xref	HttpGetCached,HtmlParse,CharsetDetect,DecodeCharset,BufFree
 	xref	PageAlloc,DomNewNode,DomAppend,DomAddAttr,DomGetAttr
 	xref	UrlResolve,StrIPrefix,StrLen,LogEvent,GuiStatus,NavGo
 
 FR_DEPTH	equ	4		; framesets in frames, at most
-FR_MAX		equ	16		; frames in a page, at most
 FR_SEP		equ	1		; "<1>name<2>url" after the page's URL
 FR_EQ		equ	2
+FR_BORDER	equ	2		; between frames
 
 	section	code,code
 
@@ -77,9 +88,9 @@ FrameShow:
 .x:	rts
 
 ;--------------------------------------------------------------------
-; FramesCompose - (loader: PageFixups) a page that is a <frameset>
-; becomes the table of its frames' documents, and g_PageUrl gets the
-; frames' URLs (g_FrOv) after it.  The response, the disk cache entry
+; FramesCompose - (loader: PageFixups) a page that is a <frameset>:
+; its frames get their documents, and g_PageUrl gets the frames' URLs
+; (g_FrOv) after it.  The response, the disk cache entry
 ; read (DcFresh, DcCond after) and the progress hook are kept.
 ;--------------------------------------------------------------------
 FR_SAVE		equ	52+ETAG_MAX+LASTMOD_MAX
@@ -114,34 +125,7 @@ FramesCompose:
 	move.l	d0,a1
 	move.l	a2,a0
 	moveq	#0,d0
-	bsr	FrameSet
-	beq.s	.rest
-	move.l	d0,a3			; a3 = its table
-	move.l	n_Parent(a2),a0
-	cmp.w	#TAG_BODY,n_Tag(a0)	; in place of the frameset, in a
-	beq.s	.inb			; body without margins
-	moveq	#DN_ELEMENT,d0
-	move.l	#TAG_BODY,d1
-	jsr	DomNewNode
-	beq.s	.rest
-	move.l	d0,a1
-	move.l	a2,a0
-	move.l	a1,-(sp)
-	bsr	DomReplace
-	move.l	(sp),a0
-	move.l	a3,a1
-	jsr	DomAppend
-	move.l	(sp)+,a0
-	bra.s	.marg
-.inb:	move.l	a0,-(sp)
-	move.l	a2,a0
-	move.l	a3,a1
-	bsr	DomReplace
-	move.l	(sp)+,a0
-.marg:	lea	SStyle(pc),a1
-	lea	SNoMargin(pc),a2
-	move.l	a2,d1
-	bsr	FrAttr
+	bsr	FrCompose
 	bsr	FrNoFrames		; (what is there for browsers without)
 	lea	g_PageUrl(a4),a0	; the frames' URLs after the page's
 .e:	tst.b	(a0)+
@@ -171,169 +155,53 @@ FramesCompose:
 	rts
 
 ;--------------------------------------------------------------------
-; FrameSet - the table of frameset a0 (its frame URLs relative to a1)
+; FrCompose - the frames of frameset a0 get their documents (FrameFill;
+; URLs relative to a1), its framesets the same
 ; In:  d0 = how deep (framesets in frames)
-; Out: d0 = the table, or 0 (CCR set)
 ;--------------------------------------------------------------------
-FrameSet:
-	movem.l	d2-d7/a2-a3/a5,-(sp)
-	move.l	a0,a2			; a2 = the frameset
+FrCompose:
+	movem.l	d2/d7/a2,-(sp)
 	move.l	a1,d7			; d7 = base URL
-	move.l	d0,d6			; d6 = depth
-	lea	SRows(pc),a1		; d4 = rows, d5 = columns
-	jsr	DomGetAttr
-	move.l	d0,a0
-	bsr	FrCount
-	move.l	d0,d4
-	move.l	a2,a0
-	lea	SCols(pc),a1
-	jsr	DomGetAttr
-	move.l	d0,a0
-	bsr	FrCount
-	move.l	d0,d5
-	moveq	#DN_ELEMENT,d0
-	move.l	#TAG_TABLE,d1
-	jsr	DomNewNode
-	beq	.x
-	move.l	d0,a5			; a5 = the table
-	move.l	a5,a0
-	lea	SWidth(pc),a1
-	lea	S100(pc),a3
-	move.l	a3,d1
-	bsr	FrAttr
-	lea	S0(pc),a3
-	move.l	a3,d1
-	lea	SCellSp(pc),a1
-	bsr	FrAttr
-	lea	SBorder(pc),a1
-	bsr	FrAttr
-	lea	S4(pc),a1		; (frames have a margin)
-	move.l	a1,d1
-	lea	SCellPad(pc),a1
-	bsr	FrAttr
-	lea	SVxFixed(pc),a1		; (its columns as wide as they say:
-	bsr	FrAttr			;  table.s FixedWidths)
-	move.l	n_First(a2),a3		; a3 = the next child
-	moveq	#0,d2			; d2 = row
-.row:	cmp.l	d4,d2
-	bhs	.done
-	move.l	a2,a0			; a row of height 0 (hidden frames):
-	lea	SRows(pc),a1		; its frames left out
-	jsr	DomGetAttr
-	move.l	d0,a0
-	move.l	d2,d0
-	bsr	FrZero
-	beq.s	.shown
-	move.l	d5,d3
-.hid:	subq.l	#1,d3
-	bmi.s	.hidd
-	move.l	a3,a0
-	bsr	FrNext
-	move.l	a0,a3
-	tst.l	d0
-	bne.s	.hid
-.hidd:	addq.l	#1,d2
-	bra.s	.row
-.shown:	moveq	#DN_ELEMENT,d0
-	move.l	#TAG_TR,d1
-	jsr	DomNewNode
-	beq	.done
-	move.l	d0,-(sp)		; (sp) = the row
-	move.l	a5,a0
-	move.l	d0,a1
-	jsr	DomAppend
-	moveq	#0,d3			; d3 = column
-.col:	cmp.l	d5,d3
-	bhs	.rowd
-	move.l	a3,a0			; the next frame or frameset
-	bsr	FrNext
-	move.l	a0,a3
-	tst.l	d0
-	beq	.rowd
-	move.l	d0,-(sp)
-	move.l	a2,a0			; a column of width 0: left out
-	lea	SCols(pc),a1
-	jsr	DomGetAttr
-	move.l	d0,a0
-	move.l	d3,d0
-	bsr	FrZero
-	movem.l	(sp)+,a0
-	beq.s	.cell
-	addq.l	#1,d3
-	bra.s	.col
-.cell:	move.l	a0,-(sp)		; 4(sp) = the frame, (sp) = the cell
-	moveq	#DN_ELEMENT,d0
-	move.l	#TAG_TD,d1
-	jsr	DomNewNode
-	move.l	d0,-(sp)
-	beq	.cellx
-	move.l	d0,a0
-	lea	SVAlign(pc),a1
-	lea	SVTop(pc),a0
-	move.l	a0,d1
-	move.l	(sp),a0
-	bsr	FrAttr
-	cmp.l	#1,d5			; its width: the column's
-	bls.s	.nw
-	move.l	a2,a0
-	lea	SCols(pc),a1
-	jsr	DomGetAttr
-	move.l	d0,a0
-	move.l	d3,d0
-	bsr	FrEntry
-	beq.s	.nw
-	move.l	d0,d1
-	move.l	(sp),a0
-	lea	SWidth(pc),a1
-	bsr	FrAttrV
-.nw:	move.l	4(sp),a0		; what goes in it
-	move.l	(sp),a1
-	cmp.w	#TAG_FRAMESET,n_Tag(a0)
-	beq.s	.sub
-	move.l	d7,d0
-	move.l	d6,d1
-	bsr	FrameFill
-	bra.s	.put
-.sub:	cmp.l	#FR_DEPTH,d6		; a frameset in it: its table
-	bhs.s	.put
-	move.l	d7,a1
-	move.l	d6,d0
-	addq.l	#1,d0
-	bsr	FrameSet
-	beq.s	.put
-	move.l	d0,a1
-	move.l	(sp),a0
-	jsr	DomAppend
-.put:	move.l	8(sp),a0		; the cell into the row
-	move.l	(sp),a1
-	jsr	DomAppend
-.cellx:	addq.l	#8,sp
+	move.l	d0,d2			; d2 = depth
+	move.l	n_First(a0),a2
+.l:	move.l	a2,d0
+	beq.s	.x
 	tst.l	g_TkAbort(a4)		; (stopped: no more)
-	bne.s	.rowd
-	addq.l	#1,d3
-	bra	.col
-.rowd:	addq.l	#4,sp
-	tst.l	g_TkAbort(a4)
-	bne.s	.done
-	addq.l	#1,d2
-	bra	.row
-.done:	move.l	a5,d0
-.x:	movem.l	(sp)+,d2-d7/a2-a3/a5
-	tst.l	d0
+	bne.s	.x
+	move.l	d0,a0
+	move.l	n_Next(a0),a2
+	cmp.b	#DN_ELEMENT,n_Type(a0)
+	bne.s	.l
+	cmp.w	#TAG_FRAME,n_Tag(a0)
+	bne.s	.fs
+	move.l	d7,d0
+	move.l	d2,d1
+	bsr	FrameFill
+	bra.s	.l
+.fs:	cmp.w	#TAG_FRAMESET,n_Tag(a0)
+	bne.s	.l
+	cmp.l	#FR_DEPTH,d2
+	bhs.s	.l
+	move.l	d7,a1
+	move.l	d2,d0
+	addq.l	#1,d0
+	bsr	FrCompose
+	bra.s	.l
+.x:	movem.l	(sp)+,d2/d7/a2
 	rts
 
 ;--------------------------------------------------------------------
-; FrameFill - give cell a1 the document of frame a0 (its src relative
-; to d0, or the URL g_FrOv has for its name; d1 = how deep, for a
-; frameset in it): its body's content, and
-; its style sheets; relative URLs in it made absolute.  The cell notes
-; the frame's name and its document's <base target> (FrameNav).  A
-; frame that cannot be shown gets a link to its document.
+; FrameFill - give frame a0 its document (its src relative to d0, or
+; the URL g_FrOv has for its name; d1 = how deep, for a frameset in
+; it): its <body> and its style sheets, relative URLs in it made
+; absolute, or the frameset in it (FrCompose).  The frame notes its
+; name and its document's <base target> (vxframe, vxtarget: FrameNav).
+; A frame that cannot be shown gets a link to its document.
 ;--------------------------------------------------------------------
 FrameFill:
 	movem.l	d2-d7/a2-a3/a5,-(sp)
 	move.l	a0,a2			; a2 = the frame
-	move.l	a1,a5			; a5 = the cell
+	suba.l	a5,a5			; a5 = its body (FrBody)
 	move.l	d0,d7			; d7 = base URL
 	move.l	d1,-(sp)		; (sp) = depth
 	moveq	#0,d6			; d6 = its document's URL
@@ -370,7 +238,7 @@ FrameFill:
 	move.b	d1,2(a0)
 .named:	move.l	d0,d4			; d4 = name
 	addq.l	#1,g_FrCount(a4)
-	move.l	a5,a0
+	move.l	a2,a0
 	lea	SVxFrame(pc),a1
 	move.l	d4,d1
 	bsr	FrAttrV
@@ -381,8 +249,10 @@ FrameFill:
 	beq	.x
 	move.l	d7,a0
 	move.l	d5,a1
+	move.l	a2,-(sp)
 	lea	g_FrTmp(a4),a2
 	jsr	UrlResolve
+	move.l	(sp)+,a2
 	tst.l	d0
 	beq	.x
 	lea	g_FrTmp(a4),a0
@@ -428,6 +298,8 @@ FrameFill:
 	lea	SSrc(pc),a1
 	move.l	d6,d1
 	bsr	FrAttrV
+	bsr	FrBody
+	beq	.free
 	move.l	a5,a0
 	move.l	a3,a1
 	jsr	DomAppend
@@ -478,8 +350,10 @@ FrameFill:
 	beq.s	.base
 	move.l	d6,a0
 	move.l	d3,a1
+	move.l	a2,-(sp)
 	lea	g_FrTmp(a4),a2
 	jsr	UrlResolve
+	move.l	(sp)+,a2
 	tst.l	d0
 	beq.s	.base
 	lea	g_FrTmp(a4),a0
@@ -499,36 +373,38 @@ FrameFill:
 	tst.l	d0
 	beq.s	.nbt
 	move.l	d0,d1
-	move.l	a5,a0
+	move.l	a2,a0
 	lea	SVxTarget(pc),a1
 	bsr	FrAttrV
-.nbt:	move.l	d2,a0			; a frameset in it: that, in the cell
+.nbt:	move.l	d2,a0			; a frameset in it: that, in the frame
 	move.l	#TAG_FRAMESET,d0
 	bsr	FindTag
 	beq.s	.body
 	cmp.l	#FR_DEPTH,4(sp)
 	bhs.s	.body
-	move.l	d0,a0
+	move.l	d0,a3
+	move.l	a3,a0
+	bsr	DomUnlinkPrev
+	move.l	a2,a0
+	move.l	a3,a1
+	jsr	DomAppend
+	move.l	a3,a0
 	move.l	d6,a1
 	move.l	4(sp),d0
 	addq.l	#1,d0
-	bsr	FrameSet
-	beq	.free
-	move.l	d0,a1
-	move.l	a5,a0
-	jsr	DomAppend
+	bsr	FrCompose
 	bra	.free
 .body:	move.l	d2,a0			; its style sheets
-	move.l	a5,a1
+	move.l	a2,a1
 	bsr	FrSheets
-	move.l	d2,a0			; its body's content (or all of it)
+	bsr	FrBody			; its body: its attributes, its content
+	beq	.free			; (or all of the document's)
+	move.l	d2,a0
 	move.l	#TAG_BODY,d0
 	bsr	FindTag
 	beq.s	.nob
 	move.l	d0,a3
-	move.l	a3,a0			; the body's colours: the cell's
-	move.l	a5,a1
-	bsr	FrBodyAttrs
+	move.l	n_Data(a3),n_Data(a5)
 	move.l	a3,a0
 	move.l	a5,a1
 	bsr	FrMove
@@ -546,7 +422,9 @@ FrameFill:
 	bra.s	.free
 .flink:	lea	g_Resp+r_Body(a4),a0
 	jsr	BufFree
-.link:	moveq	#DN_ELEMENT,d0		; a link "Frame: name" to it
+.link:	bsr	FrBody			; a link "Frame: name" to it
+	beq.s	.x
+	moveq	#DN_ELEMENT,d0
 	move.l	#TAG_A,d1
 	jsr	DomNewNode
 	beq.s	.x
@@ -583,6 +461,22 @@ FrameFill:
 	movem.l	(sp)+,d2-d7/a2-a3/a5
 	rts
 
+; FrBody - (FrameFill: a2 = the frame) a <body> in it: a5 (once)
+; Out: d0 = 0 if out of memory (CCR set)
+FrBody:
+	move.l	a5,d0
+	bne.s	.x
+	moveq	#DN_ELEMENT,d0
+	move.l	#TAG_BODY,d1
+	jsr	DomNewNode
+	beq.s	.x
+	move.l	d0,a5
+	move.l	a2,a0
+	move.l	a5,a1
+	jsr	DomAppend
+	move.l	a5,d0
+.x:	rts
+
 LogFrame:	dc.b	"frame",0
 MsgFrame:	dc.b	"Frame: ",0
 CtHtml:		dc.b	"text/html",0
@@ -595,20 +489,8 @@ SName:		dc.b	"name",0
 STitle:		dc.b	"title",0
 SHref:		dc.b	"href",0
 STarget:	dc.b	"target",0
-SWidth:		dc.b	"width",0
-SCellSp:	dc.b	"cellspacing",0
-SCellPad:	dc.b	"cellpadding",0
-SBorder:	dc.b	"border",0
-SVAlign:	dc.b	"valign",0
-SStyle:		dc.b	"style",0
 SVxFrame:	dc.b	"vxframe",0
-SVxFixed:	dc.b	"vxfixed",0
 SVxTarget:	dc.b	"vxtarget",0
-S100:		dc.b	"100%",0
-S0:		dc.b	"0",0
-S4:		dc.b	"4",0
-SVTop:		dc.b	"top",0
-SNoMargin:	dc.b	"margin:0",0
 	even
 
 ;--------------------------------------------------------------------
@@ -678,66 +560,7 @@ FrMove:
 .x:	movem.l	(sp)+,a2-a3
 	rts
 
-;--------------------------------------------------------------------
-; FrBodyAttrs - (FrameFill) the colours of body a0 for cell a1:
-; bgcolor, background and link as they are, text as a style
-;--------------------------------------------------------------------
-FrBodyAttrs:
-	movem.l	a2-a3/a5,-(sp)
-	move.l	a1,a5
-	move.l	n_Data(a0),a3		; its attributes
-.l:	move.l	a3,d0
-	beq.s	.x
-	move.l	at_Name(a3),a0
-	lea	SBgColor(pc),a1
-	bsr	FrSame
-	bne.s	.add
-	move.l	at_Name(a3),a0
-	lea	SBackground(pc),a1
-	bsr	FrSame
-	bne.s	.add
-	move.l	at_Name(a3),a0
-	lea	SLink(pc),a1
-	bsr	FrSame
-	bne.s	.add
-	move.l	at_Name(a3),a0
-	lea	SText(pc),a1
-	bsr	FrSame
-	beq.s	.n
-	move.l	at_Value(a3),a0		; text="#rrggbb": style="color:..."
-	jsr	StrLen
-	addq.l	#SColorE-SColor+1,d0
-	jsr	PageAlloc
-	beq.s	.n
-	move.l	d0,a2
-	move.l	d0,a1
-	lea	SColor(pc),a0
-.c1:	move.b	(a0)+,(a1)+
-	bne.s	.c1
-	subq.l	#1,a1
-	move.l	at_Value(a3),a0
-.c2:	move.b	(a0)+,(a1)+
-	bne.s	.c2
-	move.l	a2,d1
-	move.l	a5,a0
-	lea	SStyle(pc),a1
-	bsr	FrAttrV
-	bra.s	.n
-.add:	move.l	a5,a0			; (the same name and value)
-	move.l	at_Name(a3),a1
-	move.l	at_Value(a3),d0
-	jsr	DomAddAttr
-.n:	move.l	at_Next(a3),a3
-	bra.s	.l
-.x:	movem.l	(sp)+,a2-a3/a5
-	rts
-
-SBgColor:	dc.b	"bgcolor",0
 SBackground:	dc.b	"background",0
-SText:		dc.b	"text",0
-SLink:		dc.b	"link",0
-SColor:		dc.b	"color:",0
-SColorE		equ	*-1
 SAction:	dc.b	"action",0
 SLowSrc:	dc.b	"lowsrc",0
 	even
@@ -846,13 +669,13 @@ FrNoFrames:
 FrameNav:
 	movem.l	d2-d3/a2-a3,-(sp)
 	move.l	a0,a2
-	move.l	a0,a3			; a3 = its frame's cell
+	move.l	a0,a3			; a3 = its frame
 .cell:	move.l	n_Parent(a3),d0
 	beq	.no
 	move.l	d0,a3
 	cmp.b	#DN_ELEMENT,n_Type(a3)
 	bne	.no
-	cmp.w	#TAG_TD,n_Tag(a3)
+	cmp.w	#TAG_FRAME,n_Tag(a3)
 	bne.s	.cell
 	move.l	a3,a0
 	lea	SVxFrame(pc),a1
@@ -891,7 +714,7 @@ FrameNav:
 .go:	move.l	d0,a3
 	cmp.b	#DN_ELEMENT,n_Type(a3)
 	bne.s	.walk
-	cmp.w	#TAG_TD,n_Tag(a3)
+	cmp.w	#TAG_FRAME,n_Tag(a3)
 	bne.s	.walk
 	move.l	a3,a0
 	lea	SVxFrame(pc),a1
@@ -1008,53 +831,8 @@ FrOvFind:
 	tst.l	d0
 	rts
 
-; FrNext - the next <frame> or <frameset> from node a0 on
-; Out: d0 = it or 0 (CCR set), a0 = the node after it
-FrNext:
-.l:	move.l	a0,d0
-	beq.s	.x
-	move.l	n_Next(a0),a0
-	move.l	d0,a1
-	cmp.b	#DN_ELEMENT,n_Type(a1)
-	bne.s	.l
-	cmp.w	#TAG_FRAME,n_Tag(a1)
-	beq.s	.x
-	cmp.w	#TAG_FRAMESET,n_Tag(a1)
-	bne.s	.l
-.x:	tst.l	d0
-	rts
-
-; FrZero - is entry d0 of rows/cols list a0 (or 0) "0" (a hidden
-; frame)?  Out: d0 = 1 if so (CCR set)
-FrZero:
-	move.l	a0,d1
-	beq.s	.no
-.sk:	tst.l	d0
-	beq.s	.at
-.f:	move.b	(a0)+,d1
-	beq.s	.no
-	cmp.b	#',',d1
-	bne.s	.f
-	subq.l	#1,d0
-	bra.s	.sk
-.at:	move.b	(a0)+,d1
-	cmp.b	#' ',d1
-	beq.s	.at
-	cmp.b	#'0',d1
-	bne.s	.no
-	move.b	(a0),d1			; (not "05")
-	sub.b	#'0',d1
-	cmp.b	#9,d1
-	bls.s	.no
-	moveq	#1,d0
-	rts
-.no:	moveq	#0,d0
-	rts
-
 ;--------------------------------------------------------------------
 ; FrCount - entries in a rows/cols list a0 (or 0): Out: d0 (1 at least)
-; FrEntry - entry d0 of list a0 as a width ("200", "30%"; a copy in
-; the page), 0 for "*" and the like (CCR set)
 ;--------------------------------------------------------------------
 FrCount:
 	moveq	#1,d0
@@ -1067,41 +845,6 @@ FrCount:
 	addq.l	#1,d0
 	bra.s	.l
 .x:	rts
-
-FrEntry:
-	move.l	a0,d1
-	beq.s	.no
-.sk:	tst.l	d0			; to entry d0
-	beq.s	.at
-.f:	move.b	(a0)+,d1
-	beq.s	.no
-	cmp.b	#',',d1
-	bne.s	.f
-	subq.l	#1,d0
-	bra.s	.sk
-.at:	cmp.b	#' ',(a0)		; (blanks before it)
-	bne.s	.ws
-	addq.l	#1,a0
-	bra.s	.at
-.ws:	move.l	a0,a1			; digits, then maybe '%'
-	moveq	#0,d0
-.d:	move.b	(a1),d1
-	sub.b	#'0',d1
-	cmp.b	#9,d1
-	bhi.s	.nd
-	addq.l	#1,a1
-	addq.l	#1,d0
-	bra.s	.d
-.nd:	tst.l	d0
-	beq.s	.no
-	cmp.b	#'*',(a1)		; "2*": relative
-	beq.s	.no
-	cmp.b	#'%',(a1)
-	bne.s	FrCopyN
-	addq.l	#1,d0
-	bra.s	FrCopyN
-.no:	moveq	#0,d0
-	rts
 
 ;--------------------------------------------------------------------
 ; FrCopy - string a0 copied into the page (up to a <1>: the page's own
@@ -1252,30 +995,584 @@ DomUnlinkPrev:
 	move.l	d1,d0
 .x:	rts
 
+
 ;--------------------------------------------------------------------
-; DomReplace - node a1 in the place of node a0 (which goes)
+; FramesPage - Out: d0 = the page's <frameset> (a page of frames), or 0
+; (CCR set).  It is not in a <body>: those are not looked into.
 ;--------------------------------------------------------------------
-DomReplace:
-	movem.l	a2-a3,-(sp)
-	move.l	n_Parent(a0),d0
+FramesPage:
+	move.l	a2,-(sp)
+	move.l	g_Doc(a4),d0
 	beq.s	.x
-	move.l	d0,a2			; a2 = parent
-	move.l	a2,n_Parent(a1)
-	move.l	n_Next(a0),n_Next(a1)
+	move.l	d0,a1			; a1 = root
+	move.l	d0,a2
+.walk:	move.l	n_First(a2),d1
+	cmp.b	#DN_ELEMENT,n_Type(a2)
+	bne.s	.t
+	cmp.w	#TAG_BODY,n_Tag(a2)
+	bne.s	.t
+	moveq	#0,d1
+.t:	tst.l	d1
+	bne.s	.go
+.up:	cmp.l	a1,a2
+	beq.s	.no
+	move.l	n_Next(a2),d1
+	bne.s	.go
+	move.l	n_Parent(a2),a2
+	bra.s	.up
+.go:	move.l	d1,a2
+	cmp.b	#DN_ELEMENT,n_Type(a2)
+	bne.s	.walk
+	cmp.w	#TAG_FRAMESET,n_Tag(a2)
+	bne.s	.walk
+	move.l	a2,d0
+	bra.s	.x
+.no:	moveq	#0,d0
+.x:	move.l	(sp)+,a2
+	tst.l	d0
+	rts
+
+;--------------------------------------------------------------------
+; FramesLayout - (GuiLayout) lay out a page of frames (frameset a0): the
+; frames' rectangles in the page area, each frame laid out in its view
+; (kept for the same page and frames: their scroll positions stay)
+; Out: d0 = 1 done, 0 if the load stopped or the size changed meanwhile
+;      (CCR set)
+;--------------------------------------------------------------------
+FramesLayout:
+	movem.l	d2-d4/a2,-(sp)
+	move.l	a0,a2
+	moveq	#0,d0			; (the page's view in G)
+	bsr	ViewSelect
+	clr.l	g_FrN(a4)		; the rectangles
+	clr.l	g_FrGapN(a4)
+	move.l	a2,a0
+	move.l	g_PageX(a4),d0
+	move.l	g_PageY(a4),d1
+	move.l	g_PageW(a4),d2
+	move.l	g_PageH(a4),d3
+	moveq	#0,d4
+	bsr	FrGeom
+	move.l	g_FrN(a4),d0
+	beq	.none
+	move.l	g_Doc(a4),d1		; the views: anew for another page or
+	cmp.l	g_FrDoc(a4),d1		; other frames
+	bne.s	.new
+	cmp.l	g_FrViewN(a4),d0
+	beq.s	.have
+.new:	move.l	g_FrN(a4),-(sp)
+	bsr	FramesFree
+	move.l	(sp)+,d0
+	move.l	d0,g_FrN(a4)
+	mulu.l	#VIEW_SIZE,d0
+	move.l	#MEMF_ANY|MEMF_CLEAR,d1
+	EXEC	AllocVec
+	move.l	d0,g_FrViews(a4)
+	beq	.none
+	move.l	g_FrN(a4),g_FrViewN(a4)
+	move.l	g_Doc(a4),g_FrDoc(a4)
+	moveq	#1,d2			; each: the page's colours, no focus
+.init:	cmp.l	g_FrN(a4),d2
+	bhi.s	.act
+	move.l	d2,d0
+	bsr	ViewSlot
+	move.l	g_PageFg(a4),g_PageFg-g_View(a0)
+	move.l	g_LinkColor(a4),g_LinkColor-g_View(a0)
+	moveq	#-1,d0
+	move.l	d0,g_FocusIdx-g_View(a0)
+	addq.l	#1,d2
+	bra.s	.init
+.act:	bsr	FrLargest		; the largest: the active one
+	move.l	d0,g_FrActive(a4)
+.have:	moveq	#1,d2			; the rectangles into the views
+.rc:	cmp.l	g_FrN(a4),d2
+	bhi.s	.lay
+	move.l	d2,d0
+	bsr	ViewSlot
+	lea	g_FrRect-16(a4),a1
+	move.l	d2,d0
+	lsl.l	#4,d0
+	add.l	d0,a1
+	move.l	(a1)+,g_PageX-g_View(a0)
+	move.l	(a1)+,g_PageY-g_View(a0)
+	move.l	(a1)+,g_PageW-g_View(a0)
+	move.l	(a1)+,g_PageH-g_View(a0)
+	clr.l	g_BandsOk-g_View(a0)
+	addq.l	#1,d2
+	bra.s	.rc
+.lay:	lea	LogFrames(pc),a0	; (for tests: "frames N")
+	suba.l	a1,a1
+	move.l	g_FrN(a4),d0
+	jsr	LogEvent
+	moveq	#1,d2			; each frame laid out in its view
+.l:	cmp.l	g_FrN(a4),d2
+	bhi.s	.done
+	move.l	d2,g_LayTarget(a4)
+	lea	g_FrNode-4(a4),a0
+	move.l	(a0,d2.l*4),g_LayRoot(a4)
+	move.l	d2,d0
+	bsr	ViewSlot
+	move.l	g_PageW-g_View(a0),d0
+	jsr	LayoutDocument
+	beq.s	.stop
+	move.l	d2,d0			; (its scroll position: within it)
+	bsr	ViewSlot
+	move.l	g_DocHeight-g_View(a0),d0
+	sub.l	g_PageH-g_View(a0),d0
+	bpl.s	.cl
+	moveq	#0,d0
+.cl:	cmp.l	g_ScrollY-g_View(a0),d0
+	bge.s	.sc
+	move.l	d0,g_ScrollY-g_View(a0)
+.sc:	addq.l	#1,d2
+	bra.s	.l
+.done:	clr.l	g_LayTarget(a4)
+	clr.l	g_LayRoot(a4)
+	move.l	g_PageW(a4),g_LayWidth(a4)	; the page's own view: the
+	clr.l	g_DocHeight(a4)			; frames only
+	clr.l	g_ScrollY(a4)
+	moveq	#1,d0
+	move.l	d0,g_ViewLive(a4)
+	clr.l	g_Blank(a4)
+	bra.s	.x
+.stop:	clr.l	g_LayTarget(a4)
+	clr.l	g_LayRoot(a4)
+	moveq	#0,d0
+	bra.s	.x
+.none:	bsr	FramesFree		; no frame to show: the page as it is
+	move.l	g_PageW(a4),d0
+	jsr	LayoutDocument
+.x:	movem.l	(sp)+,d2-d4/a2
+	tst.l	d0
+	rts
+
+LogFrames:	dc.b	"frames",0
+	even
+
+; FrLargest - Out: d0 = the frame with the largest area (1..)
+FrLargest:
+	movem.l	d2-d4,-(sp)
+	lea	g_FrRect(a4),a0
+	moveq	#1,d0
+	moveq	#0,d3			; d3 = its area
+	moveq	#1,d2
+.l:	cmp.l	g_FrN(a4),d2
+	bhi.s	.x
+	move.l	8(a0),d4
+	mulu.l	12(a0),d4
+	cmp.l	d3,d4
+	bls.s	.n
+	move.l	d4,d3
+	move.l	d2,d0
+.n:	lea	16(a0),a0
+	addq.l	#1,d2
+	bra.s	.l
+.x:	movem.l	(sp)+,d2-d4
+	rts
+
+;--------------------------------------------------------------------
+; FrGeom - the frames of frameset a0 in rectangle d0/d1 (x, y), d2/d3
+; (width, height): each frame shown into g_FrNode/g_FrRect (g_FrN), the
+; borders between them into g_FrGap (g_FrGapN); framesets in it (or in
+; a frame) the same
+; In: d4 = how deep
+;--------------------------------------------------------------------
+FG_ROWS		equ	-64		; locals (a5): row heights,
+FG_COLS		equ	-128		; ... column widths,
+FG_R		equ	-132		; ... rows,
+FG_C		equ	-136		; ... columns,
+FG_IR		equ	-140		; ... the row,
+FG_IC		equ	-144		; ... the column,
+FG_CX		equ	-148		; ... where the cell is,
+FG_CY		equ	-152
+FG_X0		equ	-156		; ... the rectangle
+FG_Y0		equ	-160
+FG_W		equ	-164
+FG_H		equ	-168
+FG_D		equ	-172		; ... how deep
+FG_SIZE		equ	176
+
+FrGeom:
+	movem.l	d2-d7/a2-a3/a5,-(sp)
+	link	a5,#-FG_SIZE
+	move.l	a0,a2			; a2 = the frameset
+	move.l	d0,FG_X0(a5)
+	move.l	d1,FG_Y0(a5)
+	move.l	d2,FG_W(a5)
+	move.l	d3,FG_H(a5)
+	move.l	d4,FG_D(a5)
+	move.l	a2,a0			; heights of the rows,
+	lea	SRows(pc),a1
+	jsr	DomGetAttr
+	move.l	d0,a0
+	move.l	FG_H(a5),d0
+	lea	FG_ROWS(a5),a1
+	bsr	FrSizes
+	move.l	d0,FG_R(a5)
+	move.l	a2,a0			; widths of the columns
+	lea	SCols(pc),a1
+	jsr	DomGetAttr
+	move.l	d0,a0
+	move.l	FG_W(a5),d0
+	lea	FG_COLS(a5),a1
+	bsr	FrSizes
+	move.l	d0,FG_C(a5)
+	move.l	FG_X0(a5),d6		; the borders between the columns
+	moveq	#1,d2
+.gc:	cmp.l	FG_C(a5),d2
+	bhs.s	.gr
+	lea	FG_COLS(a5),a0
+	add.l	-4(a0,d2.l*4),d6
+	move.l	d6,d0
+	move.l	FG_Y0(a5),d1
+	moveq	#FR_BORDER,d3
+	move.l	FG_H(a5),d4
+	bsr	FrGap
+	addq.l	#FR_BORDER,d6
+	addq.l	#1,d2
+	bra.s	.gc
+.gr:	move.l	FG_Y0(a5),d7		; ... and the rows
+	moveq	#1,d2
+.gr1:	cmp.l	FG_R(a5),d2
+	bhs.s	.cells
+	lea	FG_ROWS(a5),a0
+	add.l	-4(a0,d2.l*4),d7
+	move.l	FG_X0(a5),d0
+	move.l	d7,d1
+	move.l	FG_W(a5),d3
+	moveq	#FR_BORDER,d4
+	bsr	FrGap
+	addq.l	#FR_BORDER,d7
+	addq.l	#1,d2
+	bra.s	.gr1
+.cells:	clr.l	FG_IR(a5)		; the frames, row after row
+	clr.l	FG_IC(a5)
+	move.l	FG_X0(a5),FG_CX(a5)
+	move.l	FG_Y0(a5),FG_CY(a5)
 	move.l	n_First(a2),a3
-	cmp.l	a0,a3
-	bne.s	.f
-	move.l	a1,n_First(a2)
-	bra.s	.last
-.f:	move.l	n_Next(a3),d0		; the one before it
-	beq.s	.last
-	cmp.l	a0,d0
-	beq.s	.at
-	move.l	d0,a3
+.ch:	move.l	a3,d0
+	beq	.done
+	move.l	d0,a0
+	move.l	n_Next(a0),a3
+	cmp.b	#DN_ELEMENT,n_Type(a0)
+	bne.s	.ch
+	cmp.w	#TAG_FRAME,n_Tag(a0)
+	beq.s	.one
+	cmp.w	#TAG_FRAMESET,n_Tag(a0)
+	bne.s	.ch
+.one:	move.l	FG_IR(a5),d0
+	cmp.l	FG_R(a5),d0
+	bhs	.done			; (more than rows x columns)
+	lea	FG_ROWS(a5),a1
+	move.l	(a1,d0.l*4),d3		; its height,
+	move.l	FG_IC(a5),d1
+	lea	FG_COLS(a5),a1
+	move.l	(a1,d1.l*4),d2		; its width (within the rectangle)
+	move.l	FG_X0(a5),d0
+	add.l	FG_W(a5),d0
+	sub.l	FG_CX(a5),d0
+	cmp.l	d0,d2
+	ble.s	.wok
+	move.l	d0,d2
+.wok:	move.l	FG_Y0(a5),d0
+	add.l	FG_H(a5),d0
+	sub.l	FG_CY(a5),d0
+	cmp.l	d0,d3
+	ble.s	.hok
+	move.l	d0,d3
+.hok:	tst.l	d2			; (size 0: hidden)
+	ble.s	.next
+	tst.l	d3
+	ble.s	.next
+	move.l	FG_CX(a5),d0
+	move.l	FG_CY(a5),d1
+	move.l	FG_D(a5),d4
+	bsr	FrPlace
+.next:	lea	FG_COLS(a5),a1		; on to the next cell
+	move.l	FG_IC(a5),d1
+	move.l	(a1,d1.l*4),d0
+	addq.l	#FR_BORDER,d0
+	add.l	d0,FG_CX(a5)
+	addq.l	#1,d1
+	move.l	d1,FG_IC(a5)
+	cmp.l	FG_C(a5),d1
+	blo	.ch
+	clr.l	FG_IC(a5)		; the next row
+	move.l	FG_X0(a5),FG_CX(a5)
+	lea	FG_ROWS(a5),a1
+	move.l	FG_IR(a5),d1
+	move.l	(a1,d1.l*4),d0
+	addq.l	#FR_BORDER,d0
+	add.l	d0,FG_CY(a5)
+	addq.l	#1,FG_IR(a5)
+	bra	.ch
+.done:	unlk	a5
+	movem.l	(sp)+,d2-d7/a2-a3/a5
+	rts
+
+; FrPlace - (FrGeom) frame or frameset a0 in rectangle d0-d3, d4 = how
+; deep: a frameset (or a frame with one: its document's) cut further,
+; a frame noted (d0-d4 changed)
+FrPlace:
+	cmp.w	#TAG_FRAMESET,n_Tag(a0)
+	beq.s	.set
+	move.l	n_First(a0),d4		; a frame: a frameset in it?
+.f:	beq.s	.leaf
+	move.l	d4,a1
+	cmp.b	#DN_ELEMENT,n_Type(a1)
+	bne.s	.fn
+	cmp.w	#TAG_FRAMESET,n_Tag(a1)
+	bne.s	.fn
+	move.l	a1,a0
+	move.l	FG_D(a5),d4
+	bra.s	.set
+.fn:	move.l	n_Next(a1),d4
 	bra.s	.f
-.at:	move.l	a1,n_Next(a3)
-.last:	cmp.l	n_Last(a2),a0
-	bne.s	.x
-	move.l	a1,n_Last(a2)
-.x:	movem.l	(sp)+,a2-a3
+.set:	cmp.l	#FR_DEPTH,d4
+	bhs.s	.x
+	addq.l	#1,d4
+	bra	FrGeom
+.leaf:	move.l	g_FrN(a4),d4
+	cmp.l	#FR_MAX,d4
+	bhs.s	.x
+	lea	g_FrNode(a4),a1
+	move.l	a0,(a1,d4.l*4)
+	lsl.l	#4,d4
+	lea	g_FrRect(a4),a1
+	add.l	d4,a1
+	movem.l	d0-d3,(a1)
+	addq.l	#1,g_FrN(a4)
+.x:	rts
+
+; FrGap - (FrGeom) a border at d0/d1 (x, y), d3/d4 (width, height)
+; (d0-d4 kept)
+FrGap:
+	move.l	g_FrGapN(a4),a0
+	cmp.l	#FR_GAPS,a0
+	bhs.s	.x
+	addq.l	#1,g_FrGapN(a4)
+	add.l	a0,a0			; (16 bytes each)
+	add.l	a0,a0
+	add.l	a0,a0
+	add.l	a0,a0
+	lea	g_FrGap(a4),a1
+	add.l	a1,a0
+	move.l	d0,(a0)+
+	move.l	d1,(a0)+
+	move.l	d3,(a0)+
+	move.l	d4,(a0)
+.x:	rts
+
+;--------------------------------------------------------------------
+; FrSizes - the sizes of the rows or columns of list a0 ("100,30%,*",
+; or 0: one) in d0 pixels, into a1 (FR_MAX longs): pixels, percent of
+; what is left without the borders, the rest shared by the "*" ones by
+; their weights ("2*"), or else given to the last one
+; Out: d0 = how many
+;--------------------------------------------------------------------
+FrSizes:
+	movem.l	d2-d7/a2,-(sp)
+	lea	-FR_MAX*4(sp),sp	; (sp) = the weights of the "*" ones
+	move.l	a1,a2			; a2 = out
+	move.l	d0,d7			; d7 = room
+	move.l	a0,-(sp)
+	bsr	FrCount
+	move.l	(sp)+,a0
+	cmp.l	#FR_MAX,d0
+	bls.s	.c
+	moveq	#FR_MAX,d0
+.c:	move.l	d0,d6			; d6 = how many
+	move.l	d6,d1
+	subq.l	#1,d1
+	mulu.l	#FR_BORDER,d1
+	sub.l	d1,d7			; (the borders between them)
+	bpl.s	.r
+	moveq	#0,d7
+.r:	moveq	#0,d5			; d5 = taken
+	moveq	#0,d4			; d4 = the weights
+	moveq	#0,d3			; d3 = entry
+.e:	cmp.l	d6,d3
+	bhs	.rest
+	moveq	#0,d1			; its number,
+	moveq	#0,d2			; ... digits
+	move.l	a0,d0
+	beq.s	.st			; (no list: "*")
+.sp:	cmp.b	#' ',(a0)
+	bne.s	.dg
+	addq.l	#1,a0
+	bra.s	.sp
+.dg:	moveq	#0,d0
+	move.b	(a0),d0
+	sub.b	#'0',d0
+	cmp.b	#9,d0
+	bhi.s	.nd
+	mulu.l	#10,d1
+	add.l	d0,d1
+	addq.l	#1,d2
+	addq.l	#1,a0
+	bra.s	.dg
+.nd:	move.b	(a0),d0
+	cmp.b	#'%',d0
+	beq.s	.pc
+	cmp.b	#'*',d0
+	beq.s	.st
+	tst.l	d2			; (nothing: "*")
+	beq.s	.st
+	bra.s	.px
+.pc:	mulu.l	d7,d1			; percent
+	divu.l	#100,d1
+.px:	move.l	d1,(a2,d3.l*4)		; pixels
+	add.l	d1,d5
+	clr.l	(sp,d3.l*4)
+	bra.s	.skip
+.st:	tst.l	d2			; "*" = "1*"
+	bne.s	.w
+	moveq	#1,d1
+.w:	clr.l	(a2,d3.l*4)
+	move.l	d1,(sp,d3.l*4)
+	add.l	d1,d4
+.skip:	move.l	a0,d0			; to the next entry
+	beq.s	.ne
+.sk:	move.b	(a0)+,d0
+	beq.s	.end
+	cmp.b	#',',d0
+	bne.s	.sk
+	bra.s	.ne
+.end:	subq.l	#1,a0
+.ne:	addq.l	#1,d3
+	bra	.e
+.rest:	move.l	d7,d1			; d1 = what is left
+	sub.l	d5,d1
+	bpl.s	.pos
+	moveq	#0,d1
+.pos:	tst.l	d4
+	beq.s	.nost
+	moveq	#0,d3
+.s:	cmp.l	d6,d3
+	bhs.s	.x
+	move.l	(sp,d3.l*4),d0
+	beq.s	.sn
+	mulu.l	d1,d0
+	divu.l	d4,d0
+	move.l	d0,(a2,d3.l*4)
+.sn:	addq.l	#1,d3
+	bra.s	.s
+.nost:	move.l	d6,d3			; no "*": the last one gets it
+	subq.l	#1,d3
+	add.l	d1,(a2,d3.l*4)
+.x:	move.l	d6,d0
+	lea	FR_MAX*4(sp),sp
+	movem.l	(sp)+,d2-d7/a2
+	rts
+
+;--------------------------------------------------------------------
+; FramesFree - the frames' views go (their runs too): the page left, or
+; other frames (laid out again when shown: g_LayWidth 0)
+;--------------------------------------------------------------------
+FramesFree:
+	tst.l	g_FrViews(a4)
+	beq.s	.x
+	move.l	d2,-(sp)
+	moveq	#0,d0
+	bsr	ViewSelect
+	move.l	g_FrViewN(a4),d2
+.f:	tst.l	d2
+	beq.s	.v
+	move.l	d2,d0
+	bsr	ViewSlot
+	move.l	a0,-(sp)
+	lea	g_Runs-g_View(a0),a0
+	jsr	BufFree
+	move.l	(sp)+,a0
+	lea	g_Anchors-g_View(a0),a0
+	jsr	BufFree
+	subq.l	#1,d2
+	bra.s	.f
+.v:	move.l	g_FrViews(a4),a1
+	clr.l	g_FrViews(a4)
+	EXEC	FreeVec
+	clr.l	g_FrViewN(a4)
+	clr.l	g_FrN(a4)
+	clr.l	g_FrDoc(a4)
+	clr.l	g_FrActive(a4)
+	clr.l	g_FrHover(a4)
+	clr.l	g_LayWidth(a4)
+	move.l	(sp)+,d2
+.x:	rts
+
+;--------------------------------------------------------------------
+; ViewSlot - where view d0 is kept while not in G: 0 the page's own
+; (g_ViewTop), 1.. the frames' (g_FrViews)
+; Out: a0 (d1 kept) (a1 kept)
+;--------------------------------------------------------------------
+ViewSlot:
+	tst.l	d0
+	bne.s	.f
+	lea	g_ViewTop(a4),a0
+	rts
+.f:	subq.l	#1,d0
+	mulu.l	#VIEW_SIZE,d0
+	move.l	g_FrViews(a4),a0
+	add.l	d0,a0
+	rts
+
+;--------------------------------------------------------------------
+; ViewSelect - put view d0 (0: the page's own, 1..: a frame's) in G,
+; the one there back to its place.  Painting, scrolling, finding and
+; pointing at links then work on it.
+;--------------------------------------------------------------------
+ViewSelect:
+	cmp.l	g_ViewCur(a4),d0
+	beq.s	.x
+	tst.l	d0
+	beq.s	.ok
+	tst.l	g_FrViews(a4)		; (no such frame: nothing)
+	beq.s	.x
+	cmp.l	g_FrViewN(a4),d0
+	bhi.s	.x
+.ok:	move.l	d0,-(sp)
+	move.l	g_ViewCur(a4),d0	; G's to its place
+	bsr.s	ViewSlot
+	move.l	a0,a1
+	lea	g_View(a4),a0
+	move.l	#VIEW_SIZE/4-1,d1
+.o:	move.l	(a0)+,(a1)+
+	dbf	d1,.o
+	move.l	(sp),d0			; the other into G
+	bsr.s	ViewSlot
+	lea	g_View(a4),a1
+	move.l	#VIEW_SIZE/4-1,d1
+.i:	move.l	(a0)+,(a1)+
+	dbf	d1,.i
+	move.l	(sp)+,g_ViewCur(a4)
+.x:	rts
+
+;--------------------------------------------------------------------
+; FrameAt - the frame at window position d0/d1
+; Out: d0 = it (1..), 0 if none (CCR set)
+;--------------------------------------------------------------------
+FrameAt:
+	movem.l	d2-d3,-(sp)
+	lea	g_FrRect(a4),a0
+	moveq	#1,d2
+.l:	cmp.l	g_FrN(a4),d2
+	bhi.s	.no
+	move.l	d0,d3
+	sub.l	(a0),d3
+	bmi.s	.n
+	cmp.l	8(a0),d3
+	bhs.s	.n
+	move.l	d1,d3
+	sub.l	4(a0),d3
+	bmi.s	.n
+	cmp.l	12(a0),d3
+	bhs.s	.n
+	move.l	d2,d0
+	bra.s	.x
+.n:	lea	16(a0),a0
+	addq.l	#1,d2
+	bra.s	.l
+.no:	moveq	#0,d0
+.x:	movem.l	(sp)+,d2-d3
+	tst.l	d0
 	rts

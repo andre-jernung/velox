@@ -1139,9 +1139,12 @@ PageFixups:
 	cmp.b	#DN_ELEMENT,n_Type(a2)
 	bne.s	.walk
 	move.w	n_Tag(a2),d0
-	cmp.w	#TAG_FRAME,d0
-	beq.s	.frame
-	cmp.w	#TAG_IFRAME,d0
+	cmp.w	#TAG_FRAME,d0		; (a frame with its document in it:
+	bne.s	.nfr			;  as it is, FramesCompose)
+	tst.l	n_First(a2)
+	bne.s	.walk
+	bra.s	.frame
+.nfr:	cmp.w	#TAG_IFRAME,d0
 	beq.s	.frame
 	cmp.w	#TAG_META,d0
 	bne.s	.walk

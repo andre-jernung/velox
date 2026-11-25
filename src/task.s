@@ -23,6 +23,7 @@
 
 	xdef	TaskInit,TaskExit,TaskStart,TaskResume,TaskAbort,TaskBusy
 	xdef	TaskYield,TaskPoll,TaskWaitSock,TaskWaitSig,TaskLoopWait,TaskNow
+	xref	ViewSelect
 	IFD	PROFILE
 	xref	LogEvent
 	ENDC
@@ -150,6 +151,8 @@ LogBase:	dc.b	"codebase",0
 TaskAbort:
 	tst.l	g_TkIn(a4)		; (not from inside the loader)
 	bne.s	.x
+	moveq	#0,d0			; (the loader sees the page's own view)
+	jsr	ViewSelect
 	tst.l	g_TkState(a4)
 	beq.s	.x
 	moveq	#1,d0

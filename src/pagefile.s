@@ -42,6 +42,7 @@
 
 	xdef	PfSave,PfSaveKept,PfLoad,PfBuild,PfApply,PfFonts,PfWrite
 	xref	KeepCopy,Alloc,Free,BufReserve,BufFree,PageNew,PageFree
+	xref	FramesPage
 	xref	ArenaBlockRaw,TaskPoll,DcPathOf,DcAdded,LogEvent,StrLen
 	xref	AttrNames,AttrNamesEnd
 	IFD	PROFILE
@@ -132,7 +133,10 @@ SampleEnd:
 ; not saved.
 ;--------------------------------------------------------------------
 PfSave:
-	move.l	a2,-(sp)
+	jsr	FramesPage		; a page of frames: not saved (its
+	beq.s	.go			; frames are laid out again)
+	rts
+.go:	move.l	a2,-(sp)
 	move.l	#KP_SIZEOF,d0		; its globals, as a KeepPage
 	jsr	Alloc
 	beq.s	.x

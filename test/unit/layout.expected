@@ -100,20 +100,16 @@ text 217 145 40 10 8 f1 s0 c000000 "iptio"
 text 227 145 40 10 8 f1 s0 c000000 "n_wor"
 text 237 145 8 10 8 f1 s0 c000000 "d"
 
-# a frameset: its frames side by side (30%, 70%), each a link to its
+# a frameset laid out as a document (not frames: those are views of
+# their own, gui.s): its frames one after the other, each a link to its
 # document when that cannot be fetched (here); no <noframes>; iframes: links
 layout test/unit/layout/frames.html 400 => 
-height 48
-text 4 12 88 10 8 f1 s1 c0000ee L "Frame: menu"
-text 4 127 128 10 8 f1 s1 c0000ee L "Frame: main.html"
-text 28 8 48 10 8 f1 s0 c000000 "Before"
-text 28 64 96 10 8 f1 s1 c0000ee L "Frame: Video"
-text 28 168 48 10 8 f1 s0 c000000 "after."
-
-# a frame of height 0 (hidden): left out
-layout test/unit/layout/frames0.html 400 => 
-height 18
-text 4 12 96 10 8 f1 s1 c0000ee L "Frame: shown"
+height 50
+text 0 8 88 10 8 f1 s1 c0000ee L "Frame: menu"
+text 10 8 128 10 8 f1 s1 c0000ee L "Frame: main.html"
+text 30 8 48 10 8 f1 s0 c000000 "Before"
+text 30 64 96 10 8 f1 s1 c0000ee L "Frame: Video"
+text 30 168 48 10 8 f1 s0 c000000 "after."
 
 # images in tables are measured by their size or, unknown, their alt text
 layout test/unit/layout/imgalt.html 300 => 

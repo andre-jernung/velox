@@ -222,33 +222,51 @@ then the oldest are deleted (the window is served while it is read).
 
 ### Frames
 
-frames.s turns a page that is a `<frameset>` into a table of its frames
-(`FramesCompose`, from `PageFixups`): its columns as wide as `cols`
-says (pixels, percent, the rest for the `*` ones; table.s
-`FixedWidths`, for the private `vxfixed` attribute), its rows one after
-the other. Each frame's document is fetched through the caches, parsed
-into the page's own memory (as a document of its own, then its body's
-content moved into the cell, with its style sheets) and its relative
-URLs made absolute against its own URL. Its body's colours go to the
-cell (`bgcolor`, `background`, `link`; `text` as a style). A frame that
-cannot be shown is a link to its document. The page scrolls as a whole:
-frames do not scroll on their own.
+A page that is a `<frameset>` keeps it in its DOM (frames.s
+`FramesCompose`, from `PageFixups`): each `<frame>` gets its document,
+fetched through the caches and parsed into the page's own memory (as a
+document of its own): its `<body>`, attributes and all, and its style
+sheets are moved into the `<frame>`, its relative URLs made absolute
+against its own URL. A frame whose document is a frameset gets that,
+composed the same way. A frame that cannot be shown gets a link to its
+document. `<noframes>` is left out.
+
+Laid out (`FramesLayout`, from `GuiLayout`), the window's page area is
+cut into the frames' rectangles (`FrGeom`: rows and cols in pixels,
+percent, the rest for the `*` ones by their weights; 2 pixel borders
+between them; frames of size 0 are not shown), and each frame is a
+view of its own: its runs, anchors, height, scroll position, page
+background, focus, find and selection state, and paint bands. Those
+are the globals from `g_View` to `g_ViewEnd`; `ViewSelect` puts a
+frame's view in G (the page's own waits in `g_ViewTop`), so painting,
+scrolling, finding and pointing at links work on a frame as they work
+on a page. Each frame's `<frame>` element is laid out at its width
+(`g_LayRoot`), the result going into its view (`g_LayTarget`) at the
+end of the layout, so the window is served meanwhile as always.
+
+The page's own view is in G except while an event is handled or the
+frames are painted: `HandleEvent` puts the frame's view in G that the
+event is for (`FrameRoute`: the mouse's the one under it, a press makes
+it the active one; keys, the scroller and menus the active one's; the
+wheel the one under the mouse), and the page's back after; `TaskAbort`
+puts the page's in G before the loader runs. `GuiRefresh` paints each
+frame's view, then the borders, the scroller showing the active frame
+(at first the largest). Tab goes on from the last link of the active
+frame to the next frame's (`FocusTab`). A page of frames is not saved
+as a page file, and a page of frames kept for Back keeps its DOM and
+is laid out again when shown (`FramesFree` when it is left).
 
 Which frame shows what is part of the page's URL: after its own,
 `<1>name<2>url` for each frame that was navigated (bytes 1 and 2). A
 link (or a GET form) in a frame whose target, else its document's
 `<base target>`, else its own frame, names a frame of the page loads
 the page again with that entry changed (`FrameNav`); `_top`, `_blank`
-and unknown names load the whole window. So the history, the page
-files (keyed by the whole URL, `g_NavKey`) and the pages kept see one
-page as always, and Back undoes a frame's navigation. `NavLoad` splits
-the URL (`FrameSplit`): the page's own goes to `g_NavUrl` (fetching,
-the disk cache), the frames' to `g_FrOv`. `UrlResolve` ignores what
+and unknown names load the whole window. So the history, the caches
+and the pages kept see one page as always, and Back undoes a frame's
+navigation. `NavLoad` splits the URL (`FrameSplit`): the page's own goes
+to `g_NavUrl` (fetching, the disk cache), the frames' to `g_FrOv`;
+`g_NavKey`, the whole, keys page files. `UrlResolve` ignores what
 follows a byte 1 in a base, and the URL gadget does not show it.
-
-The cells note the frame's name (`vxframe`) and its document's base
-target (`vxtarget`). These attributes, the frame documents' text and
-everything the composition adds are in the page's memory (page files).
 
 ### Kept pages (Back and Forward)
 
@@ -391,7 +409,7 @@ JS is not on the roadmap yet, but it must stay possible to add. That means:
 | sel.s       | selecting text with the mouse                                   |
 | clip.s      | clipboard                                                       |
 | nav.s       | navigation, history, built-in pages, bookmarks, downloads        |
-| frames.s    | framesets: the frames' documents as a table in one page          |
+| frames.s    | framesets: the frames' documents, their rectangles and views     |
 
 Everything is tested on AmigaOS 3.1 and 3.2 (see CLAUDE.md).
 

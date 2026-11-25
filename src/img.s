@@ -42,7 +42,7 @@ bmh_Height		equ	2
 	xdef	ImgListFree,ImagesAgain
 	xref	KeepEvict,DcPeek
 	xref	PageAlloc,DomGetAttr,UrlResolve,HttpGetCached,ParseDec,BufFree
-	xref	GuiProgSet
+	xref	GuiProgSet,GuiBgCame
 	xref	G,BusyEvents,PicInfo,PicDecode,PicFree,PalInit,PicToBitMap,PicAlloc,BufAppend,BufClear,GuiStatus,GuiRelayout,GuiRefresh,GuiPageWidth,GuiPaintImage
 	xref	FmtDec,StrCopy,LogEvent,ImgNetHook
 
@@ -358,10 +358,9 @@ BgStep:
 .lg:	lea	LogBg(pc),a0
 	lea	bg_Url(a5),a1
 	jsr	LogEvent
-	cmp.l	g_PageBgRec(a4),a5	; the page's: everything changes
-	bne.s	.r
-	clr.l	g_BandsOk(a4)
-.r:	jsr	GuiRefresh
+	move.l	a5,a0			; a page's background: all of it
+	jsr	GuiBgCame		; (a frame's too) painted again
+	jsr	GuiRefresh
 .x:	movem.l	(sp)+,d2-d7/a2-a3/a5
 	rts
 

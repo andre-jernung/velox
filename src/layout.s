@@ -31,6 +31,7 @@
 	xref	StyleRoot,StyleCompute,BufClear,BufReserve,PageAlloc,FmtDec,StyleOf
 	xref	DomGetAttr,ParseDec,LayoutTable,CssApply
 	xref	FormIsControl,FormControlSize,CssInvalidate,TaskPoll,BufFree,LogEvent
+	xref	ViewSelect
 
 	IFNE	RUN_SIZEOF-32
 	FAIL	"RunCount/RunPtr assume RUN_SIZEOF = 32"
@@ -43,8 +44,9 @@ MAX_LAYDEPTH	equ	200
 	section	code,code
 
 ;--------------------------------------------------------------------
-; LayoutDocument - lay out g_Doc (into g_Runs, g_Anchors, g_DocHeight,
-; g_PageBg...: all at once at the end)
+; LayoutDocument - lay out g_Doc, or g_LayRoot (a frame's), into the
+; view g_LayTarget (0: the one in G; frames.s) (g_Runs, g_Anchors,
+; g_DocHeight, g_PageBg...: all at once at the end)
 ; In:  d0 = width in pixels
 ; Out: d0 = 1 laid out, 0 if left unfinished: the load stopped
 ;      (g_TkAbort) or the width changed (g_LayAgain) (CCR set)
@@ -55,11 +57,11 @@ LayoutDocument:
 	move.l	sp,g_LaySP(a4)		; (LayPoll leaves from here)
 	moveq	#1,d1
 	move.l	d1,g_LayBusy(a4)
-	move.l	d0,g_LayWidth(a4)
+	move.l	d0,g_LayW(a4)		; (g_LayWidth: the view's, at the end)
 	lea	LogLayout(pc),a0	; (for tests: "layout WIDTH")
 	suba.l	a1,a1
 	jsr	LogEvent
-	move.l	g_LayWidth(a4),d0
+	move.l	g_LayW(a4),d0
 	addq.l	#1,g_LayGen(a4)
 	move.l	#$ffffff,g_LPageBg(a4)	; (white unless <body> or <html> say
 	clr.l	g_LPageBgRec(a4)	;  otherwise; not the last page's)
@@ -87,7 +89,7 @@ LayoutDocument:
 	move.l	d0,g_ListNum(a4)
 	moveq	#PAGE_MARGIN,d0
 	move.l	d0,g_LayLeft(a4)
-	move.l	g_LayWidth(a4),d0
+	move.l	g_LayW(a4),d0
 	sub.l	#PAGE_MARGIN,d0
 	cmp.l	#PAGE_MARGIN+MIN_WIDTH,d0
 	bge.s	.w
@@ -100,15 +102,21 @@ LayoutDocument:
 	lea	-STYLE_SIZEOF(sp),sp
 	move.l	sp,a0
 	jsr	StyleRoot
+	move.l	g_LayRoot(a4),d0	; (a frame's: its <frame>)
+	bne.s	.root
 	move.l	g_Doc(a4),d0
 	beq.s	.done
-	move.l	d0,a0
+.root:	move.l	d0,a0
 	move.l	sp,a1
 	bsr	LayoutChildren
 	bsr	FlushLine
 .done:	lea	STYLE_SIZEOF(sp),sp
 	bsr	ClearFloats		; (floats reach down too)
-	; the new runs replace those shown
+	; the new runs replace those shown, in the view it is for
+	move.l	g_ViewCur(a4),-(sp)
+	move.l	g_LayTarget(a4),d0
+	jsr	ViewSelect
+	move.l	g_LayW(a4),g_LayWidth(a4)
 	lea	g_Runs(a4),a0
 	lea	g_LRuns(a4),a1
 	moveq	#2*BUF_SIZEOF/4-1,d0	; (g_Anchors follows each)
@@ -128,6 +136,8 @@ LayoutDocument:
 	clr.l	g_Blank(a4)		; (a page shown: not blank)
 	moveq	#1,d0
 	move.l	d0,g_ViewLive(a4)	; the runs can be painted
+	move.l	(sp)+,d0
+	jsr	ViewSelect
 	bsr.s	LayFree			; (the old ones)
 	moveq	#1,d0
 LayOut:	clr.l	g_LayBusy(a4)

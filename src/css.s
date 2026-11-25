@@ -2281,7 +2281,7 @@ TryBucket:
 	move.l	a0,a2
 .l:	move.l	a2,d0
 	beq.s	.x
-	move.l	g_LayWidth(a4),d0	; media query width range
+	move.l	g_LayW(a4),d0	; media query width range
 	cmp.w	cs_MqMin(a2),d0
 	blt.s	.n
 	cmp.w	cs_MqMax(a2),d0
@@ -3424,7 +3424,8 @@ ViewportUnit:
 	or.b	#$20,d1
 	cmp.b	#'w',d1
 	bne.s	.h
-	muls.l	g_LayWidth(a4),d0
+	move.l	g_LayW(a4),d1		; (a long way into G: via a register)
+	muls.l	d1,d0
 	bra.s	.pct
 .h:	cmp.b	#'h',d1
 	bne.s	.no

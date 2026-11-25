@@ -111,6 +111,12 @@ and a single event dispatch point.
   `g_PageBg`...) before the end, where the new runs replace those shown.
   LayPoll keeps all registers (LayoutNode's a1 is live there: this bug
   happened).
+- A page of frames has a view per frame (frames.s): the view globals
+  (`g_View` .. `g_ViewEnd` in velox.i: runs, scroll position, page
+  rectangle, bands...) are those of the view in G (`ViewSelect`). Outside
+  an event handler or a loop over the frames, G holds the page's own
+  view (`g_ViewCur` 0): code that changes the view selects the right one
+  first and puts the page's back. A new view global goes into that block.
 - AmiSSL's crypto runs in the TLS process (conn.s, `TwRun`), at the
   same time as Velox's task. What runs there (`TwExec`, `TlsVerify`,
   `CertFile`) uses only the `g_Tw*`/`g_Cert*` globals, no shared

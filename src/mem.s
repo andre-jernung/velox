@@ -9,6 +9,7 @@
 
 	xdef	MemInit,MemExit,Alloc,Free,PageNew,PageFree,PageAlloc,ArenaFree,ArenaBlock,ArenaBlockRaw
 	xdef	BufReserve,BufAppend,BufAppendByte,BufAppendStr,BufClear,BufFree
+	xref	FramesFree
 	xref	PageLeave,KeepEvict
 
 	section	code,code
@@ -146,6 +147,7 @@ ArenaFree:
 ; PageFree - free the page's memory and source
 ;--------------------------------------------------------------------
 PageFree:
+	jsr	FramesFree		; (a page of frames: their views)
 	move.l	g_PageFreeHook(a4),d0	; (images free their bitmaps)
 	beq.s	.nohook
 	move.l	d0,a0

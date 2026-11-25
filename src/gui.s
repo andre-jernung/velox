@@ -17,8 +17,8 @@
 
 	xdef	GuiOpen,GuiClose,GuiEventLoop,GuiPaintAll,GuiStatus,GuiPaintNode,GuiPaintImage
 	xdef	GuiSetUrl,GuiSetTitle,GuiScrollTo,GuiNetHook,GuiBusy
-	xdef	GuiBlank,GuiUnblank,GuiProgSet
-	xref	FrameShow
+	xdef	GuiBlank,GuiUnblank,GuiProgSet,GuiBgCame
+	xref	FrameShow,FramesPage,FramesLayout,FrameAt,ViewSelect,ViewSlot
 	xdef	GuiLayout,BusyEvents,GuiRelayout,GuiRefresh,GuiPageWidth,GuiAbout,DrawStatus,ImgNetHook,GuiProgress
 	IFD	PROFILE
 	xref	ProfRead,ProfLog
@@ -673,6 +673,15 @@ GuiPageWidth:
 ; GuiPaintAll - repaint page, status line and scroller
 GuiPaintAll:
 	clr.l	g_BandsOk(a4)
+	move.l	g_FrViewN(a4),d1	; (the frames' views too)
+	beq.s	GuiRefresh
+.fa:	cmp.l	g_ViewCur(a4),d1
+	beq.s	.fn
+	move.l	d1,d0
+	jsr	ViewSlot
+	clr.l	g_BandsOk-g_View(a0)
+.fn:	subq.l	#1,d1
+	bne.s	.fa
 	; fall through
 
 ;--------------------------------------------------------------------
@@ -683,6 +692,12 @@ GuiPaintAll:
 GuiRefresh:
 	tst.l	g_Blank(a4)		; a new page loading: blank
 	bne	PaintBlank
+	tst.l	g_FrN(a4)		; a page of frames: each frame's view
+	beq.s	RefreshView
+	tst.l	g_InFrames(a4)
+	beq	RefreshFrames
+; RefreshView - GuiRefresh of the view in G
+RefreshView:
 	movem.l	d2-d6/a2-a3,-(sp)
 	tst.l	g_Window(a4)
 	beq	.x
@@ -832,6 +847,82 @@ MsgWaiting:
 	and.l	#1,d0
 .x:	rts
 
+; RefreshFrames - (GuiRefresh, a page of frames) each frame's view up
+; to date, the borders between them, the scroller the active frame's
+RefreshFrames:
+	move.l	d2,-(sp)
+	move.l	g_ViewCur(a4),-(sp)
+	moveq	#1,d0
+	move.l	d0,g_InFrames(a4)
+	moveq	#1,d2
+.l:	cmp.l	g_FrN(a4),d2
+	bhi.s	.d
+	move.l	d2,d0
+	jsr	ViewSelect
+	bsr	RefreshView
+	tst.l	g_RefreshPend(a4)	; (cut short for the user: the rest
+	bne.s	.d			;  later)
+	addq.l	#1,d2
+	bra.s	.l
+.d:	clr.l	g_InFrames(a4)
+	bsr	PaintGaps
+	move.l	g_FrActive(a4),d0
+	jsr	ViewSelect
+	bsr	UpdateScroller
+	move.l	(sp)+,d0
+	jsr	ViewSelect
+	move.l	(sp)+,d2
+	rts
+
+; PaintGaps - the borders between the frames
+PaintGaps:
+	movem.l	d2-d4/a2,-(sp)
+	move.l	g_Window(a4),d0
+	beq.s	.x
+	move.l	d0,a0
+	move.l	wd_RPort(a0),a2
+	move.l	a2,a1
+	moveq	#0,d0
+	GFX	SetAPen
+	moveq	#0,d4
+.l:	cmp.l	g_FrGapN(a4),d4
+	bhs.s	.x
+	move.l	d4,d0
+	lsl.l	#4,d0
+	lea	g_FrGap(a4),a0
+	add.l	d0,a0
+	movem.l	(a0),d0-d3
+	add.l	d0,d2
+	subq.l	#1,d2
+	add.l	d1,d3
+	subq.l	#1,d3
+	move.l	a2,a1
+	GFX	RectFill
+	addq.l	#1,d4
+	bra.s	.l
+.x:	movem.l	(sp)+,d2-d4/a2
+	rts
+
+; GuiBgCame - background image record a0 came: views whose page
+; background it is are painted all again
+GuiBgCame:
+	move.l	a0,a1
+	cmp.l	g_PageBgRec(a4),a1
+	bne.s	.f
+	clr.l	g_BandsOk(a4)
+.f:	move.l	g_FrViewN(a4),d1
+	beq.s	.x
+.l:	cmp.l	g_ViewCur(a4),d1
+	beq.s	.n
+	move.l	d1,d0
+	jsr	ViewSlot
+	cmp.l	g_PageBgRec-g_View(a0),a1
+	bne.s	.n
+	clr.l	g_BandsOk-g_View(a0)
+.n:	subq.l	#1,d1
+	bne.s	.l
+.x:	rts
+
 ; what the bands depend on besides the runs (a highlight cleared by a
 ; relayout, too)
 ViewKey:	dc.w	g_PageW,g_PageH,g_PageBg,g_PageBgRec,g_FindRun,g_SelShown,0
@@ -839,6 +930,7 @@ ViewKey:	dc.w	g_PageW,g_PageH,g_PageBg,g_PageBgRec,g_FindRun,g_SelShown,0
 	FAIL	"ViewKey: VIEWKEYS (velox.i) must match"
 	ENDIF
 LogPaint:	dc.b	"paint",0
+LogFScroll:	dc.b	"fscroll",0
 	even
 
 ; ViewBands - the signature of each band of the view, into a0
@@ -1317,6 +1409,30 @@ RunBox:
 ; is shown (every copy), and nothing around it
 ;--------------------------------------------------------------------
 GuiPaintImage:
+	tst.l	g_FrN(a4)		; a page of frames: in each
+	beq.s	PaintImage1
+	tst.l	g_InFrames(a4)
+	bne.s	PaintImage1
+	movem.l	d2/a2,-(sp)
+	move.l	a0,a2
+	move.l	g_ViewCur(a4),-(sp)
+	moveq	#1,d0
+	move.l	d0,g_InFrames(a4)
+	moveq	#1,d2
+.f:	cmp.l	g_FrN(a4),d2
+	bhi.s	.fd
+	move.l	d2,d0
+	jsr	ViewSelect
+	move.l	a2,a0
+	bsr.s	PaintImage1
+	addq.l	#1,d2
+	bra.s	.f
+.fd:	clr.l	g_InFrames(a4)
+	move.l	(sp)+,d0
+	jsr	ViewSelect
+	movem.l	(sp)+,d2/a2
+	rts
+PaintImage1:
 	movem.l	d2-d6/a2-a3,-(sp)
 	move.l	a0,a3
 	jsr	RunCount
@@ -2494,6 +2610,8 @@ PBox:
 ; stopped before (GuiUnblank).
 ;--------------------------------------------------------------------
 GuiBlank:
+	moveq	#0,d0			; (the page's view, not a frame's)
+	jsr	ViewSelect
 	tst.l	g_Blank(a4)
 	bne.s	.p
 	moveq	#2,d0			; (no page shown: none comes back)
@@ -2528,6 +2646,8 @@ GuiUnblank:
 ; PaintBlank - the page area blank (white), the scroller with nothing
 ; to scroll, the status line
 PaintBlank:
+	moveq	#0,d0			; (all of the page area)
+	jsr	ViewSelect
 	movem.l	d2-d3/a2-a3,-(sp)
 	move.l	g_Window(a4),d0
 	beq.s	.x
@@ -2587,6 +2707,14 @@ ScreenPens:
 UpdateScroller:
 	tst.l	g_Dragging(a4)		; (while the user drags it, the page
 	bne.s	.x			;  changing must not move it back)
+	tst.l	g_InFrames(a4)		; (a page of frames: the active one's)
+	bne.s	.x
+	tst.l	g_FrN(a4)
+	beq.s	.go
+	move.l	g_ViewCur(a4),d0
+	cmp.l	g_FrActive(a4),d0
+	bne.s	.x
+.go:
 	move.l	g_GadScroll(a4),d0
 	beq.s	.x
 	movem.l	a2-a3,-(sp)
@@ -2628,6 +2756,13 @@ GuiScrollTo:
 	lea	LogScroll(pc),a0
 	suba.l	a1,a1
 	jsr	LogEvent
+	tst.l	g_FrN(a4)		; (a page of frames: which, for tests)
+	beq.s	.nf
+	lea	LogFScroll(pc),a0
+	suba.l	a1,a1
+	move.l	g_ViewCur(a4),d0
+	jsr	LogEvent
+.nf:
 	move.l	d2,d0
 	bpl.s	.abs
 	neg.l	d0
@@ -2716,9 +2851,14 @@ GuiRelayout:
 ;      (CCR set)
 GuiLayout:
 .go:	clr.l	g_LayAgain(a4)
-	bsr	GuiPageWidth
+	jsr	FramesPage		; a page of frames: each frame
+	beq.s	.doc
+	move.l	d0,a0
+	jsr	FramesLayout
+	bra.s	.res
+.doc:	bsr	GuiPageWidth
 	jsr	LayoutDocument
-	bne.s	.x
+.res:	bne.s	.x
 	tst.l	g_TkAbort(a4)
 	bne.s	.stop
 	tst.l	g_LayAgain(a4)
@@ -2913,13 +3053,119 @@ HandleMessages:
 	movem.l	(sp)+,d2-d7/a2
 	rts
 
+; FrameRoute - (a page of frames) the view of the frame that event d2
+; (d3 code, a2 IAddress, d5/d6 mouse) is for in G: the mouse's the one
+; under it (a press makes it the active one; a selection or the
+; scroller being dragged stays in the active one), the wheel's the one
+; under it, the keys', the scroller's and the menus' the active one;
+; the others the page's
+FrameRoute:
+	cmp.l	#IDCMP_MOUSEMOVE,d2
+	beq.s	.move
+	cmp.l	#IDCMP_MOUSEBUTTONS,d2
+	beq.s	.click
+	cmp.l	#IDCMP_RAWKEY,d2
+	beq.s	.key
+	cmp.l	#IDCMP_GADGETUP,d2
+	beq.s	.act
+	cmp.l	#IDCMP_GADGETDOWN,d2
+	beq.s	.act
+	cmp.l	#IDCMP_MENUPICK,d2
+	beq.s	.act
+	moveq	#0,d0
+	jmp	ViewSelect
+.key:	cmp.w	#RAW_WHEELUP,d3
+	beq.s	.under
+	cmp.w	#RAW_WHEELDOWN,d3
+	beq.s	.under
+.act:	move.l	g_FrActive(a4),d0
+	jmp	ViewSelect
+.under:	move.l	d5,d0
+	move.l	d6,d1
+	jsr	FrameAt
+	beq.s	.act
+	jmp	ViewSelect
+.click:	cmp.w	#IECODE_LBUTTON,d3	; a press: the frame under it, now
+	bne.s	.act			; the active one (a release: that)
+	move.l	d5,d0
+	move.l	d6,d1
+	jsr	FrameAt
+	beq.s	.act
+	move.l	d0,g_FrActive(a4)
+	jsr	ViewSelect
+	bra	UpdateScroller
+.move:	cmp.l	g_GadScroll(a4),a2	; dragging the scroller or selecting:
+	beq.s	.act			; the active one
+	move.l	g_FrActive(a4),d0
+	jsr	ViewSelect
+	tst.l	g_SelOn(a4)
+	bne.s	.x
+	move.l	d5,d0			; the one under the mouse (leaving one:
+	move.l	d6,d1			; its link not hovered any more)
+	jsr	FrameAt
+	cmp.l	g_FrHover(a4),d0
+	beq.s	.sel
+	move.l	d0,-(sp)
+	move.l	g_FrHover(a4),d0
+	beq.s	.nh
+	jsr	ViewSelect
+	movem.l	d5-d6,-(sp)
+	moveq	#-1,d5
+	moveq	#-1,d6
+	bsr	OnHover
+	movem.l	(sp)+,d5-d6
+.nh:	move.l	(sp)+,d0
+	move.l	d0,g_FrHover(a4)
+.sel:	jmp	ViewSelect
+.x:	rts
+
+; FocusTab - (Tab) FocusNext d0; a page of frames: past the last link
+; of the active frame, on in the next frame (that one active then)
+FocusTab:
+	movem.l	d2-d3,-(sp)
+	move.l	d0,d2
+	bsr	FocusNext
+	tst.l	g_FrN(a4)
+	beq.s	.x
+	move.l	g_FrN(a4),d3		; (each frame once at most)
+.f:	tst.l	g_FocusLink(a4)
+	bne.s	.x
+	subq.l	#1,d3
+	bmi.s	.x
+	move.l	g_ViewCur(a4),d0	; the next frame
+	add.l	d2,d0
+	bgt.s	.lo
+	move.l	g_FrN(a4),d0
+.lo:	cmp.l	g_FrN(a4),d0
+	bls.s	.hi
+	moveq	#1,d0
+.hi:	move.l	d0,g_FrActive(a4)
+	jsr	ViewSelect
+	moveq	#-1,d0			; (from its start, or its end)
+	move.l	d0,g_FocusIdx(a4)
+	move.l	d2,d0
+	bsr	FocusNext
+	bra.s	.f
+.x:	bsr	UpdateScroller
+	movem.l	(sp)+,d2-d3
+	rts
+
 ; ScrollFlush - show the scroller move kept by HandleEvent, if any
 ScrollFlush:
 	move.l	g_ScrollPend(a4),d0
 	beq.s	.x
 	clr.l	g_ScrollPend(a4)
 	subq.l	#1,d0
-	bra	GuiScrollTo
+	tst.l	g_FrN(a4)		; (a page of frames: the active one)
+	beq	GuiScrollTo
+	move.l	g_ViewCur(a4),-(sp)
+	move.l	d0,-(sp)
+	move.l	g_FrActive(a4),d0
+	jsr	ViewSelect
+	move.l	(sp)+,d0
+	bsr	GuiScrollTo
+	move.l	(sp)+,d0
+	jmp	ViewSelect
 .x:	rts
 
 ; HandleEvent - d2 = class, d3 = code, d4 = qualifier, a2 = IAddress,
@@ -2927,6 +3173,13 @@ ScrollFlush:
 ; only noted (g_ScrollPend): of those waiting, only the last is shown,
 ; after the others (ScrollFlush), so the page keeps up with the knob.
 HandleEvent:
+	tst.l	g_FrN(a4)		; a page of frames: the view of the
+	beq.s	HandleEvent1		; event's frame in G, then the page's
+	bsr	FrameRoute		; again
+	bsr.s	HandleEvent1
+	moveq	#0,d0
+	jmp	ViewSelect
+HandleEvent1:
 	tst.l	g_ScrollPend(a4)
 	beq.s	.np
 	cmp.l	#IDCMP_MOUSEMOVE,d2
@@ -3092,9 +3345,9 @@ OnKey:
 	moveq	#1,d0
 	move.w	d4,d1
 	and.w	#IEQUALIFIER_LSHIFT|IEQUALIFIER_RSHIFT,d1
-	beq	FocusNext
+	beq	FocusTab
 	moveq	#-1,d0
-	bra	FocusNext
+	bra	FocusTab
 .ntab:	cmp.w	#RAW_RETURN,d3
 	beq.s	.follow
 	cmp.w	#RAW_ENTER,d3
