@@ -1,7 +1,7 @@
 # Velox
 
 A small, fast web browser for classic AmigaOS 3.x, written entirely in
-68k assembly. The program is about 55 KB.
+68k assembly.
 
 ## Requirements
 
