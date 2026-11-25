@@ -1,0 +1,10 @@
+; fresh: a style sheet and a background image unchanged for long (only
+; Last-Modified) are fresh for a while: the next run takes them from the
+; disk cache without asking, the image as it was shown (test/amiga/fresh.host)
+Echo >VELOX:r/fresh.txt "fresh"
+Echo >VELOX:r/fresh.start ""
+VELOX:velox http://127.0.0.1:8080/fresh.html?nostore LOG=VELOX:r/fresh1.log
+Echo >>VELOX:r/fresh.txt "exit rc=$RC"
+VELOX:velox http://127.0.0.1:8080/fresh.html?nostore LOG=VELOX:r/fresh2.log
+Echo >>VELOX:r/fresh.txt "exit rc=$RC"
+Echo >>VELOX:r/fresh.txt "done"

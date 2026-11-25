@@ -15,7 +15,7 @@
 	IFD	PROFILE
 	xref	ProfRead
 	ENDC
-	xref	Alloc,Free,HttpCloseKept,LogEvent,G,TaskWaitSig,GuiBusy
+	xref	Alloc,Free,HttpCloseKept,LogEvent,G,TaskWaitSig,GuiBusy,StrCopyN
 
 AmiSSL_SocketBase	equ	TAG_USER+$01
 AmiSSL_ErrNoPtr		equ	TAG_USER+$0b
@@ -197,9 +197,17 @@ ConnOpen:
 .conn:	tst.l	(sp)
 	beq.s	.ok
 	move.l	a2,g_TlsHost(a4)
+	clr.l	g_TlsAgain(a4)
 	move.l	a3,a0
 	bsr	TlsHandshake
+	bne.s	.ok
+	tst.l	g_TlsAgain(a4)		; TLS 1.3 only: connect again
 	beq.s	.failclose
+	clr.l	g_TlsAgain(a4)
+	move.l	a3,a0
+	bsr	ConnClose
+	move.l	g_TlsPort(a4),d2
+	bra	.addr
 .ok:	move.l	a3,d0
 .x:	addq.l	#4,sp
 	movem.l	(sp)+,d2-d3/a2-a3
@@ -376,6 +384,12 @@ TlsCtx:
 	moveq	#0,d0			; SSL_VERIFY_NONE (tests only)
 .v:	suba.l	a1,a1
 	SSL	SSL_CTX_set_verify
+	move.l	g_SslCtx(a4),a0		; a certificate checked before: not
+	lea	TlsVerify(pc),a1	; again (TlsVerify)
+	move.l	a2,-(sp)
+	suba.l	a2,a2
+	SSL	SSL_CTX_set_cert_verify_callback
+	move.l	(sp)+,a2
 	move.l	g_SslCtx(a4),a0		; cheap key exchanges only: the
 	moveq	#92,d0			; post-quantum hybrid default takes
 	moveq	#0,d1			; far too long on a 68020
@@ -395,6 +409,17 @@ TlsCtx:
 	moveq	#0,d1			; both kinds of certificate uses RSA)
 	lea	TlsSigalgs(pc),a1	; (SSL_CTRL_SET_SIGALGS_LIST)
 	SSL	SSL_CTX_ctrl
+	lea	VarTls13(pc),a0	; Velox/Tls13: no TLS 1.2 (tests)
+	move.l	a0,d1
+	lea	g_TlsVar(a4),a0
+	move.l	a0,d2
+	moveq	#127,d3
+	moveq	#0,d4
+	DOS	GetVar
+	tst.l	d0
+	sgt	d0
+	and.l	#1,d0
+	move.l	d0,g_Tls13(a4)
 	lea	VarCiphers(pc),a0	; Velox/TlsCiphers: TLS 1.3 suites
 	move.l	a0,d1			; (tests, or a server that wants
 	lea	g_TlsVar(a4),a0		;  others)
@@ -415,6 +440,7 @@ AMISSL_API	equ	47		; AMISSL_V41x: AmiSSL 6
 MasterName:	dc.b	"amisslmaster.library",0
 TlsGroups:	dc.b	"X25519:P-256",0
 VarCiphers:	dc.b	"Velox/TlsCiphers",0
+VarTls13:	dc.b	"Velox/Tls13",0
 TlsSuites:	dc.b	"TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:"
 		dc.b	"TLS_AES_256_GCM_SHA384",0
 TlsCiphers:	dc.b	"ECDHE+CHACHA20:ECDHE+AESGCM+AES128:ECDHE+AES128:"
@@ -511,7 +537,8 @@ TlsHandshake:
 .conn0:	bsr	TlsSessFor		; a session of this host and port:
 	move.l	d0,c_Sess(a2)		; resumed (no certificate to check)
 	beq.s	.conn
-	move.l	d0,a0
+	bsr	TlsCap
+	move.l	c_Sess(a2),a0
 	move.l	ts_Gen(a0),c_SessGen(a2)
 	move.l	ts_Sess(a0),d0
 	beq.s	.conn
@@ -537,9 +564,23 @@ TlsHandshake:
 	move.l	c_SSL(a2),a0		; failed: was it the certificate?
 	SSL	SSL_get_verify_result
 	tst.l	d0
-	beq.s	.fail
+	beq.s	.tlsf
 	SETERR	ERR_CERT
 	bra.s	.x0
+.tlsf:	move.l	c_Sess(a2),d0		; TLS 1.2 at most: once more without
+	beq.s	.fail			; (a server that speaks only 1.3;
+	move.l	d0,a0			;  ConnOpen connects again)
+	tst.l	ts_Tls13(a0)
+	bne.s	.fail
+	tst.l	g_Tls13(a4)
+	bne.s	.fail
+	moveq	#1,d0
+	move.l	d0,ts_Tls13(a0)
+	move.l	d0,g_TlsAgain(a4)
+	lea	LogTls13(pc),a0		; (for tests)
+	move.l	g_TlsHost(a4),a1
+	move.l	#$80000000,d0
+	jsr	LogEvent
 .fail:	SETERR	ERR_TLS
 .x0:	moveq	#0,d0
 	bra.s	.x
@@ -566,7 +607,207 @@ LogTls:	dc.b	"tls",0
 LogCipher:	dc.b	"cipher",0
 LogSessKept:	dc.b	"tlssession",0
 LogSessUse:	dc.b	"tlsresume",0
+LogTls13:	dc.b	"tls13",0
 	even
+
+;--------------------------------------------------------------------
+; TlsVerify - (AmiSSL calls it in SSL_connect instead of checking the
+; certificate chain; C calling convention: the X509_STORE_CTX at 4(sp))
+; the server's certificate, if checked before for this host and not
+; expired, is taken as it is: checking a chain of ECDSA P-384
+; signatures takes 25 s on a stock A1200.  Else the chain is checked
+; (and the certificate noted if it is good).  The proof that the server
+; has its key (its signature over the handshake) is checked as always.
+; The host name must be the same, character for character (a hash
+; could be matched by a domain made for it).
+; Out: d0 = 1 good, 0 not
+;--------------------------------------------------------------------
+TlsVerify:
+	movem.l	d2-d7/a2-a6,-(sp)
+	lea	G,a4
+	move.l	11*4+4(sp),a5		; a5 = the X509_STORE_CTX
+	clr.l	g_CertMdOk(a4)
+	bsr	CertLoad
+	move.l	a5,a0
+	SSL	X509_STORE_CTX_get0_cert
+	move.l	d0,d7			; d7 = the server's certificate
+	beq.s	.full
+	SSL	EVP_sha256
+	move.l	d0,a1
+	move.l	d7,a0
+	lea	g_CertMd(a4),a2
+	lea	g_CertMdLen(a4),a3
+	SSL	X509_digest
+	tst.l	d0
+	beq.s	.full
+	cmp.l	#32,g_CertMdLen(a4)
+	bne.s	.full
+	move.l	d7,a0			; not expired? (from now to its end)
+	SSL	X509_get0_notAfter
+	move.l	d0,a3
+	suba.l	a2,a2
+	lea	g_CertDay(a4),a0
+	lea	g_CertSec(a4),a1
+	SSL	ASN1_TIME_diff
+	tst.l	d0
+	beq.s	.full
+	tst.l	g_CertDay(a4)
+	bmi.s	.full
+	tst.l	g_CertSec(a4)
+	bmi.s	.full
+	moveq	#1,d0
+	move.l	d0,g_CertMdOk(a4)
+	bsr	CertFind
+	beq.s	.full
+	lea	LogCertOk(pc),a0	; (for tests)
+	move.l	g_TlsHost(a4),a1
+	move.l	#$80000000,d0
+	jsr	LogEvent
+	moveq	#1,d0
+	bra.s	.x
+.full:	move.l	a5,a0
+	SSL	X509_verify_cert
+	cmp.l	#1,d0
+	bne.s	.no
+	tst.l	g_CertMdOk(a4)
+	beq.s	.ok
+	bsr	CertAdd
+.ok:	moveq	#1,d0
+	bra.s	.x
+.no:	moveq	#0,d0
+.x:	movem.l	(sp)+,d2-d7/a2-a6
+	rts
+
+CO_SIZEOF	equ	32+HOST_MAX	; an entry: SHA-256, host name
+
+; CertFind - is g_CertMd noted for g_TlsHost?  Out: d0 = 1 if so (CCR)
+CertFind:
+	movem.l	d2/a2,-(sp)
+	lea	g_CertOk(a4),a2
+	moveq	#CERT_OK-1,d2
+.l:	tst.b	32(a2)
+	beq.s	.n
+	move.l	a2,a0
+	lea	g_CertMd(a4),a1
+	moveq	#8-1,d0
+.c:	cmpm.l	(a0)+,(a1)+
+	dbne	d0,.c
+	bne.s	.n
+	lea	32(a2),a0
+	move.l	g_TlsHost(a4),a1
+.h:	move.b	(a0)+,d0
+	cmp.b	(a1)+,d0
+	bne.s	.n
+	tst.b	d0
+	bne.s	.h
+	moveq	#1,d0
+	bra.s	.x
+.n:	lea	CO_SIZEOF(a2),a2
+	dbf	d2,.l
+	moveq	#0,d0
+.x:	movem.l	(sp)+,d2/a2
+	rts
+
+; CertAdd - note g_CertMd for g_TlsHost (instead of the oldest), and
+; keep the list in the disk cache's directory
+CertAdd:
+	move.l	a2,-(sp)
+	move.l	g_CertNext(a4),d0
+	addq.l	#1,d0
+	cmp.l	#CERT_OK,d0
+	blo.s	.n
+	moveq	#0,d0
+.n:	move.l	d0,g_CertNext(a4)
+	mulu.l	#CO_SIZEOF,d0
+	lea	g_CertOk(a4),a2
+	add.l	d0,a2
+	lea	g_CertMd(a4),a0
+	move.l	a2,a1
+	moveq	#8-1,d0
+.c:	move.l	(a0)+,(a1)+
+	dbf	d0,.c
+	move.l	g_TlsHost(a4),a0
+	move.l	#HOST_MAX-1,d0
+	jsr	StrCopyN
+	move.l	(sp)+,a2
+	move.l	#MODE_NEWFILE,d0
+	bra.s	CertFile
+
+; CertLoad - the first time: g_CertOk from the disk cache's directory
+CertLoad:
+	tst.l	g_CertLoaded(a4)
+	bne.s	.x
+	moveq	#1,d0
+	move.l	d0,g_CertLoaded(a4)
+	move.l	#MODE_OLDFILE,d0
+	bra.s	CertFile
+.x:	rts
+
+; CertFile - read (d0 = MODE_OLDFILE) or write (MODE_NEWFILE) g_CertOk
+; as the file "tlscerts" in the disk cache's directory
+CertFile:
+	movem.l	d2-d5,-(sp)
+	move.l	d0,d5
+	tst.l	g_DcOn(a4)
+	beq.s	.x0
+	lea	g_DcDir(a4),a0
+	lea	g_CertPath(a4),a1
+	move.l	#DCPATH_MAX-1,d0
+	jsr	StrCopyN
+	lea	g_CertPath(a4),a0
+	move.l	a0,d1
+	lea	CertName(pc),a0
+	move.l	a0,d2
+	move.l	#DCPATH_MAX,d3
+	DOS	AddPart
+	lea	g_CertPath(a4),a0
+	move.l	a0,d1
+	move.l	d5,d2
+	DOS	Open
+	move.l	d0,d4
+	beq.s	.x0
+	move.l	d4,d1
+	lea	g_CertOk(a4),a0
+	move.l	a0,d2
+	move.l	#CERT_OK*CO_SIZEOF,d3
+	cmp.l	#MODE_OLDFILE,d5
+	bne.s	.w
+	DOS	Read
+	cmp.l	#CERT_OK*CO_SIZEOF,d0	; (anything else: none)
+	beq.s	.c
+	lea	g_CertOk(a4),a0
+	move.l	#CERT_OK*CO_SIZEOF/4-1,d0
+.z:	clr.l	(a0)+
+	dbf	d0,.z
+	bra.s	.c
+.w:	DOS	Write
+.c:	move.l	d4,d1
+	DOS	Close
+.x0:	movem.l	(sp)+,d2-d5
+	rts
+
+CertName:	dc.b	"tlscerts",0
+LogCertOk:	dc.b	"certknown",0
+	even
+
+;--------------------------------------------------------------------
+; TlsCap - (a2 = Conn, c_Sess its entry) TLS 1.2 at most, unless the
+; server speaks only 1.3 (or Velox/Tls13 is set): a 1.2 session is
+; resumed without a key exchange (a tenth of a second on a 68020),
+; a 1.3 session with one (X25519: three seconds)
+;--------------------------------------------------------------------
+TlsCap:
+	move.l	c_Sess(a2),a0
+	tst.l	ts_Tls13(a0)
+	bne.s	.x
+	tst.l	g_Tls13(a4)
+	bne.s	.x
+	move.l	c_SSL(a2),a0
+	moveq	#124,d0			; SSL_CTRL_SET_MAX_PROTO_VERSION
+	move.l	#$303,d1		; TLS1_2_VERSION
+	suba.l	a1,a1
+	SSL	SSL_ctrl
+.x:	rts
 
 ;--------------------------------------------------------------------
 ; TlsSessFor - the g_TlsSess entry of g_TlsHost, port g_TlsPort; made
@@ -608,6 +849,7 @@ TlsSessFor:
 .ns:	addq.l	#1,g_TlsGen(a4)
 	move.l	g_TlsGen(a4),ts_Gen(a3)
 	move.l	g_TlsPort(a4),ts_Port(a3)
+	clr.l	ts_Tls13(a3)
 	move.l	g_TlsHost(a4),a0
 	lea	ts_Host(a3),a1
 	move.l	#HOST_MAX-2,d0

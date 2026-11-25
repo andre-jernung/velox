@@ -173,8 +173,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if os.path.isdir(full):
                 full = os.path.join(full, "index.html")
             if os.path.isfile(full) and os.path.realpath(full).startswith(os.path.realpath(DOCROOT)):
-                ctype = "text/html; charset=utf-8" if full.endswith(".html") else "application/octet-stream"
+                ctype = ("text/html; charset=utf-8" if full.endswith(".html") else
+                         "text/css" if full.endswith(".css") else "application/octet-stream")
                 hdrs = []
+                if p.endswith("?nostore"):  # (never kept: a forum's pages)
+                    hdrs = [("Cache-Control", "no-store")]
                 if p.endswith("?lm"):
                     # unchanged for long, no max-age: fresh for a while
                     # (heuristic freshness); its requests are counted
@@ -212,4 +215,11 @@ if __name__ == "__main__":
             tls = http.server.ThreadingHTTPServer((addr, int(sys.argv[3])), Handler)
             tls.socket = ctx.wrap_socket(tls.socket, server_side=True)
             threading.Thread(target=tls.serve_forever, daemon=True).start()
+        # and a server that speaks only TLS 1.3, on the next port
+        ctx13 = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx13.load_cert_chain(sys.argv[4], sys.argv[5])
+        ctx13.minimum_version = ssl.TLSVersion.TLSv1_3
+        tls = http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[3]) + 1), Handler)
+        tls.socket = ctx13.wrap_socket(tls.socket, server_side=True)
+        threading.Thread(target=tls.serve_forever, daemon=True).start()
     http.server.ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()

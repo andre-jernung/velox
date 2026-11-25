@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+"""Host side of fresh.script: two runs of the same page; the second asks
+the server for neither its style sheet nor its background image."""
+import os
+import sys
+import time
+import urllib.request
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from xdrive import Amiga, wait_log  # noqa: E402
+
+r = sys.argv[1]
+out = open(os.path.join(r, "fresh.driver"), "w")
+U = "http://127.0.0.1:8080/"
+
+
+def step(msg):
+    out.write(msg + "\n")
+    out.flush()
+
+
+def hits(path):
+    return int(urllib.request.urlopen(U + "lmhits/" + path).read())
+
+
+try:
+    h = []
+    for n in (1, 2):
+        log = os.path.join(r, "fresh%d.log" % n)
+        wait_log(log, "images ", timeout=120)
+        time.sleep(1)
+        h.append((hits("css/fresh.css"), hits("bgtile.png")))
+        Amiga().key("ctrl+q")
+        time.sleep(3)
+    l2 = open(os.path.join(r, "fresh2.log"), "rb").read().decode("latin-1")
+    if "diskcache " + U + "css/fresh.css?lm" not in l2:
+        raise AssertionError("style sheet not from the disk cache")
+    if "bgcache " + U + "bgtile.png?lm" not in l2:
+        raise AssertionError("background image not as shown before")
+    if h[1] != h[0]:
+        raise AssertionError("asked for again: %r" % (h,))
+    step("the second run asked for neither")
+    step("ok")
+except Exception as e:
+    step("FAIL " + repr(e))
+    try:
+        Amiga().key("ctrl+q")
+    except Exception:
+        pass

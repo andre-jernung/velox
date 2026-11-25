@@ -32,3 +32,10 @@ _LVOSSL_SESSION_dup	equ	-20208
 _LVOSSL_session_reused	equ	-18048
 _LVOInitAmiSSLA	equ	-36
 _LVOCleanupAmiSSLA	equ	-42
+_LVOSSL_CTX_set_cert_verify_callback	equ	-6486
+_LVOX509_STORE_CTX_get0_cert	equ	-19032
+_LVOEVP_sha256	equ	-10932
+_LVOX509_digest	equ	-7494
+_LVOX509_get0_notAfter	equ	-19656
+_LVOASN1_TIME_diff	equ	-15774
+_LVOX509_verify_cert	equ	-9240

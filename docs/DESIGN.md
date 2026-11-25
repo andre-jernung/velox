@@ -123,9 +123,18 @@ then the oldest are deleted (the window is served while it is read).
   the cache as it is.
 - **Style sheets** come from memory, then disk (checked when stale),
   then the network.
+- **Freshness.** A response without max-age is fresh until its
+  `Expires`, else (as browsers do) for a tenth of the time since its
+  `Last-Modified`, a week at most. A 304 makes the copy fresh again from
+  then (`DcTouch`). So style sheets and images of a site are not asked
+  for again on every page.
 - **Images** are kept as they were shown: scaled and dithered for this
   screen, with their mask, keyed by URL, width=/height=, the page width
   and the screen's colours. They come back without fetching or decoding.
+  Background images too (keyed by URL, `|bg|` and the colours; tiled as
+  drawn, their natural size where an image's file hash is), but only
+  when they came from the network: a copy from a cache does not have
+  its own validators and max-age in `g_Resp` (`g_RespFrom`).
   A page's images load in two passes: first all those in the disk cache
   are shown, then the others are fetched and those shown from the cache
   are checked like pages (for an image without validators the file is
@@ -446,6 +455,21 @@ with `WritePixelArray`, with no colour cube and no dithering.
     certificate sent or checked). It is copied (`SSL_SESSION_dup`) at
     the first data: OpenSSL marks the connection's own session not
     resumable when the server closes without close_notify, as many do;
+  - TLS 1.2 at most (`TlsCap`): a resumed 1.2 session needs no key
+    exchange (about 0.1 s), a resumed 1.3 session still does X25519
+    (3 s). Many servers close idle connections after a few seconds
+    (Apache: 5), so most clicks need a new connection. A server that
+    speaks only 1.3 fails the first handshake; Velox connects again
+    without the limit and remembers that for the host (`ts_Tls13`).
+    `Velox/Tls13` set to anything lifts the limit everywhere;
+  - a server certificate whose chain was checked is noted with its host
+    (SHA-256 of the certificate and the host name, character for
+    character: 8 of them, kept as `tlscerts` in the disk cache's
+    directory). Next time, until it expires, the chain is not checked
+    again (`TlsVerify`, AmiSSL's cert verify callback); the server must
+    still prove it has the key, as always. Whoever can write to the
+    cache directory could add an entry, but could as well replace
+    Velox or AmiSSL's certificates;
   - up to 3 connections are kept alive, one a server, so going back and
     forth between a site and its image or style sheet server costs no
     new handshake.
@@ -456,4 +480,4 @@ with `WritePixelArray`, with no colour cube and no dithering.
   tests run the 68020 unthrottled.
   A full handshake with a server whose certificates are all ECDSA P-384
   (Let's Encrypt's E-chain, as on safir.amigaos.se) takes about 34 s on
-  a stock A1200: checking the chain dominates.
+  a stock A1200 the first time: checking the chain dominates.

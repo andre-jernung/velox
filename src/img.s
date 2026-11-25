@@ -33,6 +33,7 @@ bmh_Height		equ	2
 
 	xdef	BgFind,ImagesLoad,ImagesReap,ImagesReapNow,ImagesQuit
 	xref	DcLoadImg,DcImgFree,DcFresh,DcCond,DcHash,DcStoreImg,PicFromCache,PbmKeepFree,HttpGet,StrCopy,StrCopyN,FmtDec
+	xref	DcTouch
 	xref	TaskPoll,TaskWaitSig
 	IFD	PROFILE
 	xdef	ProfRead,ProfLog
@@ -300,18 +301,32 @@ BgStep:
 	move.l	#CHIP_RESERVE,d0
 	bsr	ChipRoom
 	beq	.x
-	lea	bg_Url(a5),a0		; fetch (the user can stop it)
-	lea	g_LinkUrl(a4),a1
+	lea	bg_Url(a5),a0		; (the loader's own copy: the window
+	lea	g_ImgUrl(a4),a1		;  uses g_LinkUrl meanwhile)
 	move.l	#URL_MAX-1,d0
-.u:	move.b	(a0)+,(a1)+
-	dbeq	d0,.u
-	clr.b	-(a1)
-	move.l	g_WinSigMask(a4),d0
+	jsr	StrCopyN
+	bsr	BgKey
+	tst.l	g_NoCache(a4)		; shown before: as it was shown, from
+	bne.s	.net			; the disk cache (no decoding), unless
+	lea	g_ImgKey(a4),a0		; it must be checked
+	moveq	#1,d0
+	jsr	DcLoadImg
+	beq.s	.net
+	tst.l	g_ImgNoCheck(a4)	; (Back/Forward: as it is)
+	bne.s	.use
+	jsr	DcFresh
+	bne.s	.use
+	jsr	DcImgFree
+	bra.s	.net
+.use:	bsr	BgCached
+	jsr	DcImgFree
+	bra.s	.free
+.net:	move.l	g_WinSigMask(a4),d0
 	or.l	#SIGBREAKF_CTRL_C,d0
 	move.l	d0,g_AbortMask(a4)
 	lea	ImgNetHook,a0
 	move.l	a0,g_NetSigHook(a4)
-	lea	g_LinkUrl(a4),a0
+	lea	g_ImgUrl(a4),a0
 	jsr	HttpGetCached
 	clr.l	g_NetSigHook(a4)
 	tst.l	d0
@@ -384,10 +399,19 @@ DecodeBg:
 	clr.l	g_DecWant(a4)		; (tiles: the natural size)
 	moveq	#1,d0
 	move.l	d0,g_DecTile(a4)
+	moveq	#0,d0			; the pixels for the disk cache (not
+	tst.l	g_RespFrom(a4)		; from a cache: its validators and
+	bne.s	.nk			; max-age are not g_Resp's)
+	move.l	g_DcOn(a4),d0
+.nk:	move.l	d0,g_PbmKeep(a4)
 	lea	PicWork(pc),a0
 	bsr	BgRun
-	clr.l	g_DecTile(a4)
+	clr.l	g_PbmKeep(a4)
 	move.l	d0,d7
+	beq.s	.nt
+	bsr	ImgStore		; (g_DecTile: the natural size kept)
+.nt:	clr.l	g_DecTile(a4)
+	tst.l	d7
 	beq.s	.x
 	moveq	#0,d6			; (no relayout)
 	move.l	g_PbmMask(a4),a0
@@ -402,6 +426,61 @@ DecodeBg:
 	blo.s	.tl
 .t:	rts
 
+; BgKey - g_ImgKey of background image g_ImgUrl: the URL, "|bg|" and
+; the screen's colours (decoded, it is tiled to its natural size)
+BgKey:
+	jsr	PalInit			; (g_PalSig)
+	lea	g_ImgUrl(a4),a0
+	lea	g_ImgKey(a4),a1
+	jsr	StrCopy
+	move.b	#'|',(a1)+
+	move.b	#'b',(a1)+
+	move.b	#'g',(a1)+
+	move.b	#'|',(a1)+
+	move.l	a1,a0
+	move.l	g_PalSig(a4),d0
+	jsr	FmtDec
+	clr.b	(a0)
+	moveq	#1,d0
+	move.l	d0,g_ImgKeyOk(a4)
+	rts
+
+; BgCached - give background record a5 the image DcLoadImg read (its
+; natural size where an image's hash is: w << 16 | h)
+BgCached:
+	movem.l	d2-d7,-(sp)
+	moveq	#0,d0
+	move.w	g_DcHdr+dh_Hash(a4),d0
+	move.l	d0,bg_W(a5)
+	move.w	g_DcHdr+dh_Hash+2(a4),d0
+	move.l	d0,bg_H(a5)
+	move.l	g_DcHdr+dh_W(a4),d4
+	move.l	g_DcHdr+dh_H(a4),d5
+	move.l	d4,d0			; chip memory for it?
+	add.l	#15,d0
+	lsr.l	#3,d0
+	mulu.l	d5,d0
+	lsl.l	#3,d0
+	add.l	#CHIP_RESERVE,d0
+	bsr	ChipRoom
+	beq.s	.x
+	move.l	d4,g_DecW(a4)
+	move.l	d5,g_DecH(a4)
+	lea	PicCacheWork(pc),a0
+	bsr	BgRun
+	move.l	d0,d7
+	beq.s	.x
+	moveq	#0,d6			; (no relayout)
+	move.l	g_PbmMask(a4),a0
+	bsr	AddImage
+	lea	LogBgCache(pc),a0	; (for tests)
+	lea	bg_Url(a5),a1
+	move.l	#$80000000,d0
+	jsr	LogEvent
+.x:	movem.l	(sp)+,d2-d7
+	rts
+
+LogBgCache:	dc.b	"bgcache",0
 MsgBg:	dc.b	"Background image",0
 LogBg:	dc.b	"bg",0
 	even
@@ -493,7 +572,13 @@ ImagesStep:
 	jsr	DcCond			; changed since?  (304: no)
 	lea	g_ImgUrl(a4),a0
 	jsr	HttpGet
-	cmp.l	#200,d0
+	cmp.l	#304,d0			; the same: fresh again
+	bne.s	.n304
+	lea	g_ImgKey(a4),a0
+	moveq	#1,d0
+	jsr	DcTouch
+	bra	.free
+.n304:	cmp.l	#200,d0
 	bne	.free
 	move.l	g_Resp+r_Body+buf_Data(a4),a0	; the same file again (no
 	move.l	g_Resp+r_Body+buf_Len(a4),d0	;  validators): as it is
@@ -1000,7 +1085,12 @@ ImgStore:
 .nm:	move.l	g_Resp+r_Body+buf_Data(a4),a0
 	move.l	g_Resp+r_Body+buf_Len(a4),d0
 	jsr	DcHash
-	move.l	d0,g_DcHdr+dh_Hash(a4)
+	tst.l	g_DecTile(a4)		; a background (record a5): its
+	beq.s	.h			; natural size instead (BgCached)
+	move.l	bg_W(a5),d0
+	swap	d0
+	move.w	bg_H+2(a5),d0
+.h:	move.l	d0,g_DcHdr+dh_Hash(a4)
 	move.l	g_PbmW(a4),d1		; the pixels: pens or ARGB
 	mulu.l	g_PbmH(a4),d1
 	tst.l	g_CgxBase(a4)

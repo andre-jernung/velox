@@ -18,7 +18,7 @@
 	include	"velox.i"
 
 	xdef	DcInit,DcLoad,DcStore,DcFresh,DcLoadImg,DcStoreImg,DcImgFree,DcCond,DcHash
-	xdef	DcPathOf,DcAdded,DcPeek
+	xdef	DcPathOf,DcAdded,DcPeek,DcNow,DcTouch
 	xref	StrCopyN,StrLen,StrIPrefix,BufClear,BufReserve,ParseDec,TaskPoll
 
 DC_MAGIC	equ	'VXC1'
@@ -419,6 +419,51 @@ DcPeek:
 	DOS	Close
 	moveq	#1,d0
 .x:	rts
+
+;--------------------------------------------------------------------
+; DcTouch - the server says an entry is still good (304): fresh again
+; from now, for the max-age of g_Resp if it has one (else as long as
+; before)
+; In: a0 = key, d0 = 1: an image
+;--------------------------------------------------------------------
+DcTouch:
+	movem.l	d2-d4,-(sp)
+	tst.l	g_DcOn(a4)
+	beq.s	.x
+	bsr	DcPathOf
+	lea	g_DcPath(a4),a0
+	move.l	a0,d1
+	move.l	#MODE_OLDFILE,d2
+	DOS	Open
+	move.l	d0,d4
+	beq.s	.x
+	move.l	d4,d1
+	lea	g_DcHdr(a4),a0
+	move.l	a0,d2
+	moveq	#DH_SIZEOF,d3
+	DOS	Read
+	cmp.l	#DH_SIZEOF,d0
+	bne.s	.c
+	cmp.l	#DC_MAGIC,g_DcHdr+dh_Magic(a4)
+	bne.s	.c
+	bsr	DcNow
+	move.l	d0,g_DcHdr+dh_Time(a4)
+	move.l	g_Resp+r_MaxAge(a4),d0
+	bmi.s	.keep
+	move.l	d0,g_DcHdr+dh_MaxAge(a4)
+.keep:	move.l	d4,d1
+	moveq	#0,d2
+	moveq	#OFFSET_BEGINNING,d3
+	DOS	Seek
+	move.l	d4,d1
+	lea	g_DcHdr(a4),a0
+	move.l	a0,d2
+	moveq	#DH_SIZEOF,d3
+	DOS	Write
+.c:	move.l	d4,d1
+	DOS	Close
+.x:	movem.l	(sp)+,d2-d4
+	rts
 
 ;--------------------------------------------------------------------
 ; DcLoad - a page or style sheet from the cache, as if it had just

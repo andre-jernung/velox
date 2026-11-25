@@ -169,6 +169,8 @@ r_ETag		rs.b	ETAG_MAX	; ETag (for the disk cache)
 r_LastMod	rs.b	LASTMOD_MAX	; Last-Modified
 r_MaxAge	rs.l	1		; Cache-Control max-age (s), -1 none
 r_NoStore	rs.l	1		; Cache-Control: no-store
+r_Date		rs.l	1		; Date (seconds since 1978) or 0
+r_Expires	rs.l	1		; Expires (seconds), -1 none
 RESP_SIZEOF	rs.b	0
 
 ;--------------------------------------------------------------------
@@ -917,6 +919,8 @@ g_PbmKeep	rs.l	1		; keep the pixels (g_PbmSave) for the cache
 g_PbmSave	rs.l	1		; the pixels (pens or ARGB), AllocVec
 g_PalSig	rs.l	1		; the screen's colours (cache key)
 g_StyleGen	rs.l	1		; style.s: changes when kept styles are stale
+g_RespFrom	rs.l	1		; cache.s: g_Resp came from 0 the network,
+					; 1 memory, 2 the disk cache as it was
 g_ImgKeyOk	rs.l	1		; img.s: g_ImgKey is the image's
 g_ImgHash	rs.l	1		; the cached image's file hash
 g_DecDcImg	rs.l	1		; cached pixels an orphan decoder reads
@@ -996,6 +1000,9 @@ g_RespSave	rs.b	RESP_SIZEOF	; the page's response (IncCss)
 g_DcStr		rs.b	DCSTR_MAX	; diskcache.s: an entry's strings
 g_ImgUrl	rs.b	URL_MAX		; img.s: the image's URL (the loader's)
 g_ImgKey	rs.b	URL_MAX+80	; its disk cache key
+CERT_OK		equ	8		; certificates checked before (conn.s)
+g_CertOk	rs.b	CERT_OK*(32+HOST_MAX)	; SHA-256, host name
+g_CertPath	rs.b	DCPATH_MAX	; ... the file they are kept in
 PF_REGMAX	equ	160		; parts of a page saved (blocks, buffers)
 g_PfReg		rs.l	4*PF_REGMAX	; pagefile.s: start, end, section | offset,
 					; place in the copy
@@ -1005,11 +1012,21 @@ TLS_SESS	equ	4		; TLS sessions kept (resumed: conn.s)
 ts_Sess		rs.l	1		; SSL_SESSION or 0
 ts_Gen		rs.l	1		; when the entry was made (0: free)
 ts_Port		rs.l	1
+ts_Tls13	rs.l	1		; the server speaks only TLS 1.3
 ts_Host		rs.b	HOST_MAX
 TS_SIZEOF	rs.b	0
 	RSSET	g_SIZEOF_0
 g_TlsSess	rs.b	TLS_SESS*TS_SIZEOF
 g_TlsGen	rs.l	1		; the last ts_Gen
+g_TlsAgain	rs.l	1		; a TLS 1.2 handshake failed: try 1.3
+g_CertMd	rs.b	32		; TlsVerify: the certificate's SHA-256
+g_CertMdLen	rs.l	1
+g_CertMdOk	rs.l	1		; ... it is there, not expired
+g_CertDay	rs.l	1		; ... days and seconds left
+g_CertSec	rs.l	1
+g_CertNext	rs.l	1		; ... the entry to use next
+g_CertLoaded	rs.l	1		; ... g_CertOk read from the disk cache
+g_Tls13		rs.l	1		; Velox/Tls13 set: TLS 1.3 everywhere
 g_SIZEOF_1	rs.b	0
 KEEP_CONNS	equ	3		; connections kept alive (http.s)
 	RSRESET

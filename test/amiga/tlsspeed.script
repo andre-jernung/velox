@@ -4,6 +4,8 @@
 Echo >VELOX:r/tlsspeed.txt "tlsspeed"
 VELOX:velox https://127.0.0.1:8443/hello DUMP LOG=VELOX:r/tlsspeed1.log >NIL:
 VELOX:velox http://127.0.0.1:8080/big DUMP LOG=VELOX:r/tlsspeed2.log >NIL:
+; (each TLS 1.3 cipher: Velox/Tls13 lifts the TLS 1.2 limit)
+SetEnv Velox/Tls13 1
 SetEnv Velox/TlsCiphers TLS_AES_256_GCM_SHA384
 VELOX:velox https://127.0.0.1:8443/big DUMP LOG=VELOX:r/tlsspeed3.log >NIL:
 SetEnv Velox/TlsCiphers TLS_AES_128_GCM_SHA256
@@ -11,6 +13,7 @@ VELOX:velox https://127.0.0.1:8443/big DUMP LOG=VELOX:r/tlsspeed4.log >NIL:
 SetEnv Velox/TlsCiphers TLS_CHACHA20_POLY1305_SHA256
 VELOX:velox https://127.0.0.1:8443/big DUMP LOG=VELOX:r/tlsspeed5.log >NIL:
 Delete >NIL: ENV:Velox/TlsCiphers
+Delete >NIL: ENV:Velox/Tls13
 VELOX:velox https://127.0.0.1:8443/big DUMP LOG=VELOX:r/tlsspeed7.log >NIL:
 Echo >>VELOX:r/tlsspeed.txt "done"
 ; a page twice, each on a new connection: the second handshake resumes

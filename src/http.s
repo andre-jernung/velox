@@ -10,6 +10,7 @@
 
 	xdef	HttpGet,HttpReadResponse,HttpCloseKept
 	xref	CacheStore,DcStore
+	xref	ParseDate,DcNow
 	xref	UrlParse,UrlResolve
 	xref	ConnOpen,ConnClose,ConnWrite,ConnRead,ConnReadLine
 	xref	BufAppend,BufAppendByte,BufAppendStr,BufClear,BufReserve
@@ -510,6 +511,8 @@ HttpReadResponse:
 	clr.b	r_LastMod(a3)
 	moveq	#-1,d0
 	move.l	d0,r_MaxAge(a3)
+	move.l	d0,r_Expires(a3)
+	clr.l	r_Date(a3)
 	clr.l	r_NoStore(a3)
 	clr.l	g_Error(a4)
 .sl:	bsr	ReadHdrLine
@@ -625,7 +628,7 @@ HttpReadResponse:
 	bra	.hdr
 .h9:	lea	HConnection(pc),a1	; Connection: close / keep-alive
 	jsr	StrIPrefix
-	beq	.hdr
+	beq	.h10
 	move.l	a0,-(sp)
 	lea	HClose(pc),a1
 	jsr	StrIFind
@@ -642,8 +645,21 @@ HttpReadResponse:
 	moveq	#1,d0
 	move.l	d0,r_ConnHdr(a3)
 	bra	.hdr
+.h10:	lea	HDate(pc),a1		; Date, Expires: how long it is fresh
+	jsr	StrIPrefix
+	beq.s	.h11
+	jsr	ParseDate
+	move.l	d0,r_Date(a3)
+	bra	.hdr
+.h11:	lea	HExpires(pc),a1
+	jsr	StrIPrefix
+	beq	.hdr
+	jsr	ParseDate		; (not a date, "0": expired)
+	move.l	d0,r_Expires(a3)
+	bra	.hdr
 
 .endhdr:
+	bsr	Freshness
 	move.l	r_Status(a3),d0
 	cmp.l	#200,d0
 	blo	.status			; 1xx: another status line follows
@@ -692,6 +708,47 @@ HttpReadResponse:
 .proto:	SETERR	ERR_PROTOCOL
 .fail:	moveq	#0,d0
 	bra.s	.x
+
+; Freshness - (a3 = Resp) no max-age given: until Expires, or (as
+; browsers do) for a tenth of the time since Last-Modified (that of the
+; copy for a 304), a week at most; else it stays -1 (checked each time)
+Freshness:
+	tst.l	r_MaxAge(a3)
+	bpl.s	.x
+	move.l	r_Date(a3),d0		; now: the server's clock, else ours
+	bne.s	.d
+	jsr	DcNow
+.d:	move.l	r_Expires(a3),d1
+	bmi.s	.lm
+	sub.l	d0,d1			; Expires - now
+	bpl.s	.set
+	moveq	#0,d1			; (in the past)
+	bra.s	.set
+.lm:	move.l	d0,-(sp)
+	lea	r_LastMod(a3),a0
+	tst.b	(a0)
+	bne.s	.p
+	cmp.l	#304,r_Status(a3)
+	bne.s	.none
+	lea	g_CondLM(a4),a0
+	tst.b	(a0)
+	beq.s	.none
+.p:	jsr	ParseDate
+	move.l	(sp)+,d1
+	tst.l	d0
+	beq.s	.x
+	sub.l	d0,d1			; how long unchanged
+	bls.s	.x
+	divu.l	#10,d1
+	cmp.l	#HEUR_MAX,d1
+	bls.s	.set
+	move.l	#HEUR_MAX,d1
+.set:	move.l	d1,r_MaxAge(a3)
+.x:	rts
+.none:	addq.l	#4,sp
+	rts
+
+HEUR_MAX	equ	7*86400
 
 ; ReadHdrLine - (a2 = Conn) read a line into g_Line, trailing blanks
 ; removed
@@ -773,6 +830,8 @@ HClose:			dc.b	"close",0
 HKeepAlive:		dc.b	"keep-alive",0
 HETag:			dc.b	"etag:",0
 HLastMod:		dc.b	"last-modified:",0
+HDate:			dc.b	"date:",0
+HExpires:		dc.b	"expires:",0
 HCacheCtl:		dc.b	"cache-control:",0
 SNoStore:		dc.b	"no-store",0
 SNoCache:		dc.b	"no-cache",0

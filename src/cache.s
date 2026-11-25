@@ -12,6 +12,7 @@
 
 	xdef	CacheInit,CacheStore,HttpGetCached,CacheFlush
 	xref	DcLoad,DcFresh,DcCond
+	xref	DcTouch
 	xref	Alloc,Free,HttpGet,StrLen,StrCopyN,BufFree,BufReserve,LogEvent
 
 CACHE_N		equ	32		; entries at most
@@ -48,6 +49,7 @@ CacheInit:
 ; Out: d0 = HTTP status or 0 (as HttpGet)
 ;--------------------------------------------------------------------
 HttpGetCached:
+	clr.l	g_RespFrom(a4)
 	tst.l	g_NoCache(a4)		; Reload
 	bne.s	.net
 	tst.l	g_PostData(a4)
@@ -81,6 +83,8 @@ HttpGetCached:
 	move.l	#URL_MAX-1,d0
 	jsr	StrCopyN
 	clr.b	g_Resp+r_Location(a4)
+	moveq	#1,d0
+	move.l	d0,g_RespFrom(a4)
 	lea	LogCached(pc),a0
 	move.l	a2,a1
 	move.l	#$80000000,d0
@@ -93,21 +97,28 @@ HttpGetCached:
 	jsr	DcLoad
 	beq.s	.net2
 	jsr	DcFresh			; still fresh, or for Back/Forward: as
-	bne.s	.disk			; it is
+	bne.s	.fdisk			; it is
 	btst	#1,g_NavFlags+3(a4)	; (NAV_CACHE)
-	bne.s	.disk
+	bne.s	.fdisk
 	jsr	DcCond			; else: changed since?
 	move.l	a2,a0
 	jsr	HttpGet
 	cmp.l	#304,d0
-	beq.s	.same
-	tst.l	d0			; (offline: the copy is better than
+	bne.s	.n304
+	move.l	a2,a0			; no: fresh again
+	moveq	#0,d0
+	jsr	DcTouch
+	bra.s	.same
+.n304:	tst.l	d0			; (offline: the copy is better than
 	bne.s	.x			;  nothing)
 	tst.l	g_TkAbort(a4)
 	bne.s	.x
 .same:	move.l	a2,a0			; the copy on disk, then
 	jsr	DcLoad
 	beq.s	.x
+	bra.s	.disk
+.fdisk:	moveq	#2,d0			; (not asked: g_Resp's validators and
+	move.l	d0,g_RespFrom(a4)	;  max-age are not its)
 .disk:	lea	LogDisk(pc),a0
 	move.l	a2,a1
 	move.l	#$80000000,d0

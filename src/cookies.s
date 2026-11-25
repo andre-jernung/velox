@@ -11,6 +11,7 @@
 	include	"velox.i"
 
 	xdef	CookieSet,CookieHeader,CookieFreeAll,CookiesLoad,CookiesSave
+	xdef	ParseDate
 	xref	Alloc,Free,ToLower,StrIPrefix,SkipSpace,ParseDec,BufAppendStr
 	xref	BufAppendByte,BufAppend,FmtUDec,StrLen
 

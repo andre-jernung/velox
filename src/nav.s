@@ -24,6 +24,7 @@
 	xref	GuiProgress,TaskAbort,TaskStart,ImagesLoad,TaskBusy,TaskNow
 	xref	HtmlBegin,HtmlMore,IsValidUtf8,GuiRelayout,GuiLayout
 	xref	PageRestore,KeepDrop,ImagesAgain,PfLoad,PfSave,PfSaveKept,DcHash
+	xref	DcTouch
 
 HIST_MAX	equ	HIST_ENTRIES
 NAV_HISTORY	equ	1
@@ -638,8 +639,13 @@ NavLoad:
 	clr.l	g_Revalid(a4)
 	moveq	#-1,d1
 	move.l	d1,g_WantScroll(a4)
-	cmp.l	#304,d0			; the same: done
-	beq	.img
+	cmp.l	#304,d0			; the same: done (fresh again)
+	bne.s	.n304
+	lea	g_NavUrl(a4),a0
+	moveq	#0,d0
+	jsr	DcTouch
+	bra	.img
+.n304:
 	tst.l	d0			; failed (offline?): the copy stays
 	bne.s	.reok
 	tst.l	g_TkAbort(a4)

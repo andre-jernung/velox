@@ -13,11 +13,20 @@ def out(n):
     return open(os.path.join(d, "tls-%s.out" % n), "rb").read()
 
 
-for name, rc in (("hello", 0), ("chunked", 0), ("big", 0), ("redirect", 0), ("wronghost", 20)):
+for name, rc in (("hello", 0), ("chunked", 0), ("big", 0), ("redirect", 0), ("tls13", 0), ("known", 0), ("wronghost", 20)):
     if "%s rc=%d" % (name, rc) not in res:
         fail.append("%s: expected rc=%d (%s)" % (name, rc, out(name)[:100]))
 if out("hello") != b"Hello from the Velox test server\n":
     fail.append("hello: %r" % out("hello")[:80])
+if out("tls13") != b"Hello from the Velox test server\n":
+    fail.append("tls13: %r" % out("tls13")[:80])
+log13 = open(os.path.join(d, "tls13.log"), "rb").read().decode("latin-1")
+if "tls13 127.0.0.1" not in log13 or "cipher TLS_" not in log13:
+    fail.append("tls13: not asked for 1.2 first, then 1.3: %r" % log13[:200])
+if "certknown 127.0.0.1" not in open(os.path.join(d, "tlscert2.log"), "rb").read().decode("latin-1"):
+    fail.append("known: the certificate was checked again")
+if out("known") != b"Hello from the Velox test server\n":
+    fail.append("known: %r" % out("known")[:80])
 if out("chunked") != b"chunk one, chunk two, chunk three\n":
     fail.append("chunked: %r" % out("chunked")[:80])
 big = bytes((i * 7 + 13) % 251 for i in range(100000))

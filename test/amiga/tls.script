@@ -8,7 +8,14 @@ VELOX:velox https://127.0.0.1:8443/big DUMP >VELOX:r/tls-big.out
 Echo >>VELOX:r/tls.txt "big rc=$RC"
 VELOX:velox https://127.0.0.1:8443/redirect INFO >VELOX:r/tls-redirect.out
 Echo >>VELOX:r/tls.txt "redirect rc=$RC"
-; the certificate does not name 127.0.0.2
+; a server that speaks only TLS 1.3 (Velox asks for 1.2, then 1.3)
+VELOX:velox https://127.0.0.1:8444/hello DUMP LOG=VELOX:r/tls13.log >VELOX:r/tls-tls13.out
+Echo >>VELOX:r/tls.txt "tls13 rc=$RC"
+; a certificate checked before is known (the disk cache keeps it)
+VELOX:velox https://127.0.0.1:8443/hello DUMP LOG=VELOX:r/tlscert1.log >NIL:
+VELOX:velox https://127.0.0.1:8443/hello DUMP LOG=VELOX:r/tlscert2.log >VELOX:r/tls-known.out
+Echo >>VELOX:r/tls.txt "known rc=$RC"
+; the certificate does not name 127.0.0.2 (known for 127.0.0.1 only)
 VELOX:velox https://127.0.0.2:8443/hello INFO >VELOX:r/tls-wronghost.out
 Echo >>VELOX:r/tls.txt "wronghost rc=$RC"
 ; leak check over repeated TLS fetches
