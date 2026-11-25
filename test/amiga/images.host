@@ -19,7 +19,16 @@ try:
     out.write([l for l in lines if l.startswith("images ")][-1] + "\n")
     # images repaint only what changed: the page is painted whole once,
     # then the image loads paint less
-    paints = [int(l.split()[1]) for l in lines if l.startswith("paint ")]
+    # (a repaint cut short for the user, "paint -N", goes on in the next)
+    paints, carry = [], 0
+    for l in lines:
+        if l.startswith("paint "):
+            n = int(l.split()[1])
+            if n < 0:
+                carry -= n
+            else:
+                paints.append(carry + n)
+                carry = 0
     out.write("paints: %s\n" % " ".join(map(str, paints)))
     if len(paints) < 2 or max(paints[1:]) >= paints[0]:
         out.write("FAIL image loads repainted the whole page\n")
@@ -29,7 +38,7 @@ try:
     # ... and that leaves the same picture as painting everything: find
     # (highlight), Esc (a full repaint), compare, status line aside
     a.shot(os.path.join(r, "images-inc.png"))
-    n = len(paints)
+    n = len([l for l in lines if l.startswith("paint ")])
     a.key("/")
     a.type("imag")  # (the heading: in view, no scrolling)
     wait_log(log, "find ", 4)

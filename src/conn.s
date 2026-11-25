@@ -342,14 +342,7 @@ TlsChild:
 	beq.s	.wait
 	bsr	TwExec
 	EXEC	Forbid
-	tst.l	g_TwFree(a4)		; its connection closed meanwhile?
-	beq.s	.sig
-	EXEC	Permit
-	clr.l	g_TwFree(a4)
-	move.l	g_TwSSL(a4),a0
-	SSL	SSL_free
-	EXEC	Forbid
-.sig:	clr.l	g_TwBusy(a4)		; (with the signal: TwRun checks
+	clr.l	g_TwBusy(a4)		; (with the signal: TwRun checks
 	move.l	g_TlsMain(a4),a1	;  g_TwBusy before it waits)
 	move.l	g_TlsSig(a4),d0
 	EXEC	Signal
@@ -439,16 +432,32 @@ TwQuit:
 	move.l	g_TlsSig(a4),d0
 	EXEC	Wait
 	bra.s	.b
-.q:	moveq	#TW_QUIT,d0
+.q:	bsr	TwOrphan
+	moveq	#TW_QUIT,d0
 	move.l	d0,g_TwOp(a4)
 	move.l	g_TwTask(a4),a1
 	move.l	g_TwSig(a4),d0
 	EXEC	Signal
 .w:	tst.l	g_TwTask(a4)
-	beq.s	TlsSigFree
+	beq.s	.gone
 	move.l	g_TlsSig(a4),d0
 	EXEC	Wait
 	bra.s	.w
+.gone:	move.l	d2,-(sp)		; and until it is gone from the system
+	moveq	#50,d2			; (its memory back: 1 s at most)
+.g:	EXEC	Forbid
+	lea	TlsChildName,a1
+	EXEC	FindTask
+	move.l	d0,-(sp)
+	EXEC	Permit
+	tst.l	(sp)+
+	beq.s	.gd
+	moveq	#1,d1
+	DOS	Delay
+	subq.l	#1,d2
+	bne.s	.g
+.gd:	move.l	(sp)+,d2
+	bra	TlsSigFree
 
 ;--------------------------------------------------------------------
 ; TlsInit - AmiSSL and the SSL context, for a TLS connection: made now
@@ -1206,7 +1215,8 @@ TwRun:
 	bsr	TwWait
 	bne.s	.idle
 	bra.s	.x
-.go:	move.l	d2,g_TwOp(a4)
+.go:	bsr	TwOrphan
+	move.l	d2,g_TwOp(a4)
 	move.l	a2,g_TwSSL(a4)
 	move.l	d3,g_TwLen(a4)
 	cmp.l	#TW_WRITE,d2
@@ -1241,6 +1251,16 @@ TwRun:
 .ok:	moveq	#1,d0
 .x:	movem.l	(sp)+,d2-d3/a2-a3
 	rts
+
+; TwOrphan - (the TLS process idle) free the SSL of a connection
+; closed while its job ran (ConnClose)
+TwOrphan:
+	move.l	g_TwOrphan(a4),d0
+	beq.s	.x
+	clr.l	g_TwOrphan(a4)
+	move.l	d0,a0
+	SSL	SSL_free
+.x:	rts
 
 ; TwWait - wait for the TLS process's signal (in the loader the window
 ; is served meanwhile)
@@ -1372,12 +1392,11 @@ ConnClose:
 	beq.s	.nossl
 	EXEC	Forbid
 	tst.l	g_TwBusy(a4)		; its job still under way (the page
-	beq.s	.own			; was stopped): the TLS process frees
-	move.l	c_SSL(a2),d0		; it when done
-	cmp.l	g_TwSSL(a4),d0
+	beq.s	.own			; was stopped): freed once that ends
+	move.l	c_SSL(a2),d0		; (TwOrphan; here: AmiSSL frees in the
+	cmp.l	g_TwSSL(a4),d0		;  task that allocated)
 	bne.s	.own
-	moveq	#1,d0
-	move.l	d0,g_TwFree(a4)
+	move.l	d0,g_TwOrphan(a4)
 	EXEC	Permit
 	bra.s	.nossl
 .own:	EXEC	Permit

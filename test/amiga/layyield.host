@@ -14,7 +14,7 @@ r = sys.argv[1]
 log = os.path.join(r, "layyield.log")
 out = open(os.path.join(r, "layyield.driver"), "w")
 U = "http://127.0.0.1:8080/"
-H = "hugepage?2400&%d" % int(time.time())   # (not in the disk cache yet)
+H = "hugepage?3200&%d" % int(time.time())   # (not in the disk cache yet)
 
 
 def step(msg):

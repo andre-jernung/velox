@@ -88,7 +88,7 @@ HtmlMore:
 	beq	.done
 	move.l	a2,g_TokStart(a4)
 	addq.l	#1,d4			; the window first (also when the
-	and.w	#31,d4			; page is all there: from the cache)
+	and.w	#7,d4			; page is all there: from the cache)
 	bne.s	.tc
 	jsr	TaskPoll
 	bne	.done

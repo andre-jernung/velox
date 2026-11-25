@@ -23,6 +23,9 @@
 
 	xdef	TaskInit,TaskExit,TaskStart,TaskResume,TaskAbort,TaskBusy
 	xdef	TaskYield,TaskPoll,TaskWaitSock,TaskWaitSig,TaskLoopWait,TaskNow
+	IFD	PROFILE
+	xref	LogEvent
+	ENDC
 
 TASK_STACK	equ	65536		; (layout recurses over the DOM)
 
@@ -98,11 +101,47 @@ CoSwitch:
 TaskResume:
 	cmp.l	#LS_RUN,g_TkState(a4)
 	bne.s	.x
+	IFD	PROFILE
+	bsr	TaskNow			; (how long it runs: "gap" below)
+	move.l	d0,g_TkT0(a4)
+	ENDC
 	moveq	#1,d0
 	move.l	d0,g_TkIn(a4)
 	bsr.s	CoSwitch
 	clr.l	g_TkIn(a4)
+	IFD	PROFILE
+	bsr	TaskGap
+	ENDC
 .x:	rts
+
+	IFD	PROFILE
+; TaskGap - (profiling) the loader ran 0.14 s or more without yielding:
+; log "gap TICKS" and "gapat ADDRESS" (where it yielded; "codebase" is
+; TaskResume's address, to find it in a link map)
+TaskGap:
+	bsr	TaskNow
+	sub.l	g_TkT0(a4),d0
+	cmp.l	#7,d0
+	blt.s	.x
+	lea	LogGap(pc),a0
+	suba.l	a1,a1
+	jsr	LogEvent
+	lea	LogGapAt(pc),a0
+	suba.l	a1,a1
+	move.l	g_TkWhere(a4),d0
+	jsr	LogEvent
+	lea	LogBase(pc),a0
+	suba.l	a1,a1
+	lea	TaskResume(pc),a1
+	move.l	a1,d0
+	suba.l	a1,a1
+	jsr	LogEvent
+.x:	rts
+LogGap:		dc.b	"gap",0
+LogGapAt:	dc.b	"gapat",0
+LogBase:	dc.b	"codebase",0
+	even
+	ENDC
 
 ;--------------------------------------------------------------------
 ; TaskAbort - (event loop) stop the loader: resume it with its waits
@@ -138,6 +177,9 @@ TaskBusy:
 ; Out: d0 = 1 if the loader is to stop (CCR set)
 ;--------------------------------------------------------------------
 TaskYield:
+	IFD	PROFILE
+	move.l	(sp),g_TkWhere(a4)
+	ENDC
 	moveq	#LS_RUN,d0
 	move.l	d0,g_TkState(a4)
 	bsr.s	CoSwitch
@@ -169,6 +211,9 @@ TaskPoll:
 ; Out: d0 = 1 ready, 0 timed out or stopped (g_TkAbort), -1 error
 ;--------------------------------------------------------------------
 TaskWaitSock:
+	IFD	PROFILE
+	move.l	(sp),g_TkWhere(a4)
+	ENDC
 	tst.l	g_TkAbort(a4)
 	bne.s	.stop
 	move.l	d0,g_TkSock(a4)
@@ -191,6 +236,9 @@ TaskWaitSock:
 ; Out: d0 = the signals received, 0 if stopped (CCR set)
 ;--------------------------------------------------------------------
 TaskWaitSig:
+	IFD	PROFILE
+	move.l	(sp),g_TkWhere(a4)
+	ENDC
 	tst.l	g_TkAbort(a4)
 	bne.s	.stop
 	move.l	d0,g_TkSigs(a4)

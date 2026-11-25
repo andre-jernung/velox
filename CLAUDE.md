@@ -49,6 +49,13 @@ and a single event dispatch point.
   lists the time of each decoding stage. The 68020's instruction cache
   holds 256 bytes, and a stock A1200 has only Chip RAM, so hot loops
   that fit in 256 bytes run much faster.
+- Profiling builds also log `gap TICKS` / `gapat ADDRESS` / `codebase
+  ADDRESS` when the loader ran 0.14 s or more without yielding (where
+  it yielded: `codebase` is `TaskResume`'s address; link a map with
+  `vlink -M` from the same objects to find the routine), and `slowmsg`
+  for window events taking that long. `SPEED=real PROFILE=1 TIMEOUT=1500
+  test/emu.sh --auto linkspeed` (manual, the real forum) shows them
+  with the slowest key answers.
 - `SPEED=real PROFILE=1 test/emu.sh --auto pagespeed` (manual) lists the
   stage times of big.html: fetched, from the disk cache (its page file),
   coming in 4 parts, and Back to it kept.

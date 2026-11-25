@@ -23,7 +23,7 @@
 	xdef	LayoutDocument,LayoutChildren,LayoutNode,LayoutBlockContent
 	xdef	FlushLine,LineReset,AddMargin,AddRun,RunCount,RunPtr,Measure
 	xdef	ApplyPendingMargin,IntAttr,ClearFloats,FindAnchor
-	xdef	LayRunCount,LayRunPtr
+	xdef	LayRunCount,LayRunPtr,LayPoll
 	xref	BufAppend
 	IFD	PROFILE
 	xref	ProfRead

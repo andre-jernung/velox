@@ -13,6 +13,7 @@
 
 	xdef	LayoutTable
 	xref	StyleCompute,CssApply,LayoutBlockContent,LayoutNode,StyleOf
+	xref	LayPoll
 	xref	LineReset,AddRun,LayRunPtr,LayRunCount,ApplyPendingMargin
 	xref	Measure,DomGetAttr,ParseDec,FormIsControl,FormControlSize
 	xref	ClearFloats
@@ -1180,7 +1181,8 @@ MeasureNode:
 	beq	.text
 	cmp.b	#DN_ELEMENT,d0
 	bne	.x
-	cmp.l	#MAX_MDEPTH,g_LayDepth(a4)
+	jsr	LayPoll			; the window first (measuring a big
+	cmp.l	#MAX_MDEPTH,g_LayDepth(a4)	; table takes long)
 	bhs	.x
 	addq.l	#1,g_LayDepth(a4)
 	lea	-STYLE_SIZEOF(sp),sp

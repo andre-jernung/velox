@@ -722,8 +722,12 @@ GuiRefresh:
 	bra.s	.f
 .diff:	move.l	d3,d4			; first changed band
 	move.l	d3,d5			; last changed band
-.g:	addq.l	#1,d3			; (close changes are painted together)
-	cmp.l	d2,d3
+.g:	addq.l	#1,d3			; (close changes are painted together,
+	cmp.l	d2,d3			;  64 lines at most: the user first)
+	bhs.s	.p
+	move.l	d3,d0
+	sub.l	d4,d0
+	cmp.l	#16,d0
 	bhs.s	.p
 	move.l	(a2,d3.l*4),d0
 	cmp.l	(a3,d3.l*4),d0
@@ -745,14 +749,60 @@ GuiRefresh:
 	bsr	PaintRange
 	move.l	d5,d3
 	addq.l	#1,d3
-	bra.s	.f
-.all:	move.l	g_ScrollY(a4),d0
+	bsr	MsgWaiting		; the user first: the rest later
+	beq.s	.f
+	bra.s	.cut
+.all:	cmp.l	#BANDS_MAX,d2		; all of it: 64 lines at a time, the
+	bhi.s	.whole			; user first
+	moveq	#0,d3
+.ac:	move.l	d3,d4
+	add.l	#16,d4
+	cmp.l	d2,d4
+	bls.s	.ae
+	move.l	d2,d4
+.ae:	move.l	d3,d0
+	lsl.l	#BAND_SHIFT,d0
+	move.l	d4,d1
+	lsl.l	#BAND_SHIFT,d1
+	cmp.l	g_PageH(a4),d1
+	bls.s	.ah
+	move.l	g_PageH(a4),d1
+.ah:	add.l	d1,d6
+	sub.l	d0,d6
+	add.l	g_ScrollY(a4),d0
+	add.l	g_ScrollY(a4),d1
+	bsr	PaintRange
+	move.l	d4,d3
+	cmp.l	d2,d3
+	bhs.s	.keep
+	bsr	MsgWaiting
+	beq.s	.ac
+	lea	g_BandsNew(a4),a0	; (not painted yet: not what is on
+	lea	g_Bands(a4),a1		;  the screen)
+	move.l	d3,d0
+.nv:	move.l	(a0,d0.l*4),d1
+	not.l	d1
+	move.l	d1,(a1,d0.l*4)
+	addq.l	#1,d0
+	cmp.l	d2,d0
+	blo.s	.nv
+.cut:	neg.l	d6			; (logged negative: cut short)
+	lea	g_BandsNew(a4),a0	; cut short: the bands before d3 as
+	lea	g_Bands(a4),a1		; now, the others as they were;
+	move.l	d3,d0			; the event loop paints the rest
+	bra.s	.cue			; (g_RefreshPend)
+.cu:	move.l	(a0)+,(a1)+
+.cue:	dbf	d0,.cu
+	moveq	#1,d0
+	move.l	d0,g_BandsOk(a4)
+	move.l	d0,g_RefreshPend(a4)
+	bra.s	.done
+.whole:	move.l	g_ScrollY(a4),d0
 	move.l	g_PageH(a4),d6
 	move.l	d0,d1
 	add.l	d6,d1
 	bsr	PaintRange
-	cmp.l	#BANDS_MAX,d2
-	bhi.s	.done
+	bra.s	.done
 .keep:	lea	g_BandsNew(a4),a0	; that is on the screen now
 	lea	g_Bands(a4),a1
 	move.l	d2,d0
@@ -769,6 +819,18 @@ GuiRefresh:
 	bsr	UpdateScroller
 .x:	movem.l	(sp)+,d2-d6/a2-a3
 	rts
+
+; MsgWaiting - Out: d0 = 1 if a window message waits (CCR set)
+MsgWaiting:
+	move.l	g_Window(a4),d0
+	beq.s	.x
+	move.l	d0,a0
+	move.l	wd_UserPort(a0),a0
+	lea	MP_MSGLIST(a0),a0
+	cmp.l	LH_TAILPRED(a0),a0	; (an empty list points to itself)
+	sne	d0
+	and.l	#1,d0
+.x:	rts
 
 ; what the bands depend on besides the runs (a highlight cleared by a
 ; relayout, too)
@@ -2622,10 +2684,13 @@ GuiRelayout:
 	bne.s	.lb			; page left is laid out if it comes
 	tst.l	g_Blank(a4)		; back (GuiUnblank), the new one when
 	bne	PaintBlank		; it is shown
-.lb:	tst.l	g_LayBusy(a4)
-	beq.s	.go
-	tst.l	g_TkIn(a4)
+.lb:	tst.l	g_TkIn(a4)		; (the loader lays out itself)
 	bne.s	.go
+	tst.l	g_CssBusy(a4)		; style sheets being read: the layout
+	bne.s	.again			; after them (the loader's)
+	tst.l	g_LayBusy(a4)
+	beq.s	.go
+.again:
 	moveq	#1,d0
 	move.l	d0,g_LayAgain(a4)
 	rts
@@ -2737,7 +2802,26 @@ GuiEventLoop:
 	movem.l	d2-d7/a2,-(sp)
 .loop:	tst.l	g_Quit(a4)
 	bne.s	.x
+	tst.l	g_RefreshPend(a4)	; a refresh cut short for the user:
+	beq.s	.nrp			; the rest
+	clr.l	g_RefreshPend(a4)
+	bsr	GuiRefresh
+.nrp:
+	IFD	PROFILE
+	jsr	TaskNow			; (window events taking long: "slowmsg")
+	move.l	d0,-(sp)
+	ENDC
 	bsr	HandleMessages
+	IFD	PROFILE
+	jsr	TaskNow
+	sub.l	(sp)+,d0
+	cmp.l	#7,d0
+	blt.s	.fast
+	lea	LogSlowMsg(pc),a0
+	suba.l	a1,a1
+	jsr	LogEvent
+.fast:
+	ENDC
 	tst.l	g_Quit(a4)
 	bne.s	.x
 	cmp.l	#LS_RUN,g_TkState(a4)
@@ -2774,6 +2858,11 @@ GuiEventLoop:
 	jsr	ImagesQuit		; (and its decoder ends)
 	movem.l	(sp)+,d2-d7/a2
 	rts
+
+	IFD	PROFILE
+LogSlowMsg:	dc.b	"slowmsg",0
+	even
+	ENDC
 
 ; HandleMessages - process all pending window messages
 HandleMessages:

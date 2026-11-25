@@ -20,6 +20,7 @@
 ;
 
 	include	"velox.i"
+	xref	TaskPoll
 
 	xdef	CssReset,CssAddSheet,CssApply,CssInvalidate,CssLoad
 	IFD	PROFILE
@@ -108,6 +109,8 @@ CssReset:
 ;--------------------------------------------------------------------
 CssLoad:
 	movem.l	d2-d3/a2-a3/a5,-(sp)
+	moveq	#1,d0			; (the rules half made meanwhile: no
+	move.l	d0,g_CssBusy(a4)	;  layout from the window, GuiRelayout)
 	bsr	CssReset
 	tst.l	g_CssIdTab(a4)
 	beq	.x
@@ -238,7 +241,8 @@ CssLoad:
 	bra.s	.next
 .go:	move.l	d0,a3
 	bra	.walk
-.x:	movem.l	(sp)+,d2-d3/a2-a3/a5
+.x:	clr.l	g_CssBusy(a4)
+	movem.l	(sp)+,d2-d3/a2-a3/a5
 	rts
 
 AnRel:		dc.b	"rel",0
@@ -385,7 +389,8 @@ ParseRules:
 	bne.s	.rule
 	addq.l	#3,a2
 	bra.s	.loop
-.rule:	move.l	a2,d2			; selectors up to '{'
+.rule:	jsr	TaskPoll		; the window first (a rule is whole
+	move.l	a2,d2			; now); selectors up to '{'
 	move.l	a2,a0
 	moveq	#'{',d0
 	bsr	ScanTo

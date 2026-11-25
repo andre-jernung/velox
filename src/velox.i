@@ -1061,8 +1061,8 @@ g_TwLen		rs.l	1		; ... bytes (TW_READ, TW_WRITE),
 g_TwRet		rs.l	1		; ... SSL_xxx's result,
 g_TwErr		rs.l	1		; ... SSL_get_error (result <= 0)
 g_TwBusy	rs.l	1		; a job is under way
-g_TwFree	rs.l	1		; ... its connection was closed: the
-					;     process frees its SSL
+g_TwOrphan	rs.l	1		; the SSL of a connection closed while
+					; its job ran: freed after it (conn.s)
 g_TwDelay	rs.l	1		; Velox/TlsDelay (tests)
 g_TwCertKnown	rs.l	1		; TlsVerify took a known certificate
 					; (for this SSL)
@@ -1082,6 +1082,10 @@ g_FrNav		rs.b	URL_MAX		; the page with a frame's URL changed
 g_FrCount	rs.l	1		; frames in the page so far
 g_UrlShow	rs.b	URL_MAX		; a URL as shown (without them)
 g_UrlBase	rs.b	URL_MAX		; url.s: a base URL without them
+g_TkT0		rs.l	1		; (profiling: task.s TaskGap)
+g_TkWhere	rs.l	1
+g_RefreshPend	rs.l	1		; GuiRefresh cut short: the rest
+g_CssBusy	rs.l	1		; CssLoad under way (css.s)
 g_PrgOn		rs.l	1		; shown
 g_PrgDone	rs.l	1		; ... so much of
 g_PrgAll	rs.l	1		; ... all (0 or less: not known: a

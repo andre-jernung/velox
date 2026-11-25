@@ -59,6 +59,15 @@ on a stack of their own in the same process.
   the start of `LayoutDocument` (a layout takes nothing but page memory
   and those buffers, which are freed), and `GuiLayout` starts again
   for the new width. Esc lets the layout finish: the page stays.
+- **Long work in pieces.** Measuring a table's cells polls the window
+  per element as laying out does (`LayPoll` in `MeasureNode`); style
+  sheets are parsed a rule at a time (`TaskPoll`), with no layout from
+  the window meanwhile (`g_CssBusy`: a new size waits for the loader's
+  layout); the HTML parser polls every 8 tokens. A repaint stops
+  between pieces of 64 lines when a window message waits: the bands
+  painted are noted as on the screen, the others not, and the event
+  loop paints the rest after the message (`g_RefreshPend`). On the
+  forum at real speed, no key waits more than 0.2 s (0.6 s before).
 - **Scroller drags** are coalesced: of the scroller moves waiting, only
   the last is painted (`g_ScrollPend`, `ScrollFlush`), so the page keeps
   up with the knob when painting is slower than the mouse.
