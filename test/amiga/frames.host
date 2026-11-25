@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Host side of frames.script: a meta refresh moves on by itself (and is
-not kept in the history); frames are links to their documents."""
+not kept in the history); a frameset shows its frames' documents (a
+nested one too), their relative URLs taken against their own; a link
+targeting a frame (by <base target>) replaces that frame's document,
+Back brings the one before; a link with target=_top leaves the
+frames."""
 import os
 import sys
 import time
@@ -12,6 +16,7 @@ r = sys.argv[1]
 log = os.path.join(r, "frames.log")
 out = open(os.path.join(r, "frames.driver"), "w")
 U = "http://127.0.0.1:8080/"
+F = U + "fr/"
 
 
 def step(msg):
@@ -19,34 +24,76 @@ def step(msg):
     out.flush()
 
 
+def lines():
+    return open(log, "rb").read().decode("latin-1").split("\n")
+
+
+def count(prefix):
+    return len([x for x in lines() if x.startswith(prefix)])
+
+
+def go(a, url):
+    a.key("ctrl+l")
+    a.type(url)
+    a.key("Return")
+
+
 try:
     a = Amiga()
     wait_log(log, "page " + U + "index.html")
     time.sleep(1)
-    a.key("ctrl+l")
-    a.type("127.0.0.1:8080/refresh.html")
-    a.key("Return")
+    go(a, "127.0.0.1:8080/refresh.html")
     wait_log(log, "page " + U + "refresh.html")
-    t0 = time.time()
     wait_log(log, "page " + U + "second.html", timeout=20)
     step("meta refresh went on to the target")
     a.key("BackSpace")
-    lines = wait_log(log, "page " + U + "index.html", 2)
+    wait_log(log, "page " + U + "index.html", 2)
     step("back skips the refresh page")
-    a.key("ctrl+l")
-    a.type("127.0.0.1:8080/frames.html")
-    a.key("Return")
-    wait_log(log, "page " + U + "frames.html")
+
+    # a frameset: its frames' documents in the page
+    go(a, "127.0.0.1:8080/fr/top.html")
+    wait_log(log, "page " + F + "top.html", timeout=60)
+    frames = [x for x in lines() if x.startswith("frame ")]
+    if frames != ["frame nav", "frame head", "frame main"]:
+        raise AssertionError("frames: %r" % frames)
+    step("a frameset shows its frames (a nested one too)")
+    wait_log(log, "images ", timeout=60)
+    imgs = [x for x in lines() if x.startswith("images ")][-1]
+    if imgs != "images 1":
+        raise AssertionError("the picture in a frame: %r" % imgs)
+    step("a picture in a frame: its URL against the frame's")
     time.sleep(1)
     a.shot(os.path.join(r, "frames.png"))
+
+    # <base target="main">: the link replaces the main frame's document
     a.key("Tab")
-    wait_log(log, "focus second.html")
-    a.key("Tab")
-    wait_log(log, "focus third.html")
-    step("frames are links")
+    wait_log(log, "focus " + F + "page2.html")
+    n = count("page " + F + "top.html ")     # (not with frames' URLs)
     a.key("Return")
-    wait_log(log, "page " + U + "third.html")
-    step("a frame link opens the frame's page")
+    want = "page " + F + "top.html\x01main\x02" + F + "page2.html"
+    wait_log(log, want, timeout=60)
+    step("a link targeting a frame replaces its document")
+    if count("frame ") != 6:
+        raise AssertionError("the frames were not composed again")
+    time.sleep(1)
+    a.shot(os.path.join(r, "frames2.png"))
+
+    # Back: the frames as they were
+    a.key("BackSpace")
+    wait_log(log, "page " + F + "top.html ", n + 1, timeout=60)
+    step("back brings the frame's document before")
+    time.sleep(1)
+
+    # target=_top: out of the frames
+    for i in range(8):          # (the focus is where it was: Tab on)
+        a.key("Tab")
+        time.sleep(0.5)
+        if count("focus " + U + "second.html"):
+            break
+    wait_log(log, "focus " + U + "second.html")
+    a.key("Return")
+    wait_log(log, "page " + U + "second.html", 2, timeout=60)
+    step("target=_top leaves the frames")
     a.key("ctrl+q")
     step("ok")
 except Exception as e:

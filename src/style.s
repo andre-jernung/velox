@@ -246,7 +246,11 @@ StyleCompute:
 	tst.l	d0
 	beq	.attrs
 	move.l	a5,st_Link(a3)
-	move.l	g_LinkColor(a4),st_Color(a3)
+	move.l	st_LinkCol(a3),d0	; (<body link=...>, else the default)
+	bne.s	.lc
+	move.l	g_LinkColor(a4),d0
+.lc:	and.l	#$ffffff,d0
+	move.l	d0,st_Color(a3)
 	or.b	#SOFT_UNDERLINE,st_Soft(a3)
 	bra	.attrs
 .font:	move.l	a5,a0
@@ -384,6 +388,18 @@ StyleCompute:
 	bmi.s	.notext
 	move.l	d0,st_Color(a3)
 .notext:
+	move.l	a5,a0			; link=...: the colour of the links in
+	lea	AnLinkC(pc),a1		; it (<body>, a frame's cell)
+	jsr	DomGetAttr
+	tst.l	d0
+	beq.s	.nolink
+	move.l	d0,a0
+	bsr	ParseColor
+	tst.l	d0
+	bmi.s	.nolink
+	or.l	#$01000000,d0
+	move.l	d0,st_LinkCol(a3)
+.nolink:
 	move.l	a5,a0
 	lea	AnNowrap(pc),a1
 	jsr	DomGetAttr
@@ -426,6 +442,7 @@ AnAlign:	dc.b	"align",0
 AnBgcolor:	dc.b	"bgcolor",0
 AnBackground:	dc.b	"background",0
 AnText:		dc.b	"text",0
+AnLinkC:	dc.b	"link",0
 AnNowrap:	dc.b	"nowrap",0
 AnWidth:	dc.b	"width",0
 AnHeight:	dc.b	"height",0

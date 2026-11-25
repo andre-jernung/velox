@@ -14,6 +14,7 @@
 	xdef	KeyToChars
 	xref	PageAlloc,DomGetAttr,StrIPrefix,ParseDec,Measure
 	xref	BufAppendByte,BufAppendStr,BufClear,UrlResolve
+	xref	FrameNav
 	xref	NavGo,NavPost,GuiPaintAll,GuiStatus,GuiPaintNode
 
 DEFAULT_MAX	equ	1024		; text input capacity without maxlength
@@ -875,6 +876,9 @@ FormSubmit:
 	move.b	(a1)+,(a0)+
 	bne.s	.c
 .ce:	clr.b	(a0)
+	move.l	a5,a0			; into a frame?
+	jsr	FrameNav
+	bne.s	.x
 	lea	g_LinkUrl(a4),a0
 	moveq	#1,d0			; NAV_HISTORY
 	jsr	NavGo

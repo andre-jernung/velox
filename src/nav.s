@@ -25,6 +25,7 @@
 	xref	HtmlBegin,HtmlMore,IsValidUtf8,GuiRelayout,GuiLayout
 	xref	PageRestore,KeepDrop,ImagesAgain,PfLoad,PfSave,PfSaveKept,DcHash
 	xref	DcTouch,GuiBlank,GuiUnblank
+	xref	FramesCompose,FrameNav,FrameSplit,FrameShow
 
 HIST_MAX	equ	HIST_ENTRIES
 NAV_HISTORY	equ	1
@@ -568,6 +569,8 @@ NavLoad:
 	lea	g_NavUrl(a4),a1
 	move.l	#$80000000,d0
 	jsr	LogEvent
+	jsr	FrameSplit		; (a page with frames: its frames' URLs
+					;  apart, g_NavKey the whole)
 	lea	MsgLoading(pc),a0
 	bsr	StatusWithUrl
 	lea	g_NavUrl(a4),a0
@@ -600,7 +603,7 @@ NavLoad:
 	bra.s	.built
 .nvs:	btst	#1,d3			; NAV_CACHE
 	beq.s	.dc
-	lea	g_NavUrl(a4),a0		; Back/Forward: its page file, as
+	lea	g_NavKey(a4),a0		; Back/Forward: its page file, as
 	moveq	#0,d0			; it is (any version: no check)
 	jsr	PfLoad
 	beq.s	.nopfb
@@ -620,7 +623,7 @@ NavLoad:
 	move.l	g_Resp+r_Body+buf_Len(a4),d0	;  out on disk is for it)
 	jsr	DcHash
 	move.l	d0,g_RespHash(a4)
-	lea	g_NavUrl(a4),a0		; laid out on disk: that, at once
+	lea	g_NavKey(a4),a0		; laid out on disk: that, at once
 	jsr	PfLoad
 	beq.s	.nopf
 	lea	g_Resp+r_Body(a4),a0
@@ -1120,6 +1123,7 @@ PgStart:
 ;--------------------------------------------------------------------
 PageFixups:
 	movem.l	a2,-(sp)
+	jsr	FramesCompose		; a frameset: its frames' documents
 	move.l	g_Doc(a4),d0
 	beq.s	.x
 	move.l	d0,a2
@@ -1781,6 +1785,7 @@ NavPost:
 ; In: a0 = <a> element
 NavLink:
 	move.l	a2,-(sp)
+	move.l	a0,a2			; a2 = the link
 	bsr	LinkTarget
 	beq.s	.x
 	lea	g_LinkUrl(a4),a0
@@ -1797,7 +1802,10 @@ NavLink:
 	lea	MsgNoMail(pc),a0
 	jsr	GuiStatus
 	bra.s	.x
-.go:	lea	g_LinkUrl(a4),a0
+.go:	move.l	a2,a0			; into a frame?
+	jsr	FrameNav
+	bne.s	.x
+	lea	g_LinkUrl(a4),a0
 	moveq	#NAV_HISTORY,d0
 	bsr	NavGo
 .x:	move.l	(sp)+,a2
@@ -1845,6 +1853,7 @@ CopyAddress:
 	lea	g_LinkUrl(a4),a0
 	bne.s	.c
 .page:	lea	g_PageUrl(a4),a0
+	jsr	FrameShow		; (not its frames' URLs)
 .c:	move.l	a0,-(sp)
 	jsr	ClipCopy
 	move.l	(sp)+,a1

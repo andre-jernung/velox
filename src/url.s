@@ -209,6 +209,20 @@ UrlResolve:
 	movem.l	d2-d3/a2-a3/a5,-(sp)
 	move.l	a0,a3			; a3 = base
 	move.l	a2,a5			; a5 = output start
+.b1:	move.b	(a0)+,d0		; a page with frames: its URL ends at
+	beq.s	.b2			; a <1> (frames.s): the base without
+	cmp.b	#1,d0			; what follows
+	bne.s	.b1
+	move.l	a3,a0		; (a2: free here, a1 is the reference)
+	lea	g_UrlBase(a4),a2
+	move.l	a2,a3
+.b3:	move.b	(a0)+,d0
+	cmp.b	#1,d0
+	beq.s	.b4
+	move.b	d0,(a2)+
+	bra.s	.b3
+.b4:	clr.b	(a2)
+.b2:
 
 	; clean the reference into g_UrlTmp
 	move.l	a1,a0

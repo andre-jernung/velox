@@ -39,7 +39,11 @@ A small, fast web browser for classic AmigaOS 3.x, written entirely in
   fetch again (Reload does)
 - Downloads of anything that is not a page, with a file requester
 - History, bookmarks, local `file:` pages, a home page, find in page
-- Frames and iframes as links to their pages; `<meta>` refresh redirects
+- Frames: a frameset shows its frames' pages side by side or stacked
+  (as its cols and rows say, nested framesets too) in one page that
+  scrolls as a whole; links with a target load into their frame, and
+  Back undoes that. Iframes are links to their pages. `<meta>` refresh
+  redirects
 - Keyboard navigation for everything; keys typed while a page loads
   are not lost
 - Stays responsive while loading: the page scrolls, and links,

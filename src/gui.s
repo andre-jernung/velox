@@ -18,6 +18,7 @@
 	xdef	GuiOpen,GuiClose,GuiEventLoop,GuiPaintAll,GuiStatus,GuiPaintNode,GuiPaintImage
 	xdef	GuiSetUrl,GuiSetTitle,GuiScrollTo,GuiNetHook,GuiBusy
 	xdef	GuiBlank,GuiUnblank,GuiProgSet
+	xref	FrameShow
 	xdef	GuiLayout,BusyEvents,GuiRelayout,GuiRefresh,GuiPageWidth,GuiAbout,DrawStatus,ImgNetHook,GuiProgress
 	IFD	PROFILE
 	xref	ProfRead,ProfLog
@@ -2684,7 +2685,8 @@ GuiSetUrl:
 	btst	#7,gg_Flags+1(a1)	; GFLG_SELECTED: active
 	bne.s	UrlX
 ; UrlPut - (gui.s) a0 = URL: shown in the URL gadget even if active
-UrlPut:	move.l	a0,UrlSetTags+4
+UrlPut:	jsr	FrameShow		; (not the frames' URLs)
+	move.l	a0,UrlSetTags+4
 	move.l	g_GadUrl(a4),d0
 	beq.s	UrlX
 	move.l	d0,a0

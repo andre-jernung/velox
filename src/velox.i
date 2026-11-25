@@ -261,6 +261,7 @@ st_Link		rs.l	1		; enclosing <a href> element
 st_Width	rs.w	1		; px; negative = percent; 0 = auto
 st_Height	rs.w	1
 st_BgImg	rs.l	1		; background image (record) or 0
+st_LinkCol	rs.l	1		; <body link=>: $01RRGGBB, 0: not set
 STYLE_SIZEOF	rs.b	0
 SK_GEN		equ	0		; n_Style (style.s): g_StyleGen,
 SK_PARENT	equ	4		; the parent's style,
@@ -1073,6 +1074,14 @@ g_Blank		rs.l	1		; 0: the page shown; 1: blank, the page
 					; left still there (Esc brings it back);
 					; 2: blank, that page gone
 ; the progress bar at the right of the status line (gui.s)
+; frames (frames.s)
+g_FrOv		rs.b	URL_MAX		; the frames' URLs after the page's own
+g_NavKey	rs.b	URL_MAX		; g_NavUrl with them (its page file)
+g_FrTmp		rs.b	URL_MAX		; a URL made absolute
+g_FrNav		rs.b	URL_MAX		; the page with a frame's URL changed
+g_FrCount	rs.l	1		; frames in the page so far
+g_UrlShow	rs.b	URL_MAX		; a URL as shown (without them)
+g_UrlBase	rs.b	URL_MAX		; url.s: a base URL without them
 g_PrgOn		rs.l	1		; shown
 g_PrgDone	rs.l	1		; ... so much of
 g_PrgAll	rs.l	1		; ... all (0 or less: not known: a

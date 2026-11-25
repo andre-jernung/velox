@@ -3,8 +3,11 @@ layout test/unit/layout/text.html 200
 layout test/unit/layout/table.html 300
 # colspan widens only as needed; minimums too wide: squeezed, nowrap wraps
 layout test/unit/layout/squeeze.html 200
-# frames and iframes become links to their documents
+# a frameset: its frames side by side (30%, 70%), each a link to its
+# document when that cannot be fetched (here); no <noframes>; iframes: links
 layout test/unit/layout/frames.html 400
+# a frame of height 0 (hidden): left out
+layout test/unit/layout/frames0.html 400
 # images in tables are measured by their size or, unknown, their alt text
 layout test/unit/layout/imgalt.html 300
 # align="left" and friends (a clobbered register once made it "right")
@@ -15,3 +18,5 @@ layout test/unit/layout/indent.html 400
 layout test/unit/layout/floats.html 300
 # rowspan: later rows skip the covered columns; a tall cell stretches its last row
 layout test/unit/layout/rowspan.html 300
+# <body link=...>: the links in it get that colour
+layout test/unit/layout/linkcolor.html 300

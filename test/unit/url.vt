@@ -69,3 +69,6 @@ resolve file:///RAM:local.html second.html
 resolve file:///Work:www/a/page.html ../b.html
 resolve FILE:///Work:page.html x/y.html
 resolve http://a/b:c/d:e f
+# a page with frames: its URL ends at the \1 (frames.s)
+resolve http://h/fr/top.htmlmainhttp://x/y/z.html pic.gif
+resolve http://h/fr/top.htmlmainhttp://x/y/z.html http://o/p.gif

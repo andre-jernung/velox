@@ -211,6 +211,36 @@ then the oldest are deleted (the window is served while it is read).
   server without validators sends the same page again), nothing is
   done; otherwise it replaces the copy.
 
+### Frames
+
+frames.s turns a page that is a `<frameset>` into a table of its frames
+(`FramesCompose`, from `PageFixups`): its columns as wide as `cols`
+says (pixels, percent, the rest for the `*` ones; table.s
+`FixedWidths`, for the private `vxfixed` attribute), its rows one after
+the other. Each frame's document is fetched through the caches, parsed
+into the page's own memory (as a document of its own, then its body's
+content moved into the cell, with its style sheets) and its relative
+URLs made absolute against its own URL. Its body's colours go to the
+cell (`bgcolor`, `background`, `link`; `text` as a style). A frame that
+cannot be shown is a link to its document. The page scrolls as a whole:
+frames do not scroll on their own.
+
+Which frame shows what is part of the page's URL: after its own,
+`<1>name<2>url` for each frame that was navigated (bytes 1 and 2). A
+link (or a GET form) in a frame whose target, else its document's
+`<base target>`, else its own frame, names a frame of the page loads
+the page again with that entry changed (`FrameNav`); `_top`, `_blank`
+and unknown names load the whole window. So the history, the page
+files (keyed by the whole URL, `g_NavKey`) and the pages kept see one
+page as always, and Back undoes a frame's navigation. `NavLoad` splits
+the URL (`FrameSplit`): the page's own goes to `g_NavUrl` (fetching,
+the disk cache), the frames' to `g_FrOv`. `UrlResolve` ignores what
+follows a byte 1 in a base, and the URL gadget does not show it.
+
+The cells note the frame's name (`vxframe`) and its document's base
+target (`vxtarget`). These attributes, the frame documents' text and
+everything the composition adds are in the page's memory (page files).
+
 ### Kept pages (Back and Forward)
 
 A page that is left is not freed but kept with its history entry
@@ -304,7 +334,7 @@ JS is not on the roadmap yet, but it must stay possible to add. That means:
 8. [x] Keep-alive connections, bookmarks, `file:` pages, home page,
    Workbench icon with tool types.
 9. [x] Find in page, memory cache (Back/Forward, style sheets, images),
-   persistent cookies, meta refresh, frames as links, view source, copy
+   persistent cookies, meta refresh, frames, view source, copy
    address, `:not()`/`:is()` and structural selectors, tables squeezed
    to the window.
 10. [x] Text selection to the clipboard, type-ahead while loading,
@@ -352,6 +382,7 @@ JS is not on the roadmap yet, but it must stay possible to add. That means:
 | sel.s       | selecting text with the mouse                                   |
 | clip.s      | clipboard                                                       |
 | nav.s       | navigation, history, built-in pages, bookmarks, downloads        |
+| frames.s    | framesets: the frames' documents as a table in one page          |
 
 Everything is tested on AmigaOS 3.1 and 3.2 (see CLAUDE.md).
 

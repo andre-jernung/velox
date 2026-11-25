@@ -51,6 +51,8 @@ tb_RsTop	rs.l	MAXCOLS		; at its column: its top ...
 tb_RsBot	rs.l	MAXCOLS		; ... its content bottom (0: none)
 tb_RsRect	rs.l	MAXCOLS		; ... its background run
 tb_RsBox	rs.l	MAXCOLS		; ... its outline run
+tb_Fixed	rs.l	1		; a frame table (vxfixed, frames.s):
+tb_Fix		rs.l	MAXCOLS		; ... each column's width (px, -%, 0)
 tb_SIZEOF	rs.b	0
 
 	section	code,code
@@ -93,7 +95,14 @@ LayoutTable:
 .b1:	moveq	#1,d0
 	move.l	d0,tb_Border(a3)
 	addq.l	#1,tb_Pad(a3)		; room for the cell outline
-.nob:
+.nob:	lea	tb_Fix(a3),a0		; a frame table: widths as its cells
+	moveq	#MAXCOLS-1,d0		; say (FixedWidths)
+.fc:	clr.l	(a0)+
+	dbf	d0,.fc
+	move.l	a5,a0
+	lea	AnVxFixed(pc),a1
+	jsr	DomGetAttr
+	move.l	d0,tb_Fixed(a3)
 	; captions first, as centred blocks
 	move.l	n_First(a5),a2
 .cap:	move.l	a2,d0
@@ -175,9 +184,21 @@ LayoutTable:
 	lea	tb_RowStyle(a3),a1
 	lea	tb_CellStyle(a3),a2
 	bsr	CellStyle
-	move.l	d6,a0
+	tst.l	tb_Fixed(a3)		; a frame table: not measured, its
+	beq.s	.meas			; first cells' widths noted
+	lea	tb_Fix(a3),a0
+	tst.l	(a0,d5.l*4)
+	bne.s	.fz
+	move.w	tb_CellStyle+st_Width(a3),d0
+	ext.l	d0
+	move.l	d0,(a0,d5.l*4)
+.fz:	moveq	#0,d0
+	moveq	#0,d1
+	bra.s	.measd
+.meas:	move.l	d6,a0
 	lea	tb_CellStyle(a3),a1
 	bsr	MeasureCell		; d0 = min, d1 = pref (content)
+.measd:
 	move.l	tb_Pad(a3),d2
 	add.l	d2,d2
 	add.l	d2,d0
@@ -298,7 +319,11 @@ LayoutTable:
 .has:	sub.l	d6,d7			; d7 = room for columns
 	bpl.s	.room
 	moveq	#0,d7
-.room:	cmp.l	d7,d3
+.room:	tst.l	tb_Fixed(a3)		; a frame table: as its cells say
+	beq.s	.nfx
+	bsr	FixedWidths
+	bra	.widths
+.nfx:	cmp.l	d7,d3
 	bgt.s	.squeeze
 	; preferred widths fit
 	tst.l	d5
@@ -774,6 +799,61 @@ SpreadExtra:
 	movem.l	(sp)+,d2/d4-d5
 	rts
 
+; FixedWidths - (a frame table) the column widths as their first
+; cells say: pixels, percent of the room d7, the rest shared by the
+; others; at least 16 each.  Their content is made to fit (squeezed).
+; Out: d7 = the sum of the widths
+FixedWidths:
+	movem.l	d2-d4,-(sp)
+	moveq	#1,d0
+	move.l	d0,tb_Squeezed(a3)
+	lea	tb_Fix(a3),a0
+	lea	tb_W(a3),a1
+	move.l	tb_Cols(a3),d4
+	subq.l	#1,d4
+	moveq	#0,d2			; d2 = taken
+	moveq	#0,d3			; d3 = columns with the rest
+.l:	move.l	(a0)+,d0
+	beq.s	.au
+	bpl.s	.px
+	neg.l	d0
+	mulu.l	d7,d0
+	divul.l	#100,d1:d0
+.px:	move.l	d0,(a1)+
+	add.l	d0,d2
+	bra.s	.n
+.au:	clr.l	(a1)+
+	addq.l	#1,d3
+.n:	dbf	d4,.l
+	tst.l	d3			; the rest: shared
+	beq.s	.min
+	move.l	d7,d1
+	sub.l	d2,d1
+	bpl.s	.r
+	moveq	#0,d1
+.r:	divul.l	d3,d0:d1
+	lea	tb_Fix(a3),a0
+	lea	tb_W(a3),a1
+	move.l	tb_Cols(a3),d4
+	subq.l	#1,d4
+.a:	tst.l	(a0)+
+	bne.s	.an
+	move.l	d1,(a1)
+.an:	addq.l	#4,a1
+	dbf	d4,.a
+.min:	lea	tb_W(a3),a1		; at least 16, and the sum
+	moveq	#0,d7
+	move.l	tb_Cols(a3),d4
+	subq.l	#1,d4
+.s:	moveq	#16,d0
+	cmp.l	(a1),d0
+	bls.s	.ok
+	move.l	d0,(a1)
+.ok:	add.l	(a1)+,d7
+	dbf	d4,.s
+	movem.l	(sp)+,d2-d4
+	rts
+
 ; MixWidths - widths = min + room * (pref - min) / sum(pref - min)
 ; In: d1 = room above the minimums, d2 = sum min, d3 = sum pref
 MixWidths:
@@ -1033,6 +1113,7 @@ CellStyle:
 AnCellspacing:	dc.b	"cellspacing",0
 AnCellpadding:	dc.b	"cellpadding",0
 AnBorder:	dc.b	"border",0
+AnVxFixed:	dc.b	"vxfixed",0
 AnColspan:	dc.b	"colspan",0
 AnAlign:	dc.b	"align",0
 AnAlt:		dc.b	"alt",0
