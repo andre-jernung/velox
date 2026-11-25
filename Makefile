@@ -81,7 +81,7 @@ dist: $(TARGET)
 	rm -rf build/dist && mkdir -p build/dist/Velox
 	cp $(TARGET) build/dist/Velox/Velox
 	python3 tools/mkicon.py build/dist/Velox/Velox.info
-	cp tools/velox-proxy.py README.md build/dist/Velox/
+	cp tools/velox-proxy.py README.md LICENSE build/dist/Velox/
 
 size: $(TARGET)
 	@s=$$(stat -c %s $(TARGET)); echo "$(TARGET): $$s bytes ($$((s * 100 / $(BUDGET)))% of the $(BUDGET) target)"

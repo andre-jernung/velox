@@ -124,5 +124,16 @@ the network.
 ## Building
 
 See `CLAUDE.md` for the toolchain and tests and `docs/DESIGN.md` for the
-architecture. `make dist` puts the program, its icon, the proxy and this
-file in `build/dist/Velox`.
+architecture. `make dist` puts the program, its icon, the proxy, this
+file and the license in `build/dist/Velox`.
+
+## License
+
+Copyright (C) 2026 Johan Smolinski
+
+Velox is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License version 3, as published by
+the Free Software Foundation. It is distributed in the hope that it
+will be useful, but WITHOUT ANY WARRANTY; without even the implied
+warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See
+the GNU General Public License in `LICENSE` for more details.
