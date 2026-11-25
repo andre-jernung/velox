@@ -19,7 +19,8 @@ and a single event dispatch point.
 - `make test`: headless golden tests. `build/vtest` runs each
   `test/unit/*.vt` script under vamos, and the output is diffed against
   `.expected`. It's fast, so use it for parser and logic code.
-- `test/emu.sh --auto [TEST...]`: boots FS-UAE (A1200/020, Kickstart 3.1,
+- `test/emu.sh --auto [TEST...]`: boots FS-UAE (A1200/020 with 8 MB fast
+  and 16 MB Zorro III RAM, `Z3MEM=` in KB; Kickstart 3.1,
   Workbench 3.1 from `~/amiga`) with `build/` as `VELOX:` and the
   bsdsocket emulation on. It runs `test/amiga/TEST.script` on the Amiga,
   then `TEST.check` on the host. `test/server.py` serves on

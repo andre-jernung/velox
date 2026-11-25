@@ -500,6 +500,8 @@ ShowCached:
 	lea	g_Resp+r_Body(a4),a0
 	jsr	BufFree
 	clr.l	g_IncState(a4)
+	tst.l	g_TkAbort(a4)		; stopped while parsed: not shown
+	bne.s	.stop
 	move.l	#200,g_PageStatus(a4)
 	bsr	PageFixups
 	PROFB	14
@@ -514,8 +516,12 @@ ShowCached:
 	IFD	PROFILE
 	jsr	ProfLog
 	ENDC
-	bsr	NavHistory
-	moveq	#1,d0
+	tst.l	g_TkAbort(a4)		; another page while laid out: not
+	beq.s	.h			; shown (Esc: shown, then stopped)
+	tst.l	g_NavStopped(a4)
+	beq.s	.stop
+.h:	bsr	NavHistory
+.stop:	moveq	#1,d0			; (stopped: NavLoad sees g_TkAbort)
 .x:	rts
 
 ; NavHistory - add g_PageUrl to the history as flags d3 say; the page
@@ -626,6 +632,8 @@ NavLoad:
 .shc:	bclr	#0,d3			; (in the history now)
 	tst.l	g_Quit(a4)
 	bne	.x
+	tst.l	g_TkAbort(a4)
+	bne	.stop
 	jsr	DcFresh
 	bne	.img
 	move.l	g_ScrollY(a4),g_WantScroll(a4)	; a newer one: where the

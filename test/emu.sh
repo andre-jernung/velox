@@ -127,6 +127,10 @@ base_dir = $B/fs-uae
 amiga_model = A1200/020
 kickstart_file = $ROM
 fast_memory = 8192
+# and Zorro III RAM: AmiSSL 6 (a 3.9 MB library) must load again after
+# each test's "Avail FLUSH"; in 8 MB fast RAM, fragmented by the tests
+# before, OS 3.2 often has no block big enough
+zorro_iii_memory = ${Z3MEM:-16384}
 hard_drive_0 = $SYS
 hard_drive_0_label = $(basename "$SYS")
 hard_drive_1 = $B

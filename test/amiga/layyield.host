@@ -79,6 +79,11 @@ try:
 
     def go_lay(path):
         """go to path; Out: when its (first) layout began"""
+        # its HTML from the disk cache, not its page file (laid out)
+        cache = os.path.join(os.path.dirname(r), "Cache")
+        for f in os.listdir(cache):
+            if f.endswith((".p", ".p.uaem")):
+                os.remove(os.path.join(cache, f))
         n = count("layout ")
         g = count("go ")
         go(a, path)
@@ -89,6 +94,11 @@ try:
     k = count("page " + U + "index.html")
     a.key("BackSpace")
     wait_log(log, "page " + U + "index.html", k + 1, timeout=30)
+    time.sleep(1)
+    # (to second.html: Back goes from the page shown until the new one is
+    # shown, and the history is index.html, second.html now)
+    go(a, "second.html")
+    wait_log(log, "page " + U + "second.html", timeout=30)
     time.sleep(1)
     h = count("page " + U + H)
     go_lay(H)
