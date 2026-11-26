@@ -50,8 +50,9 @@ A small, fast web browser for classic AmigaOS 3.x, written entirely in
 - Tabs, each loading on its own, all at once (pages, style sheets,
   images, frames): Shift-click or the middle button opens a link in a
   tab behind, `target="_blank"` in a new tab, and a target name in the
-  tab of that name. A strip of the tabs below the toolbar (with two or
-  more): a click shows one, the middle button closes it, `+` opens one
+  tab of that name (forms too, a POST's data with it). A strip of the
+  tabs below the toolbar (with two or more): a click shows one, its
+  close box or the middle button closes it, `+` opens one
 - Image maps: client side (`usemap`, `<area>` rectangles, circles,
   polygons; Tab steps through the areas) and server side (`ismap`)
 - Keyboard navigation for everything; keys typed while a page loads
@@ -115,7 +116,7 @@ saved in `ENVARC:Velox/Cookies`; delete that file to forget them.
 | Amiga-S              | save the page or file                   |
 | Amiga-C              | copy the address (of the focused link)  |
 | Amiga-U              | view the page source                    |
-| Amiga-T              | a new tab (type its address)            |
+| Amiga-T              | a new tab, with the home page           |
 | Amiga-W              | close the tab                           |
 | Amiga-. / Amiga-,    | next / previous tab                     |
 | Shift-Return         | open the focused link in a tab behind   |

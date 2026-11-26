@@ -17,7 +17,7 @@
 	include	"velox.i"
 
 	xdef	PageLeave,PageRestore,KeepEvict,KeepDrop,KeepFreeAll,KeepCopy
-	xref	FramesFree
+	xref	FramesFree,TabHistBase
 	xref	PageFree,Alloc,Free,BufFree,ImgListFree,LogEvent,ArenaFree,PfWrite
 
 	section	code,code
@@ -268,17 +268,23 @@ PageRestore:
 ; KeepNext - the kept page to go first: the farthest from the current
 ; entry
 ; Out: d0 = its entry or -1 (CCR set)
+; KeepNextB - the same, of the tab whose g_FragName is at a0 (tabs.s
+; TabHistBase: its history after it as in G)
 ;--------------------------------------------------------------------
+KH_KEPT	equ	g_HistKept-g_FragName
+KH_POS	equ	g_HistPos-g_FragName
+KH_PAGE	equ	g_PageHist-g_FragName
 KeepNext:
+	lea	g_FragName(a4),a0
+KeepNextB:
 	movem.l	d2-d4,-(sp)
 	moveq	#-1,d3			; d3 = the entry
 	moveq	#-1,d4			; d4 = its distance
 	moveq	#0,d2
-	lea	g_HistKept(a4),a0
-.l:	tst.l	(a0,d2.l*4)
+.l:	tst.l	KH_KEPT(a0,d2.l*4)
 	beq.s	.n
 	move.l	d2,d0
-	sub.l	g_HistPos(a4),d0
+	sub.l	KH_POS(a0),d0
 	bpl.s	.p
 	neg.l	d0
 .p:	cmp.l	d4,d0
@@ -325,11 +331,26 @@ KeepSaveNext:
 ; Out: d0 = 1 if there was one (CCR set)
 ;--------------------------------------------------------------------
 KeepEvict:
-	movem.l	d2-d4,-(sp)
-	bsr	KeepNext
-	move.l	d0,d3
+	movem.l	d2-d4/a2,-(sp)
+	lea	g_FragName(a4),a2	; the tab in G's first, then the
+	move.l	a2,a0			; other tabs'
+	bsr	KeepNextB
+	bpl.s	.drop
+	move.l	g_TabN(a4),d2
+.t:	subq.l	#1,d2
 	bmi.s	.x0
-	bsr.s	KeepDrop
+	cmp.l	g_TabIn(a4),d2
+	beq.s	.t
+	move.l	d2,d0
+	jsr	TabHistBase
+	move.l	a0,a2
+	move.l	a0,d0
+	beq.s	.t
+	bsr	KeepNextB
+	bmi.s	.t
+.drop:	move.l	d0,d3
+	move.l	a2,a0
+	bsr.s	KeepDropB
 	lea	LogDropped(pc),a0	; (for tests)
 	suba.l	a1,a1
 	move.l	d3,d0
@@ -337,7 +358,7 @@ KeepEvict:
 	moveq	#1,d0
 	bra.s	.x
 .x0:	moveq	#0,d0
-.x:	movem.l	(sp)+,d2-d4
+.x:	movem.l	(sp)+,d2-d4/a2
 	rts
 
 ;--------------------------------------------------------------------
@@ -345,11 +366,14 @@ KeepEvict:
 ; (and the page shown no longer has that entry if it is its)
 ;--------------------------------------------------------------------
 KeepDrop:
-	cmp.l	g_PageHist(a4),d0
+	lea	g_FragName(a4),a0
+; KeepDropB - the same, of the tab whose g_FragName is at a0 (KeepNextB)
+KeepDropB:
+	cmp.l	KH_PAGE(a0),d0
 	bne.s	.k
 	moveq	#-1,d1
-	move.l	d1,g_PageHist(a4)
-.k:	lea	g_HistKept(a4),a0
+	move.l	d1,KH_PAGE(a0)
+.k:	lea	KH_KEPT(a0),a0
 	move.l	(a0,d0.l*4),d1
 	beq.s	.x
 	clr.l	(a0,d0.l*4)

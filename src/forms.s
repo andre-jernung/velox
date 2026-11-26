@@ -14,7 +14,7 @@
 	xdef	KeyToChars
 	xref	PageAlloc,DomGetAttr,StrIPrefix,ParseDec,Measure
 	xref	BufAppendByte,BufAppendStr,BufClear,UrlResolve
-	xref	FrameNav
+	xref	FrameNav,NavTarget,BufFree
 	xref	NavGo,NavPost,GuiPaintAll,GuiStatus,GuiPaintNode
 
 DEFAULT_MAX	equ	1024		; text input capacity without maxlength
@@ -913,6 +913,17 @@ FormSubmit:
 	lea	SPost(pc),a1
 	jsr	StrIPrefix
 	beq.s	.get
+	lea	g_FormBuf(a4),a0	; (the data goes with it: another
+	lea	g_TabPost(a4),a1	;  tab's, if its target is one)
+	bsr	BufMove
+	move.l	a5,a0
+	jsr	NavTarget
+	beq.s	.here
+	lea	g_FormBuf(a4),a0	; (that tab's own: gone)
+	jsr	BufFree
+.here:	lea	g_TabPost(a4),a0
+	lea	g_FormBuf(a4),a1
+	bsr	BufMove
 	lea	g_LinkUrl(a4),a0
 	move.l	g_FormBuf+buf_Data(a4),a1
 	move.l	g_FormBuf+buf_Len(a4),d0
@@ -939,10 +950,22 @@ FormSubmit:
 	move.l	a5,a0			; into a frame?
 	jsr	FrameNav
 	bne.s	.x
-	lea	g_LinkUrl(a4),a0
-	moveq	#1,d0			; NAV_HISTORY
+	move.l	a5,a0			; into another tab?
+	jsr	NavTarget
+	lea	g_LinkUrl(a4),a0	; (the tab in G, either way)
+	moveq	#NAV_HISTORY,d0
 	jsr	NavGo
 .x:	movem.l	(sp)+,d2/a2-a3/a5
+	rts
+
+; BufMove - Buf a0's data becomes Buf a1's (a0 empty after)
+BufMove:
+	move.l	(a0),(a1)+
+	move.l	4(a0),(a1)+
+	move.l	8(a0),(a1)
+	clr.l	(a0)+
+	clr.l	(a0)+
+	clr.l	(a0)
 	rts
 
 ; AddField - ForControls callback: append "name=value" for a control

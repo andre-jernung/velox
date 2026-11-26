@@ -127,7 +127,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.wfile.write(b"%x\r\n%s\r\n" % (len(part), part))
                 self.wfile.flush()
             self.wfile.write(b"0\r\n\r\n")
-        elif p == "/trickle":
+        elif p.split("?")[0] == "/trickle":
             # a page in three parts, 5 s apart (chunked): shown as it
             # comes; its style sheet is fetched in the middle of it
             self.send_response(200)

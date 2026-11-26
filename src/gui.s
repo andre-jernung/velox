@@ -2950,11 +2950,14 @@ HidX:	rts
 ;--------------------------------------------------------------------
 ; The tab strip, between the toolbar and the page (two tabs or more):
 ; each tab's title (a mark before it while it loads), the shown one
-; white, then "+" for a new one.  A click shows a tab, the middle
-; button closes it.
+; white, a close box at the right end of each, then "+" for a new one.
+; A click shows a tab (or closes it, on its box), the middle button
+; closes it.
 ;--------------------------------------------------------------------
 STRIP_TABW	equ	160		; a tab's width at most
 STRIP_PLUS	equ	20		; the "+" box
+STRIP_XMIN	equ	48		; a tab this wide has a close box
+STRIP_XW	equ	12		; ... this wide, at its right end
 
 ; StripGeom - Out: d0 = the strip's left x, d1 = a tab's width
 StripGeom:
@@ -3028,8 +3031,19 @@ GuiTabShown:
 .blank:	bsr	PaintBlank
 .s:	bsr	DrawStatus
 	bsr	ProgDraw
-	movem.l	(sp)+,d2
-	bra	PaintStrip
+	bsr	PaintStrip
+	tst.l	g_StripH(a4)		; (for tests: where the tabs are)
+	beq.s	.ns
+	bsr	StripGeom
+	move.l	d1,d0
+	lea	LogStripW(pc),a0
+	suba.l	a1,a1
+	jsr	LogEvent
+.ns:	movem.l	(sp)+,d2
+	rts
+
+LogStripW:	dc.b	"stripw",0
+	even
 
 ; StripStale - (event loop) the strip painted again if a tab's title or
 ; its loading changed
@@ -3095,22 +3109,37 @@ StripClick:
 	bhs.s	.y
 	cmp.w	#IECODE_LBUTTON,d3
 	bne.s	.y
-	suba.l	a0,a0
+	suba.l	a0,a0		; (a new tab: the home page)
 	suba.l	a1,a1
 	moveq	#1,d0
 	jsr	TabNew
 	bmi.s	.y
-	bsr	ActivateUrl
+	jsr	NavHome
 	bra.s	.y
-.tab:	move.l	d2,d0
-	cmp.w	#IECODE_LBUTTON,d3
+.tab:	cmp.w	#IECODE_LBUTTON,d3
 	bne.s	.mid
+	cmp.l	#STRIP_XMIN,d1		; on its close box?
+	blo.s	.sh
+	move.l	d2,-(sp)		; (its right end: left + (tab + 1)
+	addq.l	#1,d2			;  * width - 3)
+	mulu.l	d1,d2
+	add.l	d0,d2
+	sub.l	#STRIP_XW+3,d2
+	move.l	d2,d1
+	move.l	(sp)+,d2
+	cmp.l	d1,d5
+	blo.s	.sh
+	move.l	d2,d0
+	jsr	TabClose
+	bra.s	.y
+.sh:	move.l	d2,d0
 	cmp.l	g_TabFront(a4),d0
 	beq.s	.y
 	jsr	TabShow
 	bra.s	.y
 .mid:	cmp.w	#IECODE_MBUTTON,d3
 	bne.s	.y
+	move.l	d2,d0
 	jsr	TabClose
 .y:	movem.l	(sp)+,d2
 	moveq	#1,d0
@@ -3176,6 +3205,12 @@ PaintStrip:
 	moveq	#1,d6
 	bsr	Bevel
 	move.l	(sp)+,d6
+	move.l	d4,d0			; its close box
+	sub.l	d2,d0
+	cmp.l	#STRIP_XMIN-3,d0
+	blo.s	.nx
+	bsr	StripX
+.nx:
 	move.l	d7,d0			; loading?
 	jsr	TabBase
 	tst.l	g_TkState-g_TabA(a0)
@@ -3213,12 +3248,18 @@ PaintStrip:
 	clr.b	(a1)
 	move.l	#$000000,d0
 	bsr	SetPenRGB
+	bsr	StripGeom
+	move.l	d1,d3			; (a tab's width)
 	move.l	(sp)+,a0
 	move.l	a0,a2			; a2 = the text
 	jsr	StrLen
-	move.l	d4,d2			; the room: to the right edge - 2
-	sub.l	d6,d2
+	move.l	d4,d2			; the room: to the right edge - 2,
+	sub.l	d6,d2			; or to the close box
 	subq.l	#2,d2
+	cmp.l	#STRIP_XMIN,d3
+	blo.s	.rm
+	sub.l	#STRIP_XW,d2
+.rm:	tst.l	d2
 	ble.s	.nt
 	lea	-16(sp),sp		; TextFit(rp, s, n, te, 0, 1, w, h)
 	move.l	a2,a0
@@ -3279,6 +3320,41 @@ PaintStrip:
 
 StrPlus:	dc.b	"+",0
 	even
+
+; StripX - (PaintStrip, a3 = RastPort) the close box of the tab whose
+; box ends at x d4: a cross
+StripX:
+	movem.l	d2-d3,-(sp)
+	move.l	#$000000,d0
+	bsr	SetPenRGB
+	move.l	d4,d2			; d2/d3 = its top left
+	sub.l	#STRIP_XW-3,d2
+	move.l	g_StripH(a4),d3
+	lsr.l	#1,d3
+	add.l	g_StripY(a4),d3
+	subq.l	#3,d3
+	move.l	a3,a1
+	move.l	d2,d0
+	move.l	d3,d1
+	GFX	Move
+	move.l	a3,a1
+	move.l	d2,d0
+	addq.l	#6,d0
+	move.l	d3,d1
+	addq.l	#6,d1
+	GFX	Draw
+	move.l	a3,a1
+	move.l	d2,d0
+	move.l	d3,d1
+	addq.l	#6,d1
+	GFX	Move
+	move.l	a3,a1
+	move.l	d2,d0
+	addq.l	#6,d0
+	move.l	d3,d1
+	GFX	Draw
+	movem.l	(sp)+,d2-d3
+	rts
 
 ; GuiSetTitle - In: a0 = window title (kept by the caller)
 GuiSetTitle:
@@ -3841,6 +3917,7 @@ HandleEvent1:
 .ngd:	cmp.l	#IDCMP_INTUITICKS,d2	; a meta refresh counting down
 	bne.s	.nt
 	bsr	ProgTick		; (and the progress bar moving)
+	bsr	RefreshBehind		; (the tabs behind: theirs too)
 	tst.l	g_RefreshTicks(a4)
 	beq.s	.x
 	subq.l	#1,g_RefreshTicks(a4)
@@ -3861,6 +3938,33 @@ HandleEvent1:
 
 LogKey:	dc.b	"key",0
 	even
+
+; RefreshBehind - (INTUITICKS) the meta refresh of each tab not in G
+; counts down too; when its time has come, it goes on in its tab
+RefreshBehind:
+	move.l	d2,-(sp)
+	move.l	g_TabN(a4),d2
+.l:	subq.l	#1,d2
+	bmi.s	.x
+	cmp.l	g_TabIn(a4),d2
+	beq.s	.l
+	move.l	d2,d0
+	jsr	TabBase
+	move.l	a0,d0
+	beq.s	.l
+	tst.l	g_RefreshTicks-g_TabA(a0)
+	beq.s	.l
+	subq.l	#1,g_RefreshTicks-g_TabA(a0)
+	bne.s	.l
+	move.l	d2,d0			; its time: there
+	jsr	TabSelect
+	beq.s	.l
+	jsr	NavRefresh
+	move.l	g_TabFront(a4),d0
+	jsr	TabSelect
+	bra.s	.l
+.x:	movem.l	(sp)+,d2
+	rts
 
 ; OnGadget - a gadget was released (a2 = gadget, d3 = code)
 OnGadget:
@@ -4361,11 +4465,11 @@ MenuBookmarks:	jmp	BookmarksShow
 MenuFind:	jmp	FindStart
 MenuCopy:	jmp	CopyAddress
 MenuSource:	jmp	ViewSource
-MenuNewTab:	suba.l	a0,a0		; a new tab, its address typed
+MenuNewTab:	suba.l	a0,a0		; a new tab: the home page
 		suba.l	a1,a1
 		moveq	#1,d0
 		jsr	TabNew
-		bpl	ActivateUrl
+		bpl	ToNavHome
 		rts
 MenuCloseTab:	move.l	g_TabFront(a4),d0
 		jmp	TabClose

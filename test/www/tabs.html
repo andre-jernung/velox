@@ -4,4 +4,8 @@
 <p><a href="second.html" target="_blank">The second page, in a new tab</a></p>
 <p><a href="third.html" target="side">The third page, in the tab "side"</a></p>
 <p><a href="index.html" target="side">The index, in the tab "side" too</a></p>
+<form action="echo" target="_blank"><input type="hidden" name="q" value="tab">
+<input type="submit" name="tabget" value="GET, in a new tab"></form>
+<form action="echo-tab" method="post" target="side"><input type="hidden" name="msg" value="tabpost">
+<input type="submit" name="tabpost" value="POST, in the tab &quot;side&quot;"></form>
 </body></html>

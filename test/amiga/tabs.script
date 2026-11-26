@@ -1,6 +1,9 @@
-; tabs: pages loading in several tabs at once (test/amiga/tabs.host);
-; no memory may be lost when tabs close
+; tabs: pages loading in several tabs at once (test/amiga/tabs.host;
+; the mouse commands it writes, tabs.goN, run here); no memory may be
+; lost when tabs close
 Echo >VELOX:r/tabs.txt "tabs"
+FailAt 21
+Delete >NIL: VELOX:r/tabs.go#? VELOX:r/tabs.end
 Run >NIL: VELOX:velox http://127.0.0.1:8080/tabs.html
 Wait 8
 Status >ENV:vpid COMMAND=VELOX:velox
@@ -11,8 +14,23 @@ Avail >NIL: FLUSH
 Echo >>VELOX:r/tabs.txt "mem_before " NOLINE
 Avail >>VELOX:r/tabs.txt TOTAL
 Echo >VELOX:r/tabs.start ""
-VELOX:velox http://127.0.0.1:8080/tabs.html LOG=VELOX:r/tabs.log
-Echo >>VELOX:r/tabs.txt "exit rc=$RC"
+Run >NIL: VELOX:velox http://127.0.0.1:8080/tabs.html LOG=VELOX:r/tabs.log
+Lab w1
+IF EXISTS VELOX:r/tabs.end
+  Skip q
+EndIF
+IF NOT EXISTS VELOX:r/tabs.go1
+  Wait 1
+  Skip w1 BACK
+EndIF
+Execute VELOX:r/tabs.go1
+Lab q
+Status >NIL: COMMAND=VELOX:velox
+IF NOT WARN
+  Wait 1
+  Skip q BACK
+EndIF
+Echo >>VELOX:r/tabs.txt "quit"
 Avail >NIL: FLUSH
 Echo >>VELOX:r/tabs.txt "mem_after " NOLINE
 Avail >>VELOX:r/tabs.txt TOTAL

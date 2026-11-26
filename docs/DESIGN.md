@@ -365,6 +365,14 @@ save its page, or gets it otherwise). Locks name tabs by `tb_Id`, which
 does not change when tabs before them close. A new tab begins as a copy
 of the first tab's globals before it loaded anything (`TabTemplate`).
 
+A tab behind that loads nothing gives its loader's 64 KB stack back
+(`TabPut`); `TaskStart` makes one when it loads again. When memory runs
+short, `KeepEvict` drops the kept pages of the tab in G first, then
+those of the others (found in their save areas: `TabHistBase`). Each
+tab's meta refresh counts down, shown or not (`RefreshBehind`). A link
+or form with a target (`NavTarget`) shows the tab it goes to and loads
+there; a POST's data goes with it (`g_TabPost`).
+
 ### Painting
 
 Painting never shows a half-drawn page. `PaintRange` draws the runs into

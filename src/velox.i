@@ -519,6 +519,7 @@ g_TkResult	rs.l	1		; 1 ready, 0 timeout, -1 error
 g_TkSigs	rs.l	1		; LS_SIG: the signals,
 g_TkGot		rs.l	1		; those received
 g_TkLock	rs.l	1		; LS_LOCK: the lock (a long, free at 0)
+g_RefreshTicks	rs.l	1		; meta refresh: ticks to go (0 = none)
 g_TkEnd		rs.l	0		; (save areas begin with these)
 g_Error		rs.l	1		; last ERR_xxx
 g_AbortMask	rs.l	1		; signals that interrupt network waits
@@ -660,7 +661,6 @@ g_FlRBot	rs.l	1		; right float: bottom ...
 g_FlREdge	rs.l	1		; ... and its left edge
 g_LineL		rs.l	1		; the current line's bounds (floats
 g_LineR		rs.l	1		;  taken into account)
-g_RefreshTicks	rs.l	1		; meta refresh: ticks to go (0 = none)
 g_RunImg	rs.l	1		; layout: image of the next RECT run
 g_RunRep	rs.l	1		; ... repeated
 g_CssBase	rs.l	1		; URL of the sheet being used, or 0
@@ -1103,6 +1103,7 @@ g_TabId		rs.l	1		; the tb_Id of the one in G (locks)
 g_TabIdNext	rs.l	1		; ... the next one made
 g_TabTpl	rs.l	1		; a new tab's globals (a save area)
 g_TabArg	rs.b	TAB_NAME	; a tab's name, passed (TabNew)
+g_TabPost	rs.b	BUF_SIZEOF	; a POST's data, to another tab (forms.s)
 g_LinkNewTab	rs.l	1		; NavLink: into a background tab
 g_StripY	rs.l	1		; gui.s: the tab strip (2 tabs or more)
 g_StripH	rs.l	1		; ... its height, 0: not shown

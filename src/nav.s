@@ -17,7 +17,7 @@
 	xref	ProfRead,ProfLog
 	ENDC
 	xdef	NavRefresh,PageFixups,CopyAddress,ViewSource,FragCheck
-	xdef	NavTabFree
+	xdef	NavTabFree,NavTarget
 	xref	TabNew,TabShow,TabByName,FrTargetOf,KeepFreeAll,PageFree,DcImgFree
 	xref	FindAnchor
 	xref	ClipCopy
@@ -102,11 +102,14 @@ NavGo:
 	jsr	FramesSame		; showing others: only those change
 	beq.s	.full
 	lea	FrameLoad(pc),a0
-	jsr	TaskStart
-	bra.s	.x0
+	bra.s	.st
 .full:	jsr	GuiBlank		; (the page left: gone from the window)
 	lea	NavLoad(pc),a0
-	jsr	TaskStart
+.st:	jsr	TaskStart
+	bne.s	.x0
+	moveq	#ERR_NOMEM,d0		; (no memory for the loader's stack)
+	jsr	ErrorText
+	jsr	GuiStatus
 .x0:	movem.l	(sp)+,d2-d3/a2
 	rts
 
@@ -1892,9 +1895,24 @@ NavLink:
 .nt:	move.l	a2,a0			; into a frame?
 	jsr	FrameNav
 	bne.s	.x
-	move.l	a2,a0			; target="_blank": a new tab; a name:
-	jsr	FrTargetOf		; the tab of that name (made if there
-	beq.s	.self			; is none)
+	move.l	a2,a0			; into another tab?
+	bsr	NavTarget
+	lea	g_LinkUrl(a4),a0	; (the tab in G, either way)
+	moveq	#NAV_HISTORY,d0
+	bsr	NavGo
+.x:	movem.l	(sp)+,d2/a2
+	rts
+
+;--------------------------------------------------------------------
+; NavTarget - (a link or form a0 that does not go into a frame) the tab
+; it goes to, by its target: "_blank" a new one, a name the tab of that
+; name (made the first time), none (or _self, _top, _parent) the tab
+; it is in.  That tab is shown, and it is in G: the caller loads there.
+; Out: d0 = 1 if it is another tab (CCR set)
+;--------------------------------------------------------------------
+NavTarget:
+	jsr	FrTargetOf
+	beq.s	.self
 	move.l	d0,a0
 	lea	g_TabArg(a4),a1		; (the name: G changes)
 	moveq	#TAB_NAME-1,d0
@@ -1911,20 +1929,18 @@ NavLink:
 	beq.s	.new
 	jsr	TabByName
 	bmi.s	.new
-	jsr	TabShow			; that tab, shown: it goes there
-	lea	g_LinkUrl(a4),a0
-	moveq	#NAV_HISTORY,d0
-	bsr	NavGo
-	bra.s	.x
-.new:	lea	g_LinkUrl(a4),a0
+	cmp.l	g_TabFront(a4),d0	; (this one's own name)
+	beq.s	.self
+	jsr	TabShow
+	bra.s	.other
+.new:	suba.l	a0,a0			; a new tab, shown (it loads next)
 	lea	g_TabArg(a4),a1
 	moveq	#1,d0
 	jsr	TabNew
-	bra.s	.x
-.self:	lea	g_LinkUrl(a4),a0
-	moveq	#NAV_HISTORY,d0
-	bsr	NavGo
-.x:	movem.l	(sp)+,d2/a2
+	bmi.s	.self			; (none: here)
+.other:	moveq	#1,d0
+	rts
+.self:	moveq	#0,d0
 	rts
 
 SBlank:	dc.b	"_blank",0

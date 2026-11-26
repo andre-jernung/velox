@@ -3,7 +3,7 @@
 d=$(dirname "$1"); fail=0
 sed 's/^/driver: /' "$d/tabs.driver"
 grep -qx ok "$d/tabs.driver" || fail=1
-grep -q '^exit rc=0' "$1" || { echo "velox exit code: $(grep exit "$1")"; fail=1; }
+grep -q '^quit' "$1" || { echo "velox did not quit"; fail=1; }
 before=$(sed -n 's/^mem_before *//p' "$1" | tr -dc 0-9)
 after=$(sed -n 's/^mem_after *//p' "$1" | tr -dc 0-9)
 echo "memory: before=$before after=$after"

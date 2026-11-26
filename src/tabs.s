@@ -15,7 +15,7 @@
 
 	xdef	TabSave,TabLoad,TabInit,TabSelect,TabRec,TabBase
 	xdef	TabTemplate,TabExit,TabNew,TabClose,TabShow,TabByName,TabQuit
-	xdef	TabCaption,TabNext
+	xdef	TabCaption,TabNext,TabHistBase
 	xref	TaskInit,TaskExit,TaskAbort,NavGo,NavTabFree,LogEvent,GuiStatus
 	xref	GuiTabShown,GuiStripSync,PaintStrip
 
@@ -88,6 +88,7 @@ TabTab:
 	TS	g_StatusText,g_TitleText
 	TS	g_TitleText,g_FragName
 	TB	g_FragName,g_PageUrl
+TO_FRAG	equ	TBBIN-(g_PageUrl-g_FragName)	; (TabHistBase)
 	TS	g_PageUrl,g_NavUrl
 	TS	g_NavUrl,g_BgUrl
 	TS	g_BgUrl,g_BgAbs
@@ -262,9 +263,18 @@ TabSelect:
 	rts
 
 ; TabPut - the tab in G to its save area (and its title, for the tab
-; strip); Out: d0 = 0 if there was no memory for it (CCR set)
+; strip); a tab behind that loads nothing gives its loader's stack back
+; (TaskStart makes one again)
+; Out: d0 = 0 if there was no memory for it (CCR set)
 TabPut:
 	move.l	a2,-(sp)
+	tst.l	g_TkState(a4)
+	bne.s	.stk
+	move.l	g_TabIn(a4),d0
+	cmp.l	g_TabFront(a4),d0
+	beq.s	.stk
+	jsr	TaskExit
+.stk:
 	move.l	g_TabIn(a4),d0
 	bsr	TabRec
 	move.l	a0,a2
@@ -420,20 +430,12 @@ TabNew:
 	move.l	g_TabTpl(a4),a0		; its globals: a new tab's
 	bsr	TabLoad
 	move.l	d2,g_TabIn(a4)
-	clr.l	g_TkStack(a4)
+	clr.l	g_TkStack(a4)		; (its loader's: when it loads)
 	clr.l	g_TkState(a4)
 	moveq	#1,d0
 	move.l	d0,g_TabHidden(a4)
 	bsr	TabWinPage
-	jsr	TaskInit		; its loader's stack
-	bne.s	.st
-	subq.l	#1,g_TabN(a4)		; (none: no tab)
-	moveq	#-1,d0
-	move.l	d0,g_TabIn(a4)
-	move.l	g_TabFront(a4),d0
-	bsr	TabSelect
-	bra.s	.fail
-.st:	lea	LogTabNew(pc),a0
+	lea	LogTabNew(pc),a0
 	suba.l	a1,a1
 	move.l	d2,d0
 	jsr	LogEvent
@@ -473,6 +475,20 @@ TabShow:
 	jsr	LogEvent
 	move.l	(sp)+,d2
 	jmp	GuiTabShown
+
+; TabHistBase - In: d0 = tab; Out: a0 = where its g_FragName is (its
+; history after it, as in G): in G or its save area, 0 if it has none
+TabHistBase:
+	cmp.l	g_TabIn(a4),d0
+	beq.s	.g
+	bsr	TabRec
+	move.l	tb_Save(a0),d0
+	beq.s	.x
+	move.l	d0,a0
+	lea	TO_FRAG(a0),a0
+.x:	rts
+.g:	lea	g_FragName(a4),a0
+	rts
 
 ; TabNext - (event loop) show the next tab (d0 = 1) or the one before
 ; (d0 = -1)

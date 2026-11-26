@@ -70,8 +70,11 @@ TaskExit:
 ;--------------------------------------------------------------------
 TaskStart:
 	move.l	a0,g_TkEntry(a4)
-	move.l	g_TkStack(a4),d0
+	move.l	g_TkStack(a4),d0	; (a tab's: made when it loads)
+	bne.s	.st
+	bsr	TaskInit
 	beq.s	.x
+.st:
 	move.l	d0,g_TkSSS+stk_Lower(a4)
 	add.l	#TASK_STACK,d0
 	move.l	d0,g_TkSSS+stk_Upper(a4)
