@@ -31,6 +31,7 @@
 	xref	Inflate,PicInfo,PicDecode,PicFree,PicAlloc,PicFreeMem
 	xref	CookieSet,CookieHeader,UrlParse,BufFree,PageFixups,PfBuild,PfApply
 	xref	CssAddSheet,CssInvalidate,PageAlloc,KeepCopy,Alloc,Free
+	xref	TabSave,TabLoad
 
 T_LINEMAX	equ	2048
 T_MAXWORDS	equ	4
@@ -183,6 +184,7 @@ Commands:
 	dc.w	CnInflate-Commands,CmdInflate-Commands
 	dc.w	CnPagefile-Commands,CmdPagefile-Commands
 	dc.w	CnCssFilter-Commands,CmdCssFilter-Commands
+	dc.w	CnTabSwap-Commands,CmdTabSwap-Commands
 	dc.w	0
 
 CnParse:	dc.b	"parse",0
@@ -199,6 +201,7 @@ CnDecode:	dc.b	"decode",0
 CnInflate:	dc.b	"inflate",0
 CnPagefile:	dc.b	"pagefile",0
 CnCssFilter:	dc.b	"cssfilter",0
+CnTabSwap:	dc.b	"tabswap",0
 Empty:		dc.b	0
 ResultSep:	dc.b	" => ",0
 MsgUnknown:	dc.b	"unknown command",0
@@ -1343,6 +1346,65 @@ Hex:		dc.b	"0123456789abcdef"
 	even
 
 ;====================================================================
+;--------------------------------------------------------------------
+; CmdTabSwap - a tab's globals saved (TabSave) and brought back
+; (TabLoad) are those saved: G's tab blocks filled with bytes, saved to
+; one area, filled with others, loaded from it, saved to a second area:
+; the two the same.  G's own are put back after.
+;--------------------------------------------------------------------
+CmdTabSwap:
+	movem.l	d2-d4/a2-a3/a5,-(sp)
+	move.l	#TAB_SAVE*3,d0
+	move.l	#MEMF_ANY|MEMF_CLEAR,d1
+	EXEC	AllocVec
+	move.l	d0,a5			; a5 = G's, a5 + TAB_SAVE the two
+	tst.l	d0
+	beq.s	.x
+	move.l	a5,a0
+	jsr	TabSave
+	moveq	#1,d0
+	bsr.s	.fill
+	lea	TAB_SAVE(a5),a0
+	jsr	TabSave
+	moveq	#2,d0
+	bsr.s	.fill
+	lea	TAB_SAVE(a5),a0
+	jsr	TabLoad
+	lea	TAB_SAVE*2(a5),a0
+	jsr	TabSave
+	move.l	a5,a0
+	jsr	TabLoad
+	lea	TAB_SAVE(a5),a0
+	lea	TAB_SAVE*2(a5),a1
+	move.l	#TAB_SAVE-1,d2
+.c:	cmpm.b	(a0)+,(a1)+
+	dbne	d2,.c
+	lea	MsgOk(pc),a0
+	beq.s	.p
+	lea	MsgTsDiffer(pc),a0
+.p:	jsr	PutStr
+	move.l	a5,a1
+	EXEC	FreeVec
+.x:	movem.l	(sp)+,d2-d4/a2-a3/a5
+	rts
+; .fill - G's tab blocks: bytes from seed d0 (now and then a 0)
+.fill:	move.l	d0,d3
+	lea	g_TabA(a4),a0
+	move.l	#TAB_ASIZE-1,d2
+	bsr.s	.f
+	lea	g_TabB(a4),a0
+	move.l	#g_TabBEnd-g_TabB-1,d2
+.f:	mulu.l	#1103515245,d3
+	add.l	#12345,d3
+	move.l	d3,d0
+	swap	d0
+	move.b	d0,(a0)+
+	subq.l	#1,d2
+	bpl.s	.f
+	rts
+MsgTsDiffer:	dc.b	"the areas differ",0
+	even
+
 	section	bss,bss
 ;====================================================================
 G:		ds.b	g_SIZEOF

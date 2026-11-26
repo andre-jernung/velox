@@ -466,42 +466,35 @@ g_SocketBase	rs.l	1		; opened on first network use
 g_WBMsg		rs.l	1		; WBStartup message, 0 when run from CLI
 g_StdOut	rs.l	1		; Output() handle for CLI printing
 g_AppPool	rs.l	1		; memory for the life of the program
-g_Error		rs.l	1		; last ERR_xxx
 g_Window	rs.l	1		; main window
 g_WinSigMask	rs.l	1		; signal mask of the window's UserPort
-g_AbortMask	rs.l	1		; signals that interrupt network waits
-g_NetSigHook	rs.l	1		; routine(d0=signals) -> d0<>0 = abort
 g_RDArgs	rs.l	1
 g_ArgArray	rs.l	8
 g_Timeval	rs.l	2
 g_FdSet		rs.l	8		; fd_set for WaitSelect (256 sockets)
 g_SockAddr	rs.b	16
-g_Parts		rs.b	UP_SIZEOF
-g_ReqBuf	rs.b	BUF_SIZEOF	; request being built
 g_Line		rs.b	LINE_MAX	; current header line
 g_UrlTmp	rs.b	URL_MAX		; scratch for UrlResolve
 g_UrlTmp2	rs.b	URL_MAX		; scratch for callers of UrlResolve
+; ---- a tab's own globals, low part (tabs.s TabTab: the
+; scheduler swaps them; a new one goes into TabTab) ----
+g_TabA		rs.b	0
+g_Error		rs.l	1		; last ERR_xxx
+g_AbortMask	rs.l	1		; signals that interrupt network waits
+g_NetSigHook	rs.l	1		; routine(d0=signals) -> d0<>0 = abort
+g_Parts		rs.b	UP_SIZEOF
+g_ReqBuf	rs.b	BUF_SIZEOF	; request being built
 g_Resp		rs.b	RESP_SIZEOF
-; page
 g_PagePool	rs.l	1		; memory for the current page
 g_PageSrc	rs.b	BUF_SIZEOF	; page source (DOM strings point here)
 g_Doc		rs.l	1		; document node
 g_Title		rs.l	1		; <title> text node or 0
 g_BaseHref	rs.l	1		; <base href> value or 0
-; parser state
 g_Depth		rs.l	1		; open element stack depth
 g_PreDepth	rs.l	1		; open elements that preserve blanks
 g_TagName	rs.b	32		; current tag name, lower case
 g_AttrName	rs.b	96		; current attribute name, lower case
 g_OpenStack	rs.l	MAX_DEPTH
-; fonts and text measuring (set up by the GUI or the test driver)
-g_MeasureFn	rs.l	1		; d0=font|soft<<8, a0=text, d1=len -> d0=width
-g_FontH		rs.w	FONT_COUNT	; height per font index
-g_FontBase	rs.w	FONT_COUNT	; baseline per font index
-; layout
-; the view: what is shown in the page area (the page's, or a frame's:
-; frames.s ViewSelect copies a frame's here, g_ViewTop keeps the
-; page's meanwhile); g_View .. g_ViewEnd
 g_View		rs.b	0
 g_Runs		rs.b	BUF_SIZEOF	; display list (Run records)
 g_Anchors	rs.b	BUF_SIZEOF	; id=/name= values and their y (layout)
@@ -554,22 +547,11 @@ g_IncSheets	rs.l	1		; <style>/<link> when the CSS was loaded
 g_IncLast	rs.l	1		; the last layout (ticks)
 g_IncEvery	rs.l	1		; ticks between layouts
 g_IncT0		rs.l	1		; when the last layout started
-g_UserTick	rs.l	1		; the user's last key or scroller use
-g_Dragging	rs.l	1		; the scroller is held
-g_PaintRect	rs.l	1		; PaintRange paints a rectangle:
-g_PaintX0	rs.l	1		; its columns (document x),
-g_PaintX1	rs.l	1		; right exclusive
-g_StripRegion	rs.l	1		; the strip's clip region (PaintRect)
 g_Revalid	rs.l	1		; checking a page shown from the disk cache
 g_FormTouched	rs.l	1		; the user changed a form control of it
-g_DcOn		rs.l	1		; diskcache.s: a cache directory
-g_DcMax		rs.l	1		; bytes it may take
-g_DcUsed	rs.l	1		; bytes it takes
 g_DcImg		rs.l	1		; an image's pixels (DcLoadImg)
 g_DcHdr		rs.b	40		; an entry's header (DH_SIZEOF)
 g_DcName	rs.b	12		; its file name
-g_DcDir		rs.b	DCPATH_MAX	; the directory
-g_DcPath	rs.b	DCPATH_MAX	; an entry's path
 g_DcETag	rs.b	ETAG_MAX	; the entry's validators (DcLoad)
 g_DcLM		rs.b	LASTMOD_MAX
 g_CondETag	rs.b	ETAG_MAX	; the next request: If-None-Match,
@@ -597,6 +579,80 @@ g_LayDepth	rs.l	1
 g_MeasMin	rs.l	1		; table measuring
 g_MeasPref	rs.l	1
 g_MeasLine	rs.l	1
+g_EditField	rs.l	1		; text control being edited or 0
+g_FormBuf	rs.b	BUF_SIZEOF	; encoded form data
+g_PageCharset	rs.l	1		; CS_xxx the page was decoded from
+g_PostData	rs.l	1		; body for the next request (POST) or 0
+g_PostLen	rs.l	1
+g_CssIdTab	rs.l	1		; bucket heads (page pool)
+g_CssClassTab	rs.l	1
+g_CssTagTab	rs.l	1
+g_CssAny	rs.l	1		; universal bucket head
+g_CssRules	rs.l	1		; number of rules
+g_CssHasMq	rs.l	1		; some rules depend on the width
+g_CssCacheW	rs.l	1		; width the match caches are for
+g_CssMqMin	rs.w	1		; media range while parsing
+g_CssMqMax	rs.w	1
+g_CssName	rs.b	256		; parsing scratch (CSS_NAMEBUF)
+g_CssTag	rs.b	96		; tag / attribute names in selectors
+g_CssNameTop	rs.l	1		; free part of g_CssName (nesting)
+g_TlsHost	rs.l	1		; host name for SNI / verification
+g_ImgQueue	rs.l	1		; <img> elements to load
+g_ImgCount	rs.l	1
+g_ImgNext	rs.l	1
+g_ImgLoaded	rs.l	1
+g_ImgRelayout	rs.l	1
+g_ImgList	rs.l	1		; loaded ImageInfos
+g_ImgPass	rs.l	1		; ImagesLoad: 1 from the disk cache, 2 the rest
+g_ImgNoCheck	rs.l	1		; Back/Forward: cached images not checked
+g_Download	rs.b	BUF_SIZEOF	; the last file that was not a page
+g_DownloadName	rs.b	108
+g_NoCache	rs.l	1		; Reload: fetch everything anew
+g_KeepHost	rs.b	HOST_MAX
+g_ProgressHook	rs.l	1		; called while a body arrives
+g_ProgKB	rs.l	1
+g_PageStatus	rs.l	1		; HTTP status of the page
+g_Squeeze	rs.l	1		; laying out a squeezed table
+g_FlLBot	rs.l	1		; left float: bottom (0 = none) ...
+g_FlLEdge	rs.l	1		; ... and its right edge
+g_FlRBot	rs.l	1		; right float: bottom ...
+g_FlREdge	rs.l	1		; ... and its left edge
+g_LineL		rs.l	1		; the current line's bounds (floats
+g_LineR		rs.l	1		;  taken into account)
+g_RefreshTicks	rs.l	1		; meta refresh: ticks to go (0 = none)
+g_RunImg	rs.l	1		; layout: image of the next RECT run
+g_RunRep	rs.l	1		; ... repeated
+g_CssBase	rs.l	1		; URL of the sheet being used, or 0
+g_DecTile	rs.l	1		; decoding a background: tile it to
+g_DecTarget	rs.l	1		; ... where its ImageInfo goes
+g_StyleGen	rs.l	1		; style.s: changes when kept styles are stale
+g_RespFrom	rs.l	1		; cache.s: g_Resp came from 0 the network,
+					; 1 memory, 2 the disk cache as it was
+g_ImgKeyOk	rs.l	1		; img.s: g_ImgKey is the image's
+g_ImgHash	rs.l	1		; the cached image's file hash
+g_TabAEnd	rs.b	0
+; ---- (end of the low part) ----
+; page
+; parser state
+; fonts and text measuring (set up by the GUI or the test driver)
+g_MeasureFn	rs.l	1		; d0=font|soft<<8, a0=text, d1=len -> d0=width
+g_FontH		rs.w	FONT_COUNT	; height per font index
+g_FontBase	rs.w	FONT_COUNT	; baseline per font index
+; layout
+; the view: what is shown in the page area (the page's, or a frame's:
+; frames.s ViewSelect copies a frame's here, g_ViewTop keeps the
+; page's meanwhile); g_View .. g_ViewEnd
+g_UserTick	rs.l	1		; the user's last key or scroller use
+g_Dragging	rs.l	1		; the scroller is held
+g_PaintRect	rs.l	1		; PaintRange paints a rectangle:
+g_PaintX0	rs.l	1		; its columns (document x),
+g_PaintX1	rs.l	1		; right exclusive
+g_StripRegion	rs.l	1		; the strip's clip region (PaintRect)
+g_DcOn		rs.l	1		; diskcache.s: a cache directory
+g_DcMax		rs.l	1		; bytes it may take
+g_DcUsed	rs.l	1		; bytes it takes
+g_DcDir		rs.b	DCPATH_MAX	; the directory
+g_DcPath	rs.b	DCPATH_MAX	; an entry's path
 g_StackSwap	rs.l	3		; StackSwapStruct
 ; GUI
 g_GadToolsBase	rs.l	1
@@ -626,26 +682,12 @@ g_AbortReq	rs.l	1
 g_LogFH		rs.l	1		; LOG=file handle or 0
 ; forms
 g_KeymapBase	rs.l	1
-g_EditField	rs.l	1		; text control being edited or 0
 g_Submitter	rs.l	1
 g_FormName	rs.l	1
 g_PrevKeys	rs.l	1		; dead key info of the last RAWKEY
 g_InputEvent	rs.b	24
 g_KeyChars	rs.b	8
-g_FormBuf	rs.b	BUF_SIZEOF	; encoded form data
-g_PageCharset	rs.l	1		; CS_xxx the page was decoded from
-g_PostData	rs.l	1		; body for the next request (POST) or 0
-g_PostLen	rs.l	1
 ; CSS
-g_CssIdTab	rs.l	1		; bucket heads (page pool)
-g_CssClassTab	rs.l	1
-g_CssTagTab	rs.l	1
-g_CssAny	rs.l	1		; universal bucket head
-g_CssRules	rs.l	1		; number of rules
-g_CssHasMq	rs.l	1		; some rules depend on the width
-g_CssCacheW	rs.l	1		; width the match caches are for
-g_CssMqMin	rs.w	1		; media range while parsing
-g_CssMqMax	rs.w	1
 g_CssHidden	rs.l	1		; "visually hidden" detection bits:
 					; 0 positioned, 1 off screen/clipped,
 					; 2 width <= 1, 3 height <= 1
@@ -654,9 +696,6 @@ g_CssMatch	rs.l	CSS_MAXMATCH	; matching scratch
 g_CssNMatch	rs.l	1
 g_CssAncP	rs.l	2		; n_Anc of the element's parent (CssMatch)
 g_CssNoAnc	rs.l	1		; (tests) match without the ancestor filter
-g_CssName	rs.b	256		; parsing scratch (CSS_NAMEBUF)
-g_CssTag	rs.b	96		; tag / attribute names in selectors
-g_CssNameTop	rs.l	1		; free part of g_CssName (nesting)
 g_CssTmp	rs.b	4096		; declarations being parsed (DECL_TMP)
 ; TLS (AmiSSL)
 g_AmiSSLMasterBase rs.l	1
@@ -666,17 +705,8 @@ g_SslCtx	rs.l	1
 g_SslState	rs.l	1		; 0 = not tried, 1 = ready, -1 = unavailable
 g_Errno		rs.l	1
 g_Insecure	rs.l	1		; don't verify certificates (tests)
-g_TlsHost	rs.l	1		; host name for SNI / verification
 ; images
 g_DataTypesBase	rs.l	1
-g_ImgQueue	rs.l	1		; <img> elements to load
-g_ImgCount	rs.l	1
-g_ImgNext	rs.l	1
-g_ImgLoaded	rs.l	1
-g_ImgRelayout	rs.l	1
-g_ImgList	rs.l	1		; loaded ImageInfos
-g_ImgPass	rs.l	1		; ImagesLoad: 1 from the disk cache, 2 the rest
-g_ImgNoCheck	rs.l	1		; Back/Forward: cached images not checked
 g_NoImages	rs.l	1		; Velox/NoImages
 g_PageFreeHook	rs.l	1		; called when a page is freed
 g_DtMsg		rs.l	3
@@ -685,8 +715,6 @@ g_DtBitMap	rs.l	1
 g_DtDestBM	rs.l	1
 g_Bsa		rs.b	48		; struct BitScaleArgs
 ; downloads
-g_Download	rs.b	BUF_SIZEOF	; the last file that was not a page
-g_DownloadName	rs.b	108
 g_DownloadDir	rs.b	256		; Velox/DownloadDir or "RAM:"
 g_AslBase	rs.l	1
 ; cookies
@@ -699,28 +727,16 @@ g_CacheHead	rs.l	1
 g_CacheCount	rs.l	1
 g_CacheBytes	rs.l	1
 g_CacheMax	rs.l	1
-g_NoCache	rs.l	1		; Reload: fetch everything anew
 ; kept-alive connection
-g_KeepHost	rs.b	HOST_MAX
 ; settings
 g_HomeUrl	rs.b	256		; Velox/Home / HOME tooltype, or empty
 g_StartUrl	rs.b	256		; URL tooltype
 g_PubScreen	rs.b	64		; PUBSCREEN / Velox/PubScreen, or empty
-g_ProgressHook	rs.l	1		; called while a body arrives
-g_ProgKB	rs.l	1
-g_PageStatus	rs.l	1		; HTTP status of the page
 g_LogName	rs.b	128		; LOG tooltype
 g_IconBase	rs.l	1
 g_ProxyPort	rs.l	1		; 0 = no proxy
 g_ProxyHost	rs.b	HOST_MAX
 g_VarBuf	rs.b	256
-g_Squeeze	rs.l	1		; laying out a squeezed table
-g_FlLBot	rs.l	1		; left float: bottom (0 = none) ...
-g_FlLEdge	rs.l	1		; ... and its right edge
-g_FlRBot	rs.l	1		; right float: bottom ...
-g_FlREdge	rs.l	1		; ... and its left edge
-g_LineL		rs.l	1		; the current line's bounds (floats
-g_LineR		rs.l	1		;  taken into account)
 TYPEAHEAD	equ	32
 TA_SIZEOF	equ	20
 g_TaCount	rs.l	1		; events kept while loading
@@ -731,8 +747,6 @@ g_CookieExp	rs.l	1		; cookies.s scratch
 g_CookieAge	rs.l	1
 g_TestNow	rs.l	1		; fixed clock for tests (0 = real)
 g_CookiesDirty	rs.w	1		; persistent cookies changed
-g_RefreshTicks	rs.l	1		; meta refresh: ticks to go (0 = none)
-g_RefreshUrl	rs.b	URL_MAX		; meta refresh target (relative)
 g_PaintIdx	rs.l	1		; index of the run being painted
 g_PageGen	rs.l	1		; counts the pages shown
 g_Prof		rs.l	PROF_SLOTS		; profiling: ticks of each slot,
@@ -740,11 +754,6 @@ g_ProfT		rs.l	PROF_SLOTS		; ... when it began,
 g_ProfIO	rs.b	IOTV_SIZE	; ... timer.device
 g_ProfEC	rs.l	2		; ... an EClockVal
 g_ProfHz	rs.l	1		; ... ticks a second
-g_RunImg	rs.l	1		; layout: image of the next RECT run
-g_RunRep	rs.l	1		; ... repeated
-g_CssBase	rs.l	1		; URL of the sheet being used, or 0
-g_DecTile	rs.l	1		; decoding a background: tile it to
-g_DecTarget	rs.l	1		; ... where its ImageInfo goes
 g_TlX0		rs.l	1		; TileRect: the area (window),
 g_TlY0		rs.l	1
 g_TlX1		rs.l	1
@@ -906,23 +915,8 @@ g_DecWant	rs.l	1		; the width to decode at least (0: all)
 g_DecOrphan	rs.l	1		; a stopped load's decoder still runs
 g_DecSigBit	rs.l	1		; its signal (bit)
 g_DecBody	rs.b	BUF_SIZEOF	; the body it reads
-g_NavNext	rs.b	URL_MAX		; NavGo's URL
-g_NavFlags	rs.l	1		; the load's NAV_xxx
-g_NavUndo	rs.l	1		; Back/Forward: the history before (-1)
-g_NavPending	rs.l	1		; bit 31: NavGo from the loader (flags)
 ; the loader (task.s)
-g_TkStack	rs.l	1		; its stack
-g_TkSSS		rs.b	12		; StackSwapStruct: the other stack
-g_TkEntry	rs.l	1		; its job
-g_TkState	rs.l	1		; LS_xxx
 g_TkIn		rs.l	1		; 1 while the loader runs
-g_TkAbort	rs.l	1		; 1: stop (its waits fail)
-g_TkSock	rs.l	1		; LS_SOCK: the socket,
-g_TkDir		rs.l	1		; 0 read, 1 write,
-g_TkSince	rs.l	1		; since when (ticks)
-g_TkResult	rs.l	1		; 1 ready, 0 timeout, -1 error
-g_TkSigs	rs.l	1		; LS_SIG: the signals,
-g_TkGot		rs.l	1		; those received
 g_DecH		rs.l	1
 g_DecT0		rs.l	1		; (the time it began,
 g_DecT1		rs.l	1		; was decoded)
@@ -943,11 +937,6 @@ g_PbmPlanar	rs.l	1		; a standard planar bitmap: own c2p
 g_PbmKeep	rs.l	1		; keep the pixels (g_PbmSave) for the cache
 g_PbmSave	rs.l	1		; the pixels (pens or ARGB), AllocVec
 g_PalSig	rs.l	1		; the screen's colours (cache key)
-g_StyleGen	rs.l	1		; style.s: changes when kept styles are stale
-g_RespFrom	rs.l	1		; cache.s: g_Resp came from 0 the network,
-					; 1 memory, 2 the disk cache as it was
-g_ImgKeyOk	rs.l	1		; img.s: g_ImgKey is the image's
-g_ImgHash	rs.l	1		; the cached image's file hash
 g_DecDcImg	rs.l	1		; cached pixels an orphan decoder reads
 g_PbmRP		rs.b	rp_SIZEOF	; RastPort on the bitmap
 g_Cube		rs.b	216		; the pens of the colour cube
@@ -956,25 +945,9 @@ g_StripLI	rs.l	1		; its LayerInfo
 g_StripLayer	rs.l	1		; its layer (0: no strip)
 g_StripW	rs.l	1		; its width
 g_VisN		rs.l	1		; runs in g_Vis, -1: too many
-g_FindOn	rs.l	1		; find in page active
-g_Find		rs.b	64		; the text being found
-g_StatusText	rs.b	STATUS_MAX
 g_StatusBuf	rs.b	STATUS_MAX
-g_TitleText	rs.b	STATUS_MAX
 ; navigation
-g_FragName	rs.l	1		; #fragment of the page URL or 0
-g_WantScroll	rs.l	1		; scroll position to restore or -1
-g_HistPos	rs.l	1		; current history entry or -1
-g_HistCount	rs.l	1
-g_Hist		rs.l	HIST_ENTRIES*2	; URL, scroll position
-g_HistKept	rs.l	HIST_ENTRIES	; the entry's page kept (keep.s) or 0
 g_KeepMax	rs.l	1		; pages kept at most (Velox/KeepPages)
-g_PageDone	rs.l	1		; the page is all there (-1: never kept)
-g_PageHist	rs.l	1		; its history entry, or -1
-g_ImgCut	rs.l	1		; images of the page were left unloaded
-g_PageHash	rs.l	1		; hash of its source as it came (0: none)
-g_PfFresh	rs.l	1		; shown from its page file (pagefile.s)
-g_RespHash	rs.l	1		; (nav.s: hash of the response's body)
 g_PfFail	rs.l	1		; pagefile.s: the page cannot be saved
 g_PfData	rs.l	1		; ... the copy of its memory
 g_PfBits	rs.l	1		; ... which longs of it are pointers
@@ -990,23 +963,11 @@ g_PfPieces	rs.l	4		; ... what to write: offset, bytes, twice
 g_PfFH		rs.l	1		; ... reading from this file,
 g_PfGen		rs.l	1		; ... g_LayGen when it began
 g_LayGen	rs.l	1		; layout.s: counts the layouts
-g_LRuns		rs.b	BUF_SIZEOF	; ... the runs being made (then g_Runs)
-g_LAnchors	rs.b	BUF_SIZEOF	; ... and the anchors (then g_Anchors)
-g_LPageBg	rs.l	1		; ... the page background found so far
-g_LPageBgRec	rs.l	1
-g_LPageBgRep	rs.l	1
-g_LaySP		rs.l	1		; ... the stack to leave a layout with
-g_LayBusy	rs.l	1		; ... a layout is under way
-g_LayAgain	rs.l	1		; ... the width changed meanwhile: again
 g_ScrollPend	rs.l	1		; gui.s: a scroller move to show: top + 1
 g_PfPtr		rs.l	1		; ... or from here
-g_PageUrl	rs.b	URL_MAX		; URL of the page shown
-g_NavUrl	rs.b	URL_MAX		; URL being loaded
 g_LinkUrl	rs.b	URL_MAX
 ; (large arrays last: the rest stays in reach of 16-bit offsets)
-g_BgUrl		rs.b	URL_MAX		; a background image's URL
 g_8FTab		rs.w	4312		; vp8.s: the loop filter's tables
-g_BgAbs		rs.b	URL_MAX		; ... resolved
 g_BandsNew	rs.l	BANDS_MAX	; ... and of the runs now
 g_Vis		rs.l	VIS_MAX		; indexes of the runs being painted
 g_GifPal	rs.l	256		; colour table, as ARGB
@@ -1014,10 +975,7 @@ g_DitTab	rs.b	3*5*4*256	; dither tables (picbm.s)
 g_C2pLo		rs.l	256		; c2p: a pen's bits, planes 0-3,
 g_C2pHi		rs.l	256		; ... 4-7 (just after)
 g_PngAbs	rs.b	1022		; |v| of -510..510, 255 at most
-g_RespSave	rs.b	RESP_SIZEOF	; the page's response (IncCss)
 g_DcStr		rs.b	DCSTR_MAX	; diskcache.s: an entry's strings
-g_ImgUrl	rs.b	URL_MAX		; img.s: the image's URL (the loader's)
-g_ImgKey	rs.b	URL_MAX+80	; its disk cache key
 CERT_OK		equ	8		; certificates checked before (conn.s)
 g_CertOk	rs.b	CERT_OK*(32+HOST_MAX)	; SHA-256, host name
 g_CertPath	rs.b	DCPATH_MAX	; ... the file they are kept in
@@ -1036,7 +994,6 @@ TS_SIZEOF	rs.b	0
 	RSSET	g_SIZEOF_0
 g_TlsSess	rs.b	TLS_SESS*TS_SIZEOF
 g_TlsGen	rs.l	1		; the last ts_Gen
-g_TlsAgain	rs.l	1		; a TLS 1.2 handshake failed: try 1.3
 g_CertMd	rs.b	32		; TlsVerify: the certificate's SHA-256
 g_CertMdLen	rs.l	1
 g_CertMdOk	rs.l	1		; ... it is there, not expired
@@ -1057,7 +1014,6 @@ KC_SIZEOF	rs.b	0
 	RSSET	g_SIZEOF_1
 g_Keep		rs.b	KEEP_CONNS*KC_SIZEOF
 g_KeepUse	rs.l	1
-g_TlsPort	rs.l	1		; ConnOpen: the port (TlsHandshake)
 g_TlsSig	rs.l	1		; TLS setup process: its signal,
 g_TlsSigBit	rs.l	1		; ... (bit, -1: none)
 g_TlsMain	rs.l	1		; ... to this task,
@@ -1084,23 +1040,78 @@ g_TwHost	rs.b	HOST_MAX	; the host of a TW_CONNECT (TlsVerify)
 g_TwBuf		rs.b	CONN_BUFSIZE	; TW_READ / TW_WRITE data
 g_TwNet		rs.b	TW_NET		; bytes between socket and BIOs
 ; the view while a new page loads (gui.s GuiBlank)
-g_Blank		rs.l	1		; 0: the page shown; 1: blank, the page
-					; left still there (Esc brings it back);
-					; 2: blank, that page gone
 ; the progress bar at the right of the status line (gui.s)
 ; frames (frames.s)
-g_FrOv		rs.b	URL_MAX		; the frames' URLs after the page's own
-g_NavKey	rs.b	URL_MAX		; g_NavUrl with them (its page file)
-g_FrTmp		rs.b	URL_MAX		; a URL made absolute
-g_FrNav		rs.b	URL_MAX		; the page with a frame's URL changed
-g_FrCount	rs.l	1		; frames in the page so far
 g_UrlShow	rs.b	URL_MAX		; a URL as shown (without them)
 g_UrlBase	rs.b	URL_MAX		; url.s: a base URL without them
 g_TkT0		rs.l	1		; (profiling: task.s TaskGap)
 g_TkWhere	rs.l	1
 g_RefreshPend	rs.l	1		; GuiRefresh cut short: the rest
-g_CssBusy	rs.l	1		; CssLoad under way (css.s)
 ; frames (frames.s): views and rectangles
+g_InFrames	rs.l	1		; gui.s: painting a frame's view
+; image maps (maps.s)
+g_PenFill	rs.l	1		; the screen's FILLPEN, SHADOWPEN
+g_PenShadow	rs.l	1
+; ---- a tab's own globals, high part (tabs.s TabTab) ----
+g_TabB		rs.b	0
+g_FindOn	rs.l	1		; find in page active
+g_Find		rs.b	64		; the text being found
+g_StatusText	rs.b	STATUS_MAX
+g_TitleText	rs.b	STATUS_MAX
+g_FragName	rs.l	1		; #fragment of the page URL or 0
+g_WantScroll	rs.l	1		; scroll position to restore or -1
+g_HistPos	rs.l	1		; current history entry or -1
+g_HistCount	rs.l	1
+g_Hist		rs.l	HIST_ENTRIES*2	; URL, scroll position
+g_HistKept	rs.l	HIST_ENTRIES	; the entry's page kept (keep.s) or 0
+g_PageDone	rs.l	1		; the page is all there (-1: never kept)
+g_PageHist	rs.l	1		; its history entry, or -1
+g_ImgCut	rs.l	1		; images of the page were left unloaded
+g_PageHash	rs.l	1		; hash of its source as it came (0: none)
+g_PfFresh	rs.l	1		; shown from its page file (pagefile.s)
+g_RespHash	rs.l	1		; (nav.s: hash of the response's body)
+g_LRuns		rs.b	BUF_SIZEOF	; ... the runs being made (then g_Runs)
+g_LAnchors	rs.b	BUF_SIZEOF	; ... and the anchors (then g_Anchors)
+g_LPageBg	rs.l	1		; ... the page background found so far
+g_LPageBgRec	rs.l	1
+g_LPageBgRep	rs.l	1
+g_LaySP		rs.l	1		; ... the stack to leave a layout with
+g_LayBusy	rs.l	1		; ... a layout is under way
+g_LayAgain	rs.l	1		; ... the width changed meanwhile: again
+g_PageUrl	rs.b	URL_MAX		; URL of the page shown
+g_NavUrl	rs.b	URL_MAX		; URL being loaded
+g_BgUrl		rs.b	URL_MAX		; a background image's URL
+g_BgAbs		rs.b	URL_MAX		; ... resolved
+g_RespSave	rs.b	RESP_SIZEOF	; the page's response (IncCss)
+g_ImgUrl	rs.b	URL_MAX		; img.s: the image's URL (the loader's)
+g_ImgKey	rs.b	URL_MAX+80	; its disk cache key
+g_RefreshUrl	rs.b	URL_MAX		; meta refresh target (relative)
+g_NavNext	rs.b	URL_MAX		; NavGo's URL
+g_NavFlags	rs.l	1		; the load's NAV_xxx
+g_NavUndo	rs.l	1		; Back/Forward: the history before (-1)
+g_NavPending	rs.l	1		; bit 31: NavGo from the loader (flags)
+g_TkStack	rs.l	1		; its stack
+g_TkSSS		rs.b	12		; StackSwapStruct: the other stack
+g_TkEntry	rs.l	1		; its job
+g_TkState	rs.l	1		; LS_xxx
+g_TkAbort	rs.l	1		; 1: stop (its waits fail)
+g_TkSock	rs.l	1		; LS_SOCK: the socket,
+g_TkDir		rs.l	1		; 0 read, 1 write,
+g_TkSince	rs.l	1		; since when (ticks)
+g_TkResult	rs.l	1		; 1 ready, 0 timeout, -1 error
+g_TkSigs	rs.l	1		; LS_SIG: the signals,
+g_TkGot		rs.l	1		; those received
+g_TlsAgain	rs.l	1		; a TLS 1.2 handshake failed: try 1.3
+g_TlsPort	rs.l	1		; ConnOpen: the port (TlsHandshake)
+g_Blank		rs.l	1		; 0: the page shown; 1: blank, the page
+					; left still there (Esc brings it back);
+					; 2: blank, that page gone
+g_FrOv		rs.b	URL_MAX		; the frames' URLs after the page's own
+g_NavKey	rs.b	URL_MAX		; g_NavUrl with them (its page file)
+g_FrTmp		rs.b	URL_MAX		; a URL made absolute
+g_FrNav		rs.b	URL_MAX		; the page with a frame's URL changed
+g_FrCount	rs.l	1		; frames in the page so far
+g_CssBusy	rs.l	1		; CssLoad under way (css.s)
 g_ViewCur	rs.l	1		; the view in G: 0 the page's, 1.. a frame's
 g_ViewTop	rs.b	VIEW_SIZE	; the page's while a frame's is in G
 g_FrViews	rs.l	1		; the frames' views (AllocVec), or 0
@@ -1123,9 +1134,7 @@ g_FrGap		rs.l	FR_GAPS*4	; ... their rectangles
 g_LayTarget	rs.l	1		; layout.s: the view it is for (0: G's)
 g_LayRoot	rs.l	1		; ... its root (0: g_Doc)
 g_LayW		rs.l	1		; ... the width it lays out for
-g_InFrames	rs.l	1		; gui.s: painting a frame's view
 g_FrOnlyDirty	rs.l	1		; FramesLayout: only frames filled anew
-; image maps (maps.s)
 g_MapImg	rs.l	1		; the last <img> asked for,
 g_MapNode	rs.l	1		; ... its <map>
 g_IsMapA	rs.l	1		; an ismap image's link under the mouse,
@@ -1135,9 +1144,10 @@ g_PrgOn		rs.l	1		; shown
 g_PrgDone	rs.l	1		; ... so much of
 g_PrgAll	rs.l	1		; ... all (0 or less: not known: a
 g_PrgAnim	rs.l	1		;     block goes back and forth)
-g_PenFill	rs.l	1		; the screen's FILLPEN, SHADOWPEN
-g_PenShadow	rs.l	1
+g_TabBEnd	rs.b	0
 g_SIZEOF	rs.b	0
+TAB_ASIZE	equ	g_TabAEnd-g_TabA
+TAB_SAVE	equ	TAB_ASIZE+g_TabBEnd-g_TabB	; a tab's save area (tabs.s)
 
 ;--------------------------------------------------------------------
 ; Library call macros.  They load a6 themselves, so a6 is always scratch.

@@ -23,7 +23,7 @@
 	section	code,code
 
 ;--------------------------------------------------------------------
-; KeepTab - the page's globals: G offset, bytes, 1 if they are the
+; KeepTab - the page's globals: G offset (long), bytes, 1 if they are the
 ; page's own memory (cleared in G when it is kept); in kp_xxx order
 ;--------------------------------------------------------------------
 KPOFF	set	0
@@ -31,7 +31,8 @@ KEEPG	MACRO
 	IFNE	KPOFF-\2
 	FAIL	"KeepTab: \2 is not where KEEPG puts it"
 	ENDC
-	dc.w	\1,\3,\4
+	dc.l	\1
+	dc.w	\3,\4
 KPOFF	set	KPOFF+\3
 	ENDM
 ; (the fields copied together must be together in G)
@@ -77,7 +78,7 @@ KeepTab:
 	KEEPG	g_FormTouched,kp_Touched,4,0
 	KEEPG	g_PageUrl,kp_Url,URL_MAX,0
 	KEEPG	g_TitleText,kp_Title,STATUS_MAX,0
-	dc.w	0
+	dc.l	0
 	IFNE	KPOFF-KP_SIZEOF
 	FAIL	"KeepTab does not fill KP_SIZEOF"
 	ENDC
@@ -90,8 +91,7 @@ KeepCopy:
 	movem.l	d2-d3/a2,-(sp)
 	move.l	d0,d3
 	lea	KeepTab(pc),a2
-.e:	moveq	#0,d0
-	move.w	(a2)+,d0		; G offset (0: the end)
+.e:	move.l	(a2)+,d0		; G offset (0: the end)
 	beq.s	.x
 	lea	(a4,d0.l),a1
 	moveq	#0,d2
@@ -113,8 +113,7 @@ KeepCopy:
 ; KeepClear - clear the page's own memory in G (it is kept now)
 KeepClear:
 	lea	KeepTab(pc),a0
-.e:	moveq	#0,d0
-	move.w	(a0)+,d0
+.e:	move.l	(a0)+,d0
 	beq.s	.x
 	lea	(a4,d0.l),a1
 	move.w	(a0)+,d1
