@@ -47,12 +47,13 @@ SSL_ERROR_WANT_WRITE	equ	3
 SSL_ERROR_SYSCALL	equ	5
 SSL_ERROR_ZERO_RETURN	equ	6
 BIO_CTRL_PENDING	equ	10
+BIO_CTRL_INFO		equ	3
 
 FIONBIO		equ	$8004667e
 SOL_SOCKET	equ	$ffff
 SO_ERROR	equ	$1007
 
-	xref	TaskWaitSock
+	xref	TaskWaitSock,TaskWaitLock
 
 	section	code,code
 
@@ -481,8 +482,10 @@ TlsInit:
 	moveq	#0,d0			; (stopped: g_Error is set)
 	rts
 .own:	EXEC	Wait
-.got:	bsr	TlsChildDone
-	PROFE	22
+.got:	cmp.l	#2,g_SslState(a4)	; (another tab's loader did it: both
+	bne.s	.done			;  had waited for it)
+	bsr	TlsChildDone
+.done:	PROFE	22
 	move.l	g_SslState(a4),d0
 .st:	tst.l	d0
 	bgt.s	.ok
@@ -1081,7 +1084,7 @@ TlsBios:
 TlsDo:
 	movem.l	d2-d5/a2-a3,-(sp)
 	move.l	a0,a2
-	move.l	d0,d4			; d4 = the job
+	move.l	d0,d4			; d4 = the job (d2/d3: its result)
 	move.l	d1,d5			; d5 = bytes
 	move.l	a1,a3
 	cmp.l	#TW_READ,d4
@@ -1093,11 +1096,21 @@ TlsDo:
 	move.l	a3,a1
 	bsr	TwRun
 	beq	.fail
+	move.l	g_TwRet(a4),d2		; the result: taken now (another
+	ble.s	.nr			; tab's job may come next)
+	cmp.l	#TW_READ,d4
+	bne.s	.nr
+	lea	g_TwBuf(a4),a0
+	lea	c_Buf(a2),a1
+	move.l	d2,d0
+	EXEC	CopyMem
+.nr:	move.l	g_TwErr(a4),d3
+	clr.l	g_TwOwner(a4)		; (the TLS process: free for them)
 	bsr	TlsFlush		; what it wrote: to the server
 	beq	.fail
-	move.l	g_TwRet(a4),d0
+	move.l	d2,d0
 	bgt.s	.done
-	move.l	g_TwErr(a4),d0
+	move.l	d3,d0
 	cmp.l	#SSL_ERROR_WANT_READ,d0
 	beq.s	.recv
 	cmp.l	#SSL_ERROR_WANT_WRITE,d0
@@ -1140,23 +1153,18 @@ TlsDo:
 	bra.s	.x
 .rerr:	SETERR	ERR_RECV
 	bra.s	.fail
-.done:	cmp.l	#TW_READ,d4
-	bne.s	.x
-	move.l	d0,d2
-	lea	g_TwBuf(a4),a0
-	lea	c_Buf(a2),a1
-	EXEC	CopyMem
-	move.l	d2,d0
-	bra.s	.x
+.done:	bra.s	.x
 .fail:	moveq	#-1,d0
 .x:	movem.l	(sp)+,d2-d5/a2-a3
 	tst.l	d0
 	rts
 
-; TlsFlush - (a2 = Conn) send what its SSL wrote to its memory BIO
+; TlsFlush - (a2 = Conn) send what its SSL wrote to its memory BIO:
+; sent from the BIO itself, then taken out of it (nothing is kept in a
+; buffer of Velox's while waiting: another tab's TLS uses them)
 ; Out: d0 = 0 if sending failed (g_Error set) (CCR)
 TlsFlush:
-	movem.l	d2-d3/a3,-(sp)
+	movem.l	d2-d3,-(sp)
 .l:	move.l	c_WBio(a2),a0
 	moveq	#BIO_CTRL_PENDING,d0
 	moveq	#0,d1
@@ -1164,35 +1172,39 @@ TlsFlush:
 	SSL	BIO_ctrl
 	tst.l	d0
 	ble.s	.ok
-	cmp.l	#TW_NET,d0
-	bls.s	.n
-	move.l	#TW_NET,d0
-.n:	move.l	c_WBio(a2),a0
-	lea	g_TwNet(a4),a1
-	SSL	BIO_read
-	move.l	d0,d3
-	ble.s	.ok
-	lea	g_TwNet(a4),a3
-.s:	move.l	c_Sock(a2),d0
+	move.l	c_Sock(a2),d0
 	moveq	#1,d1
 	bsr	WaitSocket
 	beq.s	.x
-	move.l	c_Sock(a2),d0
-	move.l	a3,a0
-	move.l	d3,d1
+	clr.l	-(sp)			; where its bytes are
+	move.l	c_WBio(a2),a0
+	moveq	#BIO_CTRL_INFO,d0
+	moveq	#0,d1
+	move.l	sp,a1
+	SSL	BIO_ctrl
+	move.l	(sp)+,a0
+	move.l	d0,d1			; d1 = how many
+	ble.s	.ok
+	move.l	a0,d0
+	beq.s	.ok
+	cmp.l	#TW_NET,d1
+	bls.s	.n
+	move.l	#TW_NET,d1
+.n:	move.l	c_Sock(a2),d0
 	moveq	#0,d2
 	SOCK	send
-	tst.l	d0
+	move.l	d0,d3
 	ble.s	.err
-	add.l	d0,a3
-	sub.l	d0,d3
-	bgt.s	.s
+	move.l	c_WBio(a2),a0		; sent: out of the BIO
+	lea	g_TwNet(a4),a1
+	move.l	d3,d0
+	SSL	BIO_read
 	bra.s	.l
 .err:	SETERR	ERR_SEND
 	moveq	#0,d0
 	bra.s	.x
 .ok:	moveq	#1,d0
-.x:	movem.l	(sp)+,d2-d3/a3
+.x:	movem.l	(sp)+,d2-d3
 	rts
 
 ;--------------------------------------------------------------------
@@ -1200,7 +1212,8 @@ TlsFlush:
 ; host name; TW_WRITE: d1 bytes from a1; TW_READ: up to d1 bytes into
 ; g_TwBuf) and wait for it; the window is served meanwhile.  Without
 ; the process the job is done here.
-; Out: d0 = 1 done (g_TwRet, g_TwErr), 0 if the loader was stopped
+; Out: d0 = 1 done (g_TwRet, g_TwErr: the caller takes them and clears
+;      g_TwOwner before it yields), 0 if the loader was stopped
 ;      (g_Error = ERR_ABORT; the job goes on: ConnClose leaves its SSL
 ;      to the process) (CCR)
 ;--------------------------------------------------------------------
@@ -1210,12 +1223,25 @@ TwRun:
 	move.l	a0,a2
 	move.l	d1,d3
 	move.l	a1,a3
+.own:	tst.l	g_TwOwner(a4)		; another tab's job: until it has
+	beq.s	.idle			; its result
+	tst.l	g_TkIn(a4)
+	beq.s	.idle
+	lea	g_TwOwner(a4),a0
+	jsr	TaskWaitLock
+	bne.s	.own
+	SETERR	ERR_ABORT
+	moveq	#0,d0
+	bra.s	.x
 .idle:	tst.l	g_TwBusy(a4)		; a job of a page stopped: its end
 	beq.s	.go			; first
 	bsr	TwWait
-	bne.s	.idle
+	bne.s	.own
 	bra.s	.x
-.go:	bsr	TwOrphan
+.go:	move.l	g_TabIn(a4),d0		; this tab's job
+	addq.l	#1,d0
+	move.l	d0,g_TwOwner(a4)
+	bsr	TwOrphan
 	move.l	d2,g_TwOp(a4)
 	move.l	a2,g_TwSSL(a4)
 	move.l	d3,g_TwLen(a4)
@@ -1247,6 +1273,7 @@ TwRun:
 	beq.s	.ok
 	bsr	TwWait
 	bne.s	.w
+	clr.l	g_TwOwner(a4)		; stopped: the job goes on, nobody's
 	bra.s	.x
 .ok:	moveq	#1,d0
 .x:	movem.l	(sp)+,d2-d3/a2-a3

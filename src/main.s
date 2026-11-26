@@ -14,6 +14,7 @@
 	xref	PutStr,PutBuf,PutNum,PutNL,FlushOut,ErrorText
 	xref	GuiOpen,GuiClose,GuiEventLoop,NavGo,NavExit,StrIPrefix,ParseDec
 	xref	StrCopyN,CacheInit,CookiesLoad,CookiesSave,TaskInit,TaskExit,DcInit
+	xref	TabInit
 
 STACK_SIZE	equ	65536
 
@@ -147,6 +148,7 @@ Main:
 	bra	.cleanup
 .gui:	bsr	OpenLog			; (also LOG= from the tool types)
 	moveq	#RC_FAIL,d2
+	jsr	TabInit
 	jsr	TaskInit
 	beq.s	.closegui
 	jsr	GuiOpen

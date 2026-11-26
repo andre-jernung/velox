@@ -34,7 +34,7 @@ bmh_Height		equ	2
 	xdef	BgFind,ImagesLoad,ImagesReap,ImagesReapNow,ImagesQuit
 	xref	DcLoadImg,DcImgFree,DcFresh,DcCond,DcHash,DcStoreImg,PicFromCache,PbmKeepFree,HttpGet,StrCopy,StrCopyN,FmtDec
 	xref	DcTouch
-	xref	TaskPoll,TaskWaitSig
+	xref	TaskPoll,TaskWaitSig,TaskWaitLock
 	IFD	PROFILE
 	xdef	ProfRead,ProfLog
 	ENDC
@@ -332,8 +332,11 @@ BgStep:
 	bne.s	.use
 	jsr	DcImgFree
 	bra.s	.net
-.use:	bsr	BgCached
-	jsr	DcImgFree
+.use:	bsr	DecLock
+	beq.s	.uf
+	bsr	BgCached
+	bsr	DecUnlock
+.uf:	jsr	DcImgFree
 	bra.s	.free
 .net:	move.l	g_WinSigMask(a4),d0
 	or.l	#SIGBREAKF_CTRL_C,d0
@@ -361,7 +364,12 @@ BgStep:
 	jsr	PicInfo			; (Velox's own formats only)
 	tst.l	d0
 	beq.s	.free
+	movem.l	d0-d1,-(sp)
+	bsr	DecLock
+	movem.l	(sp)+,d0-d1
+	beq.s	.free
 	bsr	DecodeBg
+	bsr	DecUnlock
 .free:	lea	g_Resp+r_Body(a4),a0
 	jsr	BufFree
 	moveq	#0,d0			; (log: decoded or not)
@@ -480,6 +488,7 @@ BgCached:
 	beq.s	.x
 	move.l	d4,g_DecW(a4)
 	move.l	d5,g_DecH(a4)
+	bsr	PixMask
 	lea	PicCacheWork(pc),a0
 	bsr	BgRun
 	move.l	d0,d7
@@ -540,9 +549,12 @@ ImagesStep:
 	lea	g_ImgKey(a4),a0
 	jsr	DcLoadImg
 	beq.s	.skip			; (not there: pass 2)
+	bsr	DecLock
+	beq.s	.cf
 	bsr	ImgCached
-	move.l	d0,-(sp)
+.cf:	move.l	d0,-(sp)
 	jsr	DcImgFree
+	bsr	DecUnlock
 	move.l	(sp)+,d0
 	beq.s	.skip
 	addq.l	#1,g_ImgLoaded(a4)
@@ -633,7 +645,10 @@ ImagesStep:
 	beq	.free
 	cmp.l	#MAX_IMAGE,d0
 	bhi	.free
+	bsr	DecLock			; (the decoder: one image at a time)
+	beq	.free
 	move.l	g_Resp+r_Body+buf_Data(a4),a0	; Velox's own decoders
+	move.l	g_Resp+r_Body+buf_Len(a4),d0
 	jsr	PicInfo
 	tst.l	d0
 	beq.s	.dt
@@ -675,7 +690,8 @@ ImagesStep:
 	bra.s	.done
 .free:	lea	g_Resp+r_Body(a4),a0
 	jsr	BufFree
-.done:	tst.l	n_Data2(a5)		; (there: it did not fail)
+.done:	bsr	DecUnlock
+	tst.l	n_Data2(a5)		; (there: it did not fail)
 	beq.s	.nf
 	bclr	#NF_IMGFAIL,n_Flags(a5)
 .nf:	; lay out again now and then, and at the end
@@ -779,6 +795,53 @@ MsgStopped:	dc.b	"Stopped",0
 	even
 
 ;--------------------------------------------------------------------
+; DecLock - (loader) the decoder for this tab: one image at a time is
+; decoded (the decoder process, the bitmap making and its globals), so
+; a tab's loader waits while another's decodes, or a stopped load's
+; decoder still runs
+; Out: d0 = 1, 0 if the loader is to stop (CCR set)
+; DecUnlock - the decoder free again (if this tab has it)
+;--------------------------------------------------------------------
+DecLock:
+	move.l	g_TabIn(a4),d1
+	addq.l	#1,d1
+.l:	move.l	g_DecLock(a4),d0
+	beq.s	.take
+	cmp.l	d1,d0
+	beq.s	.ok
+	tst.l	g_TkIn(a4)		; (not in a loader: no other runs)
+	beq.s	.take
+	move.l	d1,-(sp)
+	lea	g_DecLock(a4),a0
+	jsr	TaskWaitLock
+	movem.l	(sp)+,d1
+	bne.s	.l
+	moveq	#0,d0
+	rts
+.take:	move.l	d1,g_DecLock(a4)
+.ok:	moveq	#1,d0
+	rts
+
+DecUnlock:
+	move.l	g_TabIn(a4),d0
+	addq.l	#1,d0
+	cmp.l	g_DecLock(a4),d0
+	bne.s	.x
+	clr.l	g_DecLock(a4)
+.x:	rts
+
+; PixMask - g_DecPixMask: the mask of the cached pixels DcLoadImg read
+; (after them), or 0
+PixMask:
+	moveq	#0,d0
+	tst.l	g_DcHdr+dh_Mask(a4)
+	beq.s	.x
+	move.l	g_DcImg(a4),d0
+	add.l	g_DcHdr+dh_Len(a4),d0
+.x:	move.l	d0,g_DecPixMask(a4)
+	rts
+
+;--------------------------------------------------------------------
 ; BgRun - run a decoding job: decoding takes a while on a 68020, so a
 ; process of its own (at a lower priority) does it, while this one
 ; keeps serving the window (BusyEvents).  Without the process the job
@@ -790,6 +853,16 @@ BgRun:
 	movem.l	d2,-(sp)
 	move.l	a0,g_DecJob(a4)
 	clr.l	g_DecObj(a4)
+	lea	g_Resp+r_Body(a4),a0	; what it reads: the decoder's (the
+	lea	g_DecBody(a4),a1	; process runs on while another tab
+	move.l	(a0),(a1)+		; is in G)
+	move.l	4(a0),(a1)+
+	move.l	8(a0),(a1)
+	clr.l	(a0)+
+	clr.l	(a0)+
+	clr.l	(a0)
+	move.l	g_DcImg(a4),g_DecDcImg(a4)
+	clr.l	g_DcImg(a4)
 	moveq	#-1,d0
 	EXEC	AllocSignal
 	move.l	d0,d2			; d2 = signal
@@ -811,20 +884,13 @@ BgRun:
 	tst.l	d0
 	bne.s	.done
 	; stopped: the decoder goes on; what it makes is freed when it ends
-	; (DecReap), and the body it reads is its own until then
+	; (DecReap), and the body and pixels it reads are its own until
+	; then, and so is the decoder (g_DecLock)
 	move.l	d2,g_DecSigBit(a4)
 	moveq	#1,d0
 	move.l	d0,g_DecOrphan(a4)
-	move.l	g_DcImg(a4),g_DecDcImg(a4)	; (cached pixels it reads)
-	clr.l	g_DcImg(a4)
-	lea	g_Resp+r_Body(a4),a0
-	lea	g_DecBody(a4),a1
-	move.l	(a0),(a1)+
-	move.l	4(a0),(a1)+
-	move.l	8(a0),(a1)
-	clr.l	(a0)+
-	clr.l	(a0)+
-	clr.l	(a0)
+	moveq	#-1,d0
+	move.l	d0,g_DecLock(a4)
 	moveq	#0,d0
 	bra.s	.x0
 .wait:	move.l	g_DecSig(a4),d0
@@ -843,7 +909,17 @@ BgRun:
 	jsr	(a0)
 	bra.s	.x
 .done:	bsr.s	.free
-.x:	move.l	g_DecObj(a4),d0
+.x:	lea	g_DecBody(a4),a0	; what it read: back
+	lea	g_Resp+r_Body(a4),a1
+	move.l	(a0),(a1)+
+	move.l	4(a0),(a1)+
+	move.l	8(a0),(a1)
+	clr.l	(a0)+
+	clr.l	(a0)+
+	clr.l	(a0)
+	move.l	g_DecDcImg(a4),g_DcImg(a4)
+	clr.l	g_DecDcImg(a4)
+	move.l	g_DecObj(a4),d0
 .x0:	movem.l	(sp)+,d2
 	rts
 .free:	move.l	d2,d0
@@ -879,6 +955,7 @@ DecReap:
 	tst.l	g_DecOrphan(a4)
 	beq.s	.x
 	clr.l	g_DecOrphan(a4)
+	clr.l	g_DecLock(a4)		; (free again)
 	move.l	g_DecObj(a4),d0
 	beq.s	.nobj
 	clr.l	g_DecObj(a4)
@@ -947,8 +1024,6 @@ ImagesReap:
 	moveq	#0,d0
 	tst.l	g_DecOrphan(a4)
 	beq.s	.x
-	tst.l	g_TkState(a4)
-	bne.s	.x
 	move.l	g_DecSig(a4),d0
 .x:	rts
 
@@ -1051,7 +1126,8 @@ ImgCached:
 	tst.l	d0
 	beq.s	.d6
 	moveq	#0,d6
-.d6:	lea	PicCacheWork(pc),a0
+.d6:	bsr	PixMask
+	lea	PicCacheWork(pc),a0
 	bsr	BgRun
 	move.l	d0,d7
 	beq.s	.x
@@ -1068,13 +1144,9 @@ ImgCached:
 
 ; PicCacheWork - (a job for BgRun) the bitmap of the cached pixels
 PicCacheWork:
-	move.l	g_DcImg(a4),a0
-	suba.l	a1,a1
-	tst.l	g_DcHdr+dh_Mask(a4)
-	beq.s	.nm
-	move.l	a0,a1
-	add.l	g_DcHdr+dh_Len(a4),a1
-.nm:	move.l	g_DecW(a4),d0
+	move.l	g_DecDcImg(a4),a0
+	move.l	g_DecPixMask(a4),a1
+	move.l	g_DecW(a4),d0
 	move.l	g_DecH(a4),d1
 	jsr	PicFromCache
 	move.l	d0,g_DecObj(a4)
@@ -1224,8 +1296,8 @@ DecodeOwn:
 ; g_DecW x g_DecH: g_DecObj = bitmap (g_PbmMask its mask) or 0
 PicWork:
 	clr.l	g_DecObj(a4)
-	move.l	g_Resp+r_Body+buf_Data(a4),a0
-	move.l	g_Resp+r_Body+buf_Len(a4),d0
+	move.l	g_DecBody+buf_Data(a4),a0
+	move.l	g_DecBody+buf_Len(a4),d0
 	move.l	g_DecWant(a4),d1
 	jsr	PicDecode
 	beq.s	.x

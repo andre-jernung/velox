@@ -145,6 +145,15 @@ dt_Name		rs.b	12		; (Velox's names: 8 hex digits + .p)
 DT_SIZEOF	rs.b	0
 
 DcTrimOld:
+	tst.l	g_DcTrimming(a4)	; (another tab's loader does it)
+	bne.s	.x
+	moveq	#1,d0
+	move.l	d0,g_DcTrimming(a4)
+	bsr.s	DcTrim1
+	clr.l	g_DcTrimming(a4)
+.x:	rts
+
+DcTrim1:
 	movem.l	d2-d7/a2-a3,-(sp)
 	move.l	g_DcMax(a4),d7
 	move.l	d7,d0

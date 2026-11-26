@@ -6,13 +6,14 @@
 ; g_TabBEnd with the big buffers), and the other tabs keep theirs in a
 ; save area each.  The scheduler brings a tab's in (TabSelect) before
 ; it runs that tab's loader or handles events for it.  TabTab lists the
-; blocks; strings are copied up to their NUL, the screen's band
-; signatures (g_Bands) not at all (painting starts anew on a switch).
+; blocks.  A save area holds the copied parts first, in TabTab's order
+; (so it begins with g_TabA .. g_TkEnd, the loader's state the
+; scheduler reads), then the strings, each up to its NUL.
 ;
 
 	include	"velox.i"
 
-	xdef	TabSave,TabLoad
+	xdef	TabSave,TabLoad,TabInit,TabSelect,TabRec,TabBase
 
 	section	code,code
 
@@ -23,6 +24,7 @@
 ; must be put in one.
 ;--------------------------------------------------------------------
 TBPOS	set	0
+TBBIN	set	0
 TABBEG	MACRO
 TBPOS	set	\1
 	ENDM
@@ -36,6 +38,9 @@ TABE	MACRO				; kind, start, end
 	dc.l	\2
 	dc.w	(\3)-(\2),\1
 TBPOS	set	\3
+	IFEQ	\1
+TBBIN	set	TBBIN+(\3)-(\2)
+	ENDC
 	ENDM
 TB	MACRO
 	TABE	0,\1,\2
@@ -43,20 +48,18 @@ TB	MACRO
 TS	MACRO
 	TABE	1,\1,\2
 	ENDM
-TX	MACRO
-	TABE	2,\1,\2
-	ENDM
 TABEND	MACRO
 	IFNE	(\1)-TBPOS
 	FAIL	"TabTab does not reach \1"
 	ENDC
 	ENDM
-VBANDS	equ	g_Bands-g_View		; the bands in a view
-VBANDE	equ	g_PageBgRec-g_View
 
 TabTab:
 	TABBEG	g_TabA
 	TB	g_TabA,g_Parts+up_Host
+	IFGT	g_TkEnd-(g_Parts+up_Host)
+	FAIL	"TabTab: the first entry must hold g_TabA .. g_TkEnd"
+	ENDC
 	TS	g_Parts+up_Host,g_Parts+UP_SIZEOF
 	TB	g_ReqBuf,g_Resp+r_CType
 	TS	g_Resp+r_CType,g_Resp+r_Url
@@ -64,9 +67,7 @@ TabTab:
 	TS	g_Resp+r_Location,g_Resp+r_ETag
 	TS	g_Resp+r_ETag,g_Resp+r_LastMod
 	TS	g_Resp+r_LastMod,g_Resp+r_MaxAge
-	TB	g_Resp+r_MaxAge,g_Bands
-	TX	g_Bands,g_PageBgRec
-	TB	g_PageBgRec,g_DcETag
+	TB	g_Resp+r_MaxAge,g_DcETag
 	TS	g_DcETag,g_DcLM
 	TS	g_DcLM,g_CondETag
 	TS	g_CondETag,g_CondLM
@@ -103,14 +104,13 @@ TabTab:
 	TS	g_NavKey,g_FrTmp
 	TS	g_FrTmp,g_FrNav
 	TS	g_FrNav,g_FrCount
-	TB	g_FrCount,g_ViewTop+VBANDS
-	TX	g_ViewTop+VBANDS,g_ViewTop+VBANDE
-	TB	g_ViewTop+VBANDE,g_TabBEnd
+	TB	g_FrCount,g_TabBEnd
 	TABEND	g_TabBEnd
 	dc.l	0
+TAB_BIN	equ	TBBIN			; the copied parts' bytes
 
 ;--------------------------------------------------------------------
-; TabSave - copy the tab's globals from G to save area a0 (TAB_SAVE
+; TabSave - copy the tab's globals from G to save area a0 (TabNeed
 ; bytes)
 ; TabLoad - copy them from save area a0 to G
 ;--------------------------------------------------------------------
@@ -123,9 +123,10 @@ TabLoad:
 
 ; TabCopy - In: a0 = save area, d0 = 0 G to it, 1 it to G
 TabCopy:
-	movem.l	d2-d4/a2-a3,-(sp)
+	movem.l	d2-d4/a2-a3/a5,-(sp)
 	move.l	d0,d4
-	move.l	a0,a3			; a3 = the area, as the entries go
+	move.l	a0,a3			; a3 = the copied parts,
+	lea	TAB_BIN(a0),a5		; a5 = the strings, as they go
 	lea	TabTab(pc),a2
 .e:	move.l	(a2)+,d0		; start (0: the end)
 	beq.s	.x
@@ -133,17 +134,13 @@ TabCopy:
 	moveq	#0,d2
 	move.w	(a2)+,d2		; d2 = bytes
 	move.w	(a2)+,d3		; d3 = kind
+	bne.s	.str
 	move.l	a3,a1			; a1 = in the area
 	add.l	d2,a3
 	tst.l	d4			; a0 = from, a1 = to
-	beq.s	.dir
+	beq.s	.cp
 	exg	a0,a1
-.dir:
-	cmp.w	#2,d3
-	beq.s	.e			; (not kept)
-	tst.w	d3
-	bne.s	.str
-	move.l	d2,d1			; copied: longs, then the bytes left
+.cp:	move.l	d2,d1			; longs, then the bytes left
 	lsr.l	#2,d1
 	bra.s	.ls
 .l:	move.l	(a0)+,(a1)+
@@ -153,9 +150,143 @@ TabCopy:
 .b:	move.b	(a0)+,(a1)+
 .bs:	dbf	d2,.b
 	bra.s	.e
-.str:	subq.w	#1,d2			; a string: up to its NUL
+.str:	move.l	a5,a1			; a string, up to its NUL
+	tst.l	d4
+	beq.s	.sc
+	exg	a0,a1
+.sc:	subq.w	#1,d2
 .s:	move.b	(a0)+,(a1)+
 	dbeq	d2,.s
+	tst.l	d4
+	bne.s	.sl
+	move.l	a1,a5			; (saving: a1 is in the area
+	bra.s	.e			;  loading: a0)
+.sl:	move.l	a0,a5
 	bra.s	.e
-.x:	movem.l	(sp)+,d2-d4/a2-a3
+.x:	movem.l	(sp)+,d2-d4/a2-a3/a5
 	rts
+
+; TabNeed - Out: d0 = the bytes of a save area for the tab in G
+TabNeed:
+	move.l	a2,-(sp)
+	move.l	#TAB_BIN,d0
+	lea	TabTab(pc),a2
+.e:	move.l	(a2)+,d1
+	beq.s	.x
+	lea	(a4,d1.l),a0
+	move.w	(a2)+,d1		; bytes
+	tst.w	(a2)+
+	beq.s	.e
+	subq.w	#1,d1
+.s:	addq.l	#1,d0
+	tst.b	(a0)+
+	dbeq	d1,.s
+	bra.s	.e
+.x:	move.l	(sp)+,a2
+	rts
+
+;--------------------------------------------------------------------
+; TabInit - one tab, the one in G (and shown)
+;--------------------------------------------------------------------
+TabInit:
+	lea	g_Tabs(a4),a0
+	move.w	#TAB_MAX*TB_SIZEOF/2-1,d0
+.c:	clr.w	(a0)+
+	dbf	d0,.c
+	moveq	#1,d0
+	move.l	d0,g_TabN(a4)
+	clr.l	g_TabIn(a4)
+	clr.l	g_TabFront(a4)
+	clr.l	g_TabHidden(a4)
+	clr.l	g_TabRR(a4)
+	rts
+
+; TabRec - In: d0 = tab; Out: a0 = its record (d0, d1 kept)
+TabRec:
+	move.l	d0,a0
+	mulu.w	#TB_SIZEOF,d0
+	exg	d0,a0
+	add.l	a4,a0
+	lea	g_Tabs(a0),a0
+	rts
+
+; TabBase - In: d0 = tab; Out: a0 = where its g_TabA .. g_TkEnd are
+; (G or its save area): its loader's x at x-g_TabA(a0) (d0, d1 kept)
+TabBase:
+	cmp.l	g_TabIn(a4),d0
+	beq.s	.g
+	bsr.s	TabRec
+	move.l	tb_Save(a0),a0
+	rts
+.g:	lea	g_TabA(a4),a0
+	rts
+
+;--------------------------------------------------------------------
+; TabSelect - (event loop, not in a loader) tab d0's globals in G: the
+; one there goes to its save area.  Its page area is the window's now.
+; Out: d0 = 0 if there was no memory for the save area (CCR set; the
+; tab in G stays)
+;--------------------------------------------------------------------
+TabSelect:
+	movem.l	d2/a2,-(sp)
+	move.l	d0,d2
+	cmp.l	g_TabIn(a4),d2
+	beq	.ok
+	move.l	g_TabIn(a4),d0		; the one in G: its title (for the
+	bsr.s	TabRec			;  tab strip) and its globals
+	move.l	a0,a2
+	lea	g_TitleText(a4),a0
+	lea	tb_Title(a2),a1
+	moveq	#TAB_TITLE-2,d0
+.t:	move.b	(a0)+,(a1)+
+	dbeq	d0,.t
+	clr.b	(a1)
+	bsr	TabNeed
+	cmp.l	tb_SaveLen(a2),d0
+	bls.s	.room
+	move.l	d0,-(sp)		; a bigger area
+	move.l	tb_Save(a2),a1
+	EXEC	FreeVec
+	clr.l	tb_Save(a2)
+	clr.l	tb_SaveLen(a2)
+	move.l	(sp)+,d0
+	add.l	#256,d0			; (room for longer strings)
+	move.l	d0,-(sp)
+	moveq	#MEMF_ANY,d1
+	EXEC	AllocVec
+	move.l	(sp)+,d1
+	tst.l	d0
+	beq.s	.x
+	move.l	d0,tb_Save(a2)
+	move.l	d1,tb_SaveLen(a2)
+.room:	move.l	tb_Save(a2),a0
+	bsr	TabSave
+	move.l	d2,d0			; the other one's
+	bsr	TabRec
+	move.l	tb_Save(a0),a0
+	bsr	TabLoad
+	move.l	d2,g_TabIn(a4)
+	bsr.s	TabWinPage
+.ok:	moveq	#0,d0			; shown?
+	cmp.l	g_TabFront(a4),d2
+	sne	d0
+	and.l	#1,d0
+	move.l	d0,g_TabHidden(a4)
+	moveq	#1,d0
+.x:	movem.l	(sp)+,d2/a2
+	rts
+
+; TabWinPage - the page area of the tab in G: the window's (g_WinPage)
+TabWinPage:
+	tst.l	g_Window(a4)
+	beq.s	.x
+	lea	g_PageX(a4),a1		; the page's view: in G, or kept in
+	tst.l	g_ViewCur(a4)		; g_ViewTop while a frame's is there
+	beq.s	.c
+	lea	g_ViewTop+g_PageX-g_View(a4),a1
+.c:	lea	g_WinPage(a4),a0
+	move.l	(a0)+,(a1)+
+	move.l	(a0)+,(a1)+
+	move.l	(a0)+,(a1)+
+	move.l	(a0)+,(a1)+
+.x:	rts

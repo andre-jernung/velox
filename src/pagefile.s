@@ -192,6 +192,23 @@ PfSaveKept:
 	rts
 
 ;--------------------------------------------------------------------
+; PfLockTry - the page file globals (g_Pf*) for this tab, if no other
+; tab's loader uses them (saving and loading yield on the way)
+; Out: d0 = 1 if so (CCR set; d1, a0, a1 kept)
+; (freed by clearing g_PfLock)
+;--------------------------------------------------------------------
+PfLockTry:
+	move.l	g_TabIn(a4),d0
+	addq.l	#1,d0
+	tst.l	g_PfLock(a4)
+	bne.s	.no
+	move.l	d0,g_PfLock(a4)
+	moveq	#1,d0
+	rts
+.no:	moveq	#0,d0
+	rts
+
+;--------------------------------------------------------------------
 ; PfWrite - save the page of KeepPage a0 as its page file, if it can be:
 ; it came over HTTP (a source hash), all of it, not typed into, no page
 ; file yet, its HTML in the cache (else the file is never used).  A kept
@@ -200,6 +217,14 @@ PfSaveKept:
 ; Out: d0 = 1 if saved (CCR set)
 ;--------------------------------------------------------------------
 PfWrite:
+	bsr	PfLockTry		; (another tab's being saved: not now)
+	beq.s	.x
+	bsr.s	PfWrite1
+	clr.l	g_PfLock(a4)
+	tst.l	d0
+.x:	rts
+
+PfWrite1:
 	movem.l	d2-d7/a2-a3,-(sp)
 	move.l	a0,a3			; a3 = the KeepPage
 	moveq	#0,d7			; d7 = result
@@ -333,6 +358,18 @@ LogLoaded:	dc.b	"pfloaded",0
 ; Out: d0 = 1 if so (CCR set)
 ;--------------------------------------------------------------------
 PfLoad:
+	movem.l	d0-d1/a0-a1,-(sp)	; (another tab's page file in the
+	bsr	PfLockTry		;  works: the page comes otherwise)
+	movem.l	(sp)+,d0-d1/a0-a1
+	beq.s	.no
+	bsr.s	PfLoad1
+	clr.l	g_PfLock(a4)
+	tst.l	d0
+	rts
+.no:	moveq	#0,d0
+	rts
+
+PfLoad1:
 	movem.l	d2-d7/a2-a3,-(sp)
 	PROFB	16
 	move.l	a0,a3			; a3 = URL

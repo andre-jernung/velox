@@ -33,6 +33,7 @@
 	xref	PalFree,ImagesStop,ImagesPending,ImagesStep,ImagesFree,ImagePaint
 	xref	KeepFreeAll
 	xref	TaskResume,TaskLoopWait,TaskBusy,TaskAbort,NavStop,ImagesReap,ImagesReapNow,ImagesQuit,FragCheck,TaskNow
+	xref	TaskPick,TabSelect
 
 PROP_FONT	equ	0
 SCROLL_W	equ	18
@@ -511,6 +512,12 @@ CreateGadgets:
 	bgt.s	.hok
 	moveq	#1,d0
 .hok:	move.l	d0,g_PageH(a4)
+	lea	g_PageX(a4),a0		; (each tab's: tabs.s TabWinPage)
+	lea	g_WinPage(a4),a1
+	move.l	(a0)+,(a1)+
+	move.l	(a0)+,(a1)+
+	move.l	(a0)+,(a1)+
+	move.l	(a0)+,(a1)+
 
 	; clear the toolbar and status areas
 	bsr	ClearChrome
@@ -691,6 +698,8 @@ GuiPaintAll:
 ; on the screen are painted (all of them if that is not known)
 ;--------------------------------------------------------------------
 GuiRefresh:
+	tst.l	g_TabHidden(a4)		; (a tab in the background: not shown)
+	bne	HidX
 	tst.l	g_Blank(a4)		; a new page loading: blank
 	bne	PaintBlank
 	tst.l	g_FrN(a4)		; a page of frames: each frame's view
@@ -1345,6 +1354,8 @@ PaintRange:
 ; form control whose state changed: typing, focus, a click), not the
 ; whole view
 GuiPaintNode:
+	tst.l	g_TabHidden(a4)		; (a tab in the background: not shown)
+	bne	HidX
 	movem.l	d2-d7/a2,-(sp)
 	move.l	a0,a2
 	move.l	#$7fffffff,d4		; d4/d5 = top/bottom, d6/d7 = left/
@@ -1410,6 +1421,8 @@ RunBox:
 ; is shown (every copy), and nothing around it
 ;--------------------------------------------------------------------
 GuiPaintImage:
+	tst.l	g_TabHidden(a4)		; (a tab in the background: not shown)
+	bne	HidX
 	tst.l	g_FrN(a4)		; a page of frames: in each
 	beq.s	PaintImage1
 	tst.l	g_InFrames(a4)
@@ -2380,6 +2393,8 @@ AreaText:
 ; DrawStatus - draw g_StatusText in the status line (over the old
 ; text, then clearing what is right of it, so that it does not flicker)
 DrawStatus:
+	tst.l	g_TabHidden(a4)		; (a tab in the background: not shown)
+	bne	HidX
 	movem.l	d2-d5/a2,-(sp)
 	move.l	g_Window(a4),d0
 	beq	.x
@@ -2480,6 +2495,8 @@ ProgTick:
 
 ; ProgDraw - draw the bar (nothing if it is off)
 ProgDraw:
+	tst.l	g_TabHidden(a4)		; (a tab in the background: not shown)
+	bne	HidX
 	tst.l	g_PrgOn(a4)
 	beq	.x0
 	movem.l	d2-d7/a2-a3,-(sp)
@@ -2649,6 +2666,8 @@ GuiUnblank:
 PaintBlank:
 	moveq	#0,d0			; (all of the page area)
 	jsr	ViewSelect
+	tst.l	g_TabHidden(a4)		; (a tab in the background: not shown)
+	bne	HidX
 	movem.l	d2-d3/a2-a3,-(sp)
 	move.l	g_Window(a4),d0
 	beq.s	.x
@@ -2706,6 +2725,8 @@ ScreenPens:
 
 ; UpdateScroller - give the scroller the document size and position
 UpdateScroller:
+	tst.l	g_TabHidden(a4)		; (a tab in the background: not shown)
+	bne	HidX
 	tst.l	g_FrN(a4)		; a frame's view: its own scrollbar
 	beq.s	.nsb
 	bsr	PaintSb
@@ -2766,7 +2787,8 @@ GuiScrollTo:
 	suba.l	a1,a1
 	move.l	g_ViewCur(a4),d0
 	jsr	LogEvent
-.nf:
+.nf:	tst.l	g_TabHidden(a4)		; (a tab in the background: the
+	bne	.x			;  position only)
 	move.l	d2,d0
 	bpl.s	.abs
 	neg.l	d0
@@ -2888,6 +2910,8 @@ ClampScroll:
 ; in it (a page that comes meanwhile does not overwrite what is typed)
 ; In: a0 = URL
 GuiSetUrl:
+	tst.l	g_TabHidden(a4)		; (a tab in the background: not shown)
+	bne	HidX
 	move.l	g_GadUrl(a4),d0
 	beq.s	UrlX
 	move.l	d0,a1
@@ -2907,8 +2931,13 @@ UrlPut:	jsr	FrameShow		; (not the frames' URLs)
 	movem.l	(sp)+,a2-a3
 UrlX:	rts
 
+; HidX - (a tab in the background) nothing painted
+HidX:	rts
+
 ; GuiSetTitle - In: a0 = window title (kept by the caller)
 GuiSetTitle:
+	tst.l	g_TabHidden(a4)		; (a tab in the background: not shown)
+	bne	HidX
 	move.l	g_Window(a4),d0
 	beq.s	.x
 	move.l	a0,a1
@@ -2926,6 +2955,8 @@ ScreenTitle:	dc.b	"Velox "
 
 ; GuiBusy - In: d0 = 1 busy pointer on, 0 off
 GuiBusy:
+	tst.l	g_TabHidden(a4)		; (a tab in the background: not shown)
+	bne	HidX
 	move.l	g_Window(a4),d1
 	beq.s	.x
 	move.l	d0,BusyTags+4
@@ -2939,13 +2970,18 @@ GuiBusy:
 ;--------------------------------------------------------------------
 
 ; GuiEventLoop - run until the window is closed or Ctrl-C.  The window's
-; messages always come first; then the loader (task.s) runs until it
-; yields; with nothing to do, sleep until a message or what the loader
-; waits for.  Ctrl-C stops a load, or quits when nothing loads.
+; messages always come first (with the shown tab in G); then the loader
+; of a tab that is ready (task.s TaskPick: the shown tab's first) runs
+; until it yields; with nothing to do, sleep until a message or what a
+; loader waits for.  Ctrl-C stops a load, or quits when nothing loads.
 GuiEventLoop:
 	movem.l	d2-d7/a2,-(sp)
 .loop:	tst.l	g_Quit(a4)
-	bne.s	.x
+	bne	.x
+	bsr	FrontWork		; something for the shown tab?
+	beq.s	.run
+	move.l	g_TabFront(a4),d0
+	jsr	TabSelect
 	tst.l	g_RefreshPend(a4)	; a refresh cut short for the user:
 	beq.s	.nrp			; the rest
 	clr.l	g_RefreshPend(a4)
@@ -2967,20 +3003,30 @@ GuiEventLoop:
 .fast:
 	ENDC
 	tst.l	g_Quit(a4)
-	bne.s	.x
-	cmp.l	#LS_RUN,g_TkState(a4)
-	bne.s	.idle
+	bne	.x
+.run:	jsr	TaskPick		; a loader to run
+	bmi.s	.idle
+	jsr	TabSelect
+	beq.s	.idle			; (no memory to switch)
 	jsr	TaskResume
 	tst.l	g_TkState(a4)		; done: a NavGo it asked for?
 	bne.s	.loop
-	move.l	g_NavPending(a4),d0
+	tst.l	g_TabHidden(a4)		; (the shown tab's: no progress bar)
+	bne.s	.nb
+	tst.l	g_PrgOn(a4)
+	beq.s	.nb
+	bsr	ProgOff
+.nb:	move.l	g_NavPending(a4),d0
 	bpl.s	.loop
 	clr.l	g_NavPending(a4)
 	bclr	#31,d0
 	lea	g_NavNext(a4),a0
 	jsr	NavGo
-	bra.s	.loop
-.idle:	tst.l	g_PrgOn(a4)		; nothing loads: no progress bar
+	bra	.loop
+.idle:	move.l	g_TabIn(a4),d0		; the shown tab's load stopped: no
+	cmp.l	g_TabFront(a4),d0	; progress bar
+	bne.s	.ir
+	tst.l	g_PrgOn(a4)
 	beq.s	.ir
 	jsr	TaskBusy
 	bne.s	.ir
@@ -2993,14 +3039,29 @@ GuiEventLoop:
 	beq.s	.nr
 	jsr	ImagesReapNow
 .nr:	btst	#SIGBREAKB_CTRL_C,d3
-	beq.s	.loop
+	beq	.loop
+	move.l	g_TabFront(a4),d0
+	jsr	TabSelect
 	jsr	TaskBusy
 	beq.s	.x
 	jsr	NavStop
-	bra.s	.loop
-.x:	jsr	TaskAbort		; (a load unwinds: connections close)
+	bra	.loop
+.x:	move.l	g_TabFront(a4),d0	; (each tab's load unwinds:
+	jsr	TabSelect		;  connections close)
+	jsr	TaskAbort
 	jsr	ImagesQuit		; (and its decoder ends)
 	movem.l	(sp)+,d2-d7/a2
+	rts
+
+; FrontWork - Out: d0 = 1 if the shown tab has something to do:
+; window messages, events kept, a refresh cut short (CCR set)
+FrontWork:
+	tst.l	g_TaCount(a4)
+	bne.s	.y
+	tst.l	g_RefreshPend(a4)
+	bne.s	.y
+	bra	MsgWaiting
+.y:	moveq	#1,d0
 	rts
 
 	IFD	PROFILE

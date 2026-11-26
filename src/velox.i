@@ -62,6 +62,7 @@ LS_IDLE		equ	0		; the loader (task.s): no job
 LS_RUN		equ	1		; ready to run
 LS_SOCK		equ	2		; waiting for a socket
 LS_SIG		equ	3		; waiting for signals
+LS_LOCK		equ	4		; waiting for a lock to be free
 INC_EVERY	equ	50		; a page coming in: layouts 1 s apart (at least)
 USER_QUIET	equ	15		; and not until 0.3 s after scrolling
 MAX_REDIRECTS	equ	8
@@ -455,6 +456,22 @@ bg_Info		rs.l	1		; (= n_Data2) ImageInfo or 0
 bg_Url		rs.b	0		; absolute, NUL terminated
 
 ;--------------------------------------------------------------------
+; Tab - a tab (tabs.s): the one in G has its globals there, the others
+; in their save areas
+;--------------------------------------------------------------------
+TAB_MAX		equ	16
+TAB_NAME	equ	32
+TAB_TITLE	equ	64
+	RSRESET
+tb_Save		rs.l	1		; save area (AllocVec) or 0
+tb_SaveLen	rs.l	1		; ... its bytes
+tb_Name		rs.b	TAB_NAME	; links with target= this load here
+tb_Title	rs.b	TAB_TITLE	; its title (while not in G)
+TB_SIZEOF	rs.b	0
+; A save area begins with g_TabA .. g_TkEnd as they are in G: the
+; scheduler reads any tab's loader state at x-g_TabA(area) (tabs.s).
+
+;--------------------------------------------------------------------
 ; Global data block, addressed as xxx(a4)
 ;--------------------------------------------------------------------
 	RSRESET
@@ -472,6 +489,7 @@ g_RDArgs	rs.l	1
 g_ArgArray	rs.l	8
 g_Timeval	rs.l	2
 g_FdSet		rs.l	8		; fd_set for WaitSelect (256 sockets)
+g_FdSetW	rs.l	8		; ... and one for writing (task.s)
 g_SockAddr	rs.b	16
 g_Line		rs.b	LINE_MAX	; current header line
 g_UrlTmp	rs.b	URL_MAX		; scratch for UrlResolve
@@ -479,6 +497,21 @@ g_UrlTmp2	rs.b	URL_MAX		; scratch for callers of UrlResolve
 ; ---- a tab's own globals, low part (tabs.s TabTab: the
 ; scheduler swaps them; a new one goes into TabTab) ----
 g_TabA		rs.b	0
+; the tab's loader (task.s); first, so that the scheduler finds them
+; in any tab's save area (x-g_TabA)
+g_TkStack	rs.l	1		; its stack
+g_TkSSS		rs.b	12		; StackSwapStruct: the other stack
+g_TkEntry	rs.l	1		; its job
+g_TkState	rs.l	1		; LS_xxx
+g_TkAbort	rs.l	1		; 1: stop (its waits fail)
+g_TkSock	rs.l	1		; LS_SOCK: the socket,
+g_TkDir		rs.l	1		; 0 read, 1 write,
+g_TkSince	rs.l	1		; since when (ticks)
+g_TkResult	rs.l	1		; 1 ready, 0 timeout, -1 error
+g_TkSigs	rs.l	1		; LS_SIG: the signals,
+g_TkGot		rs.l	1		; those received
+g_TkLock	rs.l	1		; LS_LOCK: the lock (a long, free at 0)
+g_TkEnd		rs.l	0		; (save areas begin with these)
 g_Error		rs.l	1		; last ERR_xxx
 g_AbortMask	rs.l	1		; signals that interrupt network waits
 g_NetSigHook	rs.l	1		; routine(d0=signals) -> d0<>0 = abort
@@ -623,8 +656,6 @@ g_RefreshTicks	rs.l	1		; meta refresh: ticks to go (0 = none)
 g_RunImg	rs.l	1		; layout: image of the next RECT run
 g_RunRep	rs.l	1		; ... repeated
 g_CssBase	rs.l	1		; URL of the sheet being used, or 0
-g_DecTile	rs.l	1		; decoding a background: tile it to
-g_DecTarget	rs.l	1		; ... where its ImageInfo goes
 g_StyleGen	rs.l	1		; style.s: changes when kept styles are stale
 g_RespFrom	rs.l	1		; cache.s: g_Resp came from 0 the network,
 					; 1 memory, 2 the disk cache as it was
@@ -651,6 +682,7 @@ g_StripRegion	rs.l	1		; the strip's clip region (PaintRect)
 g_DcOn		rs.l	1		; diskcache.s: a cache directory
 g_DcMax		rs.l	1		; bytes it may take
 g_DcUsed	rs.l	1		; bytes it takes
+g_DcTrimming	rs.l	1		; DcTrimOld under way (in a tab's loader)
 g_DcDir		rs.b	DCPATH_MAX	; the directory
 g_DcPath	rs.b	DCPATH_MAX	; an entry's path
 g_StackSwap	rs.l	3		; StackSwapStruct
@@ -937,7 +969,11 @@ g_PbmPlanar	rs.l	1		; a standard planar bitmap: own c2p
 g_PbmKeep	rs.l	1		; keep the pixels (g_PbmSave) for the cache
 g_PbmSave	rs.l	1		; the pixels (pens or ARGB), AllocVec
 g_PalSig	rs.l	1		; the screen's colours (cache key)
-g_DecDcImg	rs.l	1		; cached pixels an orphan decoder reads
+g_DecDcImg	rs.l	1		; the cached pixels it reads (g_DcImg),
+g_DecPixMask	rs.l	1		; ... their mask, or 0
+g_DecTile	rs.l	1		; decoding a background: tile it
+g_DecLock	rs.l	1		; the decoder's: tab + 1, -1 a stopped
+					; load's (img.s DecLock), 0 free
 g_PbmRP		rs.b	rp_SIZEOF	; RastPort on the bitmap
 g_Cube		rs.b	216		; the pens of the colour cube
 g_StripBM	rs.l	1		; off-screen strip for painting
@@ -948,6 +984,7 @@ g_VisN		rs.l	1		; runs in g_Vis, -1: too many
 g_StatusBuf	rs.b	STATUS_MAX
 ; navigation
 g_KeepMax	rs.l	1		; pages kept at most (Velox/KeepPages)
+g_PfLock	rs.l	1		; pagefile.s: the tab + 1 using these, 0 none
 g_PfFail	rs.l	1		; pagefile.s: the page cannot be saved
 g_PfData	rs.l	1		; ... the copy of its memory
 g_PfBits	rs.l	1		; ... which longs of it are pointers
@@ -962,7 +999,6 @@ g_PfSrcUsed	rs.l	1		; ... something points into the source
 g_PfPieces	rs.l	4		; ... what to write: offset, bytes, twice
 g_PfFH		rs.l	1		; ... reading from this file,
 g_PfGen		rs.l	1		; ... g_LayGen when it began
-g_LayGen	rs.l	1		; layout.s: counts the layouts
 g_ScrollPend	rs.l	1		; gui.s: a scroller move to show: top + 1
 g_PfPtr		rs.l	1		; ... or from here
 g_LinkUrl	rs.b	URL_MAX
@@ -1031,6 +1067,8 @@ g_TwLen		rs.l	1		; ... bytes (TW_READ, TW_WRITE),
 g_TwRet		rs.l	1		; ... SSL_xxx's result,
 g_TwErr		rs.l	1		; ... SSL_get_error (result <= 0)
 g_TwBusy	rs.l	1		; a job is under way
+g_TwOwner	rs.l	1		; the tab + 1 whose job it is, until it has
+					; taken the result (conn.s TwRun), 0 none
 g_TwOrphan	rs.l	1		; the SSL of a connection closed while
 					; its job ran: freed after it (conn.s)
 g_TwDelay	rs.l	1		; Velox/TlsDelay (tests)
@@ -1046,6 +1084,16 @@ g_UrlShow	rs.b	URL_MAX		; a URL as shown (without them)
 g_UrlBase	rs.b	URL_MAX		; url.s: a base URL without them
 g_TkT0		rs.l	1		; (profiling: task.s TaskGap)
 g_TkWhere	rs.l	1
+; tabs (tabs.s)
+g_Tabs		rs.b	TAB_MAX*TB_SIZEOF
+g_TabN		rs.l	1		; tabs
+g_TabIn		rs.l	1		; the one in G
+g_TabFront	rs.l	1		; the one shown
+g_TabHidden	rs.l	1		; the one in G is not shown: not painted
+g_TabRR		rs.l	1		; the background tab to run next
+g_TkRunT	rs.l	1		; task.s: when the loader was resumed,
+g_TkPolls	rs.l	1		; ... TaskPolls since it checked the time
+g_WinPage	rs.l	4		; the page area of the window (x y w h)
 g_RefreshPend	rs.l	1		; GuiRefresh cut short: the rest
 ; frames (frames.s): views and rectangles
 g_InFrames	rs.l	1		; gui.s: painting a frame's view
@@ -1090,17 +1138,6 @@ g_NavNext	rs.b	URL_MAX		; NavGo's URL
 g_NavFlags	rs.l	1		; the load's NAV_xxx
 g_NavUndo	rs.l	1		; Back/Forward: the history before (-1)
 g_NavPending	rs.l	1		; bit 31: NavGo from the loader (flags)
-g_TkStack	rs.l	1		; its stack
-g_TkSSS		rs.b	12		; StackSwapStruct: the other stack
-g_TkEntry	rs.l	1		; its job
-g_TkState	rs.l	1		; LS_xxx
-g_TkAbort	rs.l	1		; 1: stop (its waits fail)
-g_TkSock	rs.l	1		; LS_SOCK: the socket,
-g_TkDir		rs.l	1		; 0 read, 1 write,
-g_TkSince	rs.l	1		; since when (ticks)
-g_TkResult	rs.l	1		; 1 ready, 0 timeout, -1 error
-g_TkSigs	rs.l	1		; LS_SIG: the signals,
-g_TkGot		rs.l	1		; those received
 g_TlsAgain	rs.l	1		; a TLS 1.2 handshake failed: try 1.3
 g_TlsPort	rs.l	1		; ConnOpen: the port (TlsHandshake)
 g_Blank		rs.l	1		; 0: the page shown; 1: blank, the page
@@ -1144,6 +1181,7 @@ g_PrgOn		rs.l	1		; shown
 g_PrgDone	rs.l	1		; ... so much of
 g_PrgAll	rs.l	1		; ... all (0 or less: not known: a
 g_PrgAnim	rs.l	1		;     block goes back and forth)
+g_LayGen	rs.l	1		; layout.s: counts the tab's layouts
 g_TabBEnd	rs.b	0
 g_SIZEOF	rs.b	0
 TAB_ASIZE	equ	g_TabAEnd-g_TabA
