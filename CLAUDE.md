@@ -132,6 +132,19 @@ and a single event dispatch point.
   `SSL_pending`, sessions), never on the SSL of a job under way, and
   anything a job reads (its host, its data) is set after `TwRun` has
   waited for the job before: a job of a stopped page runs on to its end.
+- Each tab has its own page and loader (tabs.s, task.s), and all load
+  at once. G holds one tab's globals at a time; the others are in save
+  areas, and the event loop swaps them (`TabSelect`). A global of a
+  page or its loader goes between `g_TabA` and `g_TabAEnd` (or
+  `g_TabB` .. `g_TabBEnd` for big buffers) in velox.i, and into
+  `TabTab` (tabs.s; the assembler checks that TabTab covers them).
+  Everything else in G is shared by the tabs, so a loader must not keep
+  data in a shared global across a yield: another tab's loader runs
+  meanwhile. What must stay across one (the decoder, the TLS process,
+  page files) is locked (`DecLock`, `g_TwOwner`, `g_PfLock`). Nothing
+  outside G (the decoder or TLS process, the OS) may keep a pointer
+  into a tab's globals while another tab can be swapped in. A tab
+  behind paints nothing (`g_TabHidden`): drawing routines return early.
 - A page is its arena (`PageAlloc`), its buffers and the globals listed
   in `KeepTab` (keep.s): pages are kept for Back by copying those, and
   saved to disk as page files (pagefile.s). A new per-page global goes

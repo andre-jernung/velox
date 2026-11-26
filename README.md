@@ -47,6 +47,11 @@ A small, fast web browser for classic AmigaOS 3.x, written entirely in
   (also one set by an `onclick="target='main';"`, as old framed sites
   do), and Back undoes that. Iframes are links to their
   pages. `<meta>` refresh redirects
+- Tabs, each loading on its own, all at once (pages, style sheets,
+  images, frames): Shift-click or the middle button opens a link in a
+  tab behind, `target="_blank"` in a new tab, and a target name in the
+  tab of that name. A strip of the tabs below the toolbar (with two or
+  more): a click shows one, the middle button closes it, `+` opens one
 - Image maps: client side (`usemap`, `<area>` rectangles, circles,
   polygons; Tab steps through the areas) and server side (`ismap`)
 - Keyboard navigation for everything; keys typed while a page loads
@@ -107,6 +112,10 @@ saved in `ENVARC:Velox/Cookies`; delete that file to forget them.
 | Amiga-S              | save the page or file                   |
 | Amiga-C              | copy the address (of the focused link)  |
 | Amiga-U              | view the page source                    |
+| Amiga-T              | a new tab (type its address)            |
+| Amiga-W              | close the tab                           |
+| Amiga-. / Amiga-,    | next / previous tab                     |
+| Shift-Return         | open the focused link in a tab behind   |
 | Ctrl-Q               | quit                                    |
 
 The Amiga key works in place of Ctrl for the menu commands.

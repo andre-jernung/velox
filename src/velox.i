@@ -58,6 +58,11 @@ LASTMOD_MAX	equ	40		; Last-Modified value kept
 DCPATH_MAX	equ	256		; disk cache: a file's path
 DCSTR_MAX	equ	URL_MAX+64+ETAG_MAX+LASTMOD_MAX+8 ; its strings
 NET_TIMEOUT	equ	60		; seconds without data before giving up
+; NavGo's flags (nav.s)
+NAV_HISTORY	equ	1
+NAV_CACHE	equ	2		; Back/Forward: from the cache if there
+NAV_RELOAD	equ	4		; fetch everything anew
+NAV_REPLACE	equ	8		; replaces the current history entry
 LS_IDLE		equ	0		; the loader (task.s): no job
 LS_RUN		equ	1		; ready to run
 LS_SOCK		equ	2		; waiting for a socket
@@ -467,6 +472,9 @@ tb_Save		rs.l	1		; save area (AllocVec) or 0
 tb_SaveLen	rs.l	1		; ... its bytes
 tb_Name		rs.b	TAB_NAME	; links with target= this load here
 tb_Title	rs.b	TAB_TITLE	; its title (while not in G)
+tb_Id		rs.l	1		; never the same twice (locks name it)
+tb_Drawn	rs.b	TAB_TITLE	; the title the tab strip shows
+tb_DrawnBusy	rs.l	1		; ... and if it shows it loading
 TB_SIZEOF	rs.b	0
 ; A save area begins with g_TabA .. g_TkEnd as they are in G: the
 ; scheduler reads any tab's loader state at x-g_TabA(area) (tabs.s).
@@ -972,7 +980,7 @@ g_PalSig	rs.l	1		; the screen's colours (cache key)
 g_DecDcImg	rs.l	1		; the cached pixels it reads (g_DcImg),
 g_DecPixMask	rs.l	1		; ... their mask, or 0
 g_DecTile	rs.l	1		; decoding a background: tile it
-g_DecLock	rs.l	1		; the decoder's: tab + 1, -1 a stopped
+g_DecLock	rs.l	1		; the decoder's: tab's tb_Id, -1 a stopped
 					; load's (img.s DecLock), 0 free
 g_PbmRP		rs.b	rp_SIZEOF	; RastPort on the bitmap
 g_Cube		rs.b	216		; the pens of the colour cube
@@ -984,7 +992,7 @@ g_VisN		rs.l	1		; runs in g_Vis, -1: too many
 g_StatusBuf	rs.b	STATUS_MAX
 ; navigation
 g_KeepMax	rs.l	1		; pages kept at most (Velox/KeepPages)
-g_PfLock	rs.l	1		; pagefile.s: the tab + 1 using these, 0 none
+g_PfLock	rs.l	1		; pagefile.s: the tb_Id of the tab using these, 0 none
 g_PfFail	rs.l	1		; pagefile.s: the page cannot be saved
 g_PfData	rs.l	1		; ... the copy of its memory
 g_PfBits	rs.l	1		; ... which longs of it are pointers
@@ -1067,7 +1075,7 @@ g_TwLen		rs.l	1		; ... bytes (TW_READ, TW_WRITE),
 g_TwRet		rs.l	1		; ... SSL_xxx's result,
 g_TwErr		rs.l	1		; ... SSL_get_error (result <= 0)
 g_TwBusy	rs.l	1		; a job is under way
-g_TwOwner	rs.l	1		; the tab + 1 whose job it is, until it has
+g_TwOwner	rs.l	1		; the tb_Id of the tab whose job it is, until it has
 					; taken the result (conn.s TwRun), 0 none
 g_TwOrphan	rs.l	1		; the SSL of a connection closed while
 					; its job ran: freed after it (conn.s)
@@ -1091,6 +1099,14 @@ g_TabIn		rs.l	1		; the one in G
 g_TabFront	rs.l	1		; the one shown
 g_TabHidden	rs.l	1		; the one in G is not shown: not painted
 g_TabRR		rs.l	1		; the background tab to run next
+g_TabId		rs.l	1		; the tb_Id of the one in G (locks)
+g_TabIdNext	rs.l	1		; ... the next one made
+g_TabTpl	rs.l	1		; a new tab's globals (a save area)
+g_TabArg	rs.b	TAB_NAME	; a tab's name, passed (TabNew)
+g_LinkNewTab	rs.l	1		; NavLink: into a background tab
+g_StripY	rs.l	1		; gui.s: the tab strip (2 tabs or more)
+g_StripH	rs.l	1		; ... its height, 0: not shown
+g_WinTitle	rs.b	STATUS_MAX	; the window's title (the shown tab's)
 g_TkRunT	rs.l	1		; task.s: when the loader was resumed,
 g_TkPolls	rs.l	1		; ... TaskPolls since it checked the time
 g_WinPage	rs.l	4		; the page area of the window (x y w h)

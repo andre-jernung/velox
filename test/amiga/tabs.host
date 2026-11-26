@@ -1,0 +1,184 @@
+#!/usr/bin/env python3
+"""Host side of tabs.script: tabs.html opens images.html in a tab behind
+(Shift+Return on its link), and the shown tab goes to /trickle (10 s):
+the tab behind is done first, both load at once.  Then: the tabs
+shown in turn (Amiga+. and Amiga+,), target="_blank" makes a tab,
+target="side" a tab of that name, used again by the next link with
+it; Amiga+T a tab of the address typed; Amiga+W closes them.  A tab
+opened and closed again and again gives back its memory."""
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from xdrive import Amiga, wait_log  # noqa: E402
+
+r = sys.argv[1]
+log = os.path.join(r, "tabs.log")
+out = open(os.path.join(r, "tabs.driver"), "w")
+U = "http://127.0.0.1:8080/"
+
+
+def step(m):
+    out.write(m + "\n")
+    out.flush()
+
+
+def lines():
+    with open(log, "rb") as f:
+        return f.read().decode("latin-1").splitlines()
+
+
+def after(n, needle, timeout=60):
+    """wait for a line with needle after the first n lines"""
+    end = time.time() + timeout
+    while time.time() < end:
+        ls = lines()
+        for i in range(n, len(ls)):
+            if needle in ls[i]:
+                return i
+        time.sleep(0.3)
+    raise TimeoutError("no %r after line %d: %r" % (needle, n, lines()[n:][-12:]))
+
+
+def focus(a, url):
+    for i in range(8):
+        n = len(lines())
+        a.key("Tab")
+        j = after(n, "focus ")
+        if lines()[j] == "focus " + url:
+            return
+    raise AssertionError("no focus on " + url)
+
+
+import threading
+
+
+def keep():
+    # (a copy of the log as it grows: after a crash, the emulator boots
+    # again and the test begins anew)
+    most = 0
+    while True:
+        try:
+            d = open(log, "rb").read()
+            if len(d) > most:
+                most = len(d)
+                open(os.path.join(r, "tabs.last.log"), "wb").write(d)
+        except Exception:
+            pass
+        time.sleep(0.5)
+
+
+threading.Thread(target=keep, daemon=True).start()
+try:
+    a = Amiga()
+    wait_log(log, "page " + U + "tabs.html", timeout=60)
+    time.sleep(1)
+    # a tab behind, and the shown tab loading too
+    focus(a, "images.html")
+    n = len(lines())
+    a.key("shift+Return")
+    after(n, "tabnew 1")
+    a.key("ctrl+l")
+    a.type(U + "trickle")
+    a.key("Return")
+    i = after(n, "page " + U + "images.html", 90)
+    j = after(i, "images ", 90)
+    k = after(n, "page " + U + "trickle", 90)
+    ls = lines()
+    step("behind: %s, %s; shown: %s" % (ls[i], ls[j], ls[k]))
+    if ls[j] != "images 6":
+        raise AssertionError("the tab behind: " + ls[j])
+    if not j < k:
+        raise AssertionError("the tab behind was not done first")
+    # the tabs shown in turn
+    n = len(lines())
+    a.key("amiga+.")
+    after(n, "tab 1")
+    p = after(n, "paint ")
+    step("shown: tab 1, " + lines()[p])
+    time.sleep(1)
+    a.shot(os.path.join(r, "tabs-1.png"))
+    n = len(lines())
+    a.key("amiga+,")
+    after(n, "tab 0")
+    # back to tabs.html: its target= links
+    n = len(lines())
+    a.key("amiga+b")
+    after(n, "page " + U + "tabs.html")
+    time.sleep(1)
+    focus(a, "second.html")
+    n = len(lines())
+    a.key("Return")
+    after(n, "tabnew 2")
+    after(n, "tab 2")
+    after(n, "page " + U + "second.html")
+    step("_blank: a new tab")
+    n = len(lines())
+    a.key("amiga+,")
+    a.key("amiga+,")
+    after(n, "tab 0")
+    time.sleep(1)
+    focus(a, "third.html")
+    n = len(lines())
+    a.key("Return")
+    after(n, "tabnew 3")
+    after(n, "page " + U + "third.html")
+    n = len(lines())
+    a.key("amiga+.")			# (from the last: the first)
+    after(n, "tab 0")
+    time.sleep(1)
+    focus(a, "index.html")
+    n = len(lines())
+    a.key("Return")
+    after(n, "tab 3")
+    after(n, "page " + U + "index.html")
+    if any(l.startswith("tabnew") for l in lines()[n:]):
+        raise AssertionError("target=side: a new tab again")
+    step("target=side: the same tab")
+    a.shot(os.path.join(r, "tabs-2.png"))
+    # Amiga+T: a new tab, its address typed
+    n = len(lines())
+    a.key("amiga+t")
+    after(n, "tabnew 4")
+    time.sleep(1)
+    a.type(U + "second.html")
+    a.key("Return")
+    after(n, "page " + U + "second.html")
+    step("Amiga+T: a new tab")
+    # closed: 4 of the 5
+    for t in range(4):
+        n = len(lines())
+        a.key("amiga+w")
+        after(n, "tabclose")
+    step("closed")
+    # opened and closed again and again: the memory comes back
+    mem = []
+    for t in range(3):
+        n = len(lines())
+        a.key("amiga+t")
+        after(n, "tabnew 1")
+        time.sleep(1)
+        a.type(U + "images.html")
+        a.key("Return")
+        after(n, "images ", 90)
+        time.sleep(1)
+        n = len(lines())
+        a.key("amiga+w")
+        m = after(n, "tabmem ")
+        mem.append(int(lines()[m].split()[1]))
+    step("free memory after each: %s" % mem)
+    if abs(mem[2] - mem[1]) > 4096:
+        raise AssertionError("a tab closed keeps memory")
+    a.key("ctrl+q")
+    step("ok")
+except Exception as e:
+    step("FAIL %r" % e)
+    try:
+        open(os.path.join(r, "tabs.fail.log"), "w").write("\n".join(lines()))
+    except Exception:
+        pass
+    try:
+        Amiga().key("ctrl+q")
+    except Exception:
+        pass

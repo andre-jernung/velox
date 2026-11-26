@@ -33,7 +33,9 @@
 	xref	PalFree,ImagesStop,ImagesPending,ImagesStep,ImagesFree,ImagePaint
 	xref	KeepFreeAll
 	xref	TaskResume,TaskLoopWait,TaskBusy,TaskAbort,NavStop,ImagesReap,ImagesReapNow,ImagesQuit,FragCheck,TaskNow
-	xref	TaskPick,TabSelect
+	xref	TaskPick,TabSelect,TabNew,TabClose,TabNext,TabShow,TabQuit,TabCaption
+	xref	TabBase,TabRec
+	xdef	GuiTabShown,GuiStripSync,PaintStrip
 
 PROP_FONT	equ	0
 SCROLL_W	equ	18
@@ -483,10 +485,21 @@ CreateGadgets:
 	moveq	#0,d3
 	move.b	wd_BorderTop(a3),d3
 	addq.l	#2,d3			; d3 = y of the toolbar
-	; page area and status line
+	; page area and status line (and the tab strip between them and
+	; the toolbar, with two tabs or more)
 	move.l	d3,d0
 	add.l	d6,d0
 	addq.l	#3,d0
+	move.l	d0,g_StripY(a4)
+	clr.l	g_StripH(a4)
+	cmp.l	#2,g_TabN(a4)
+	blo.s	.nstrip
+	move.l	d5,d1
+	addq.l	#4,d1
+	move.l	d1,g_StripH(a4)
+	add.l	d1,d0
+	addq.l	#2,d0
+.nstrip:
 	move.l	d0,g_PageY(a4)
 	moveq	#0,d0
 	move.b	wd_BorderLeft(a3),d0
@@ -2934,14 +2947,352 @@ UrlX:	rts
 ; HidX - (a tab in the background) nothing painted
 HidX:	rts
 
+;--------------------------------------------------------------------
+; The tab strip, between the toolbar and the page (two tabs or more):
+; each tab's title (a mark before it while it loads), the shown one
+; white, then "+" for a new one.  A click shows a tab, the middle
+; button closes it.
+;--------------------------------------------------------------------
+STRIP_TABW	equ	160		; a tab's width at most
+STRIP_PLUS	equ	20		; the "+" box
+
+; StripGeom - Out: d0 = the strip's left x, d1 = a tab's width
+StripGeom:
+	move.l	g_TabN(a4),-(sp)
+	move.l	g_WinPage+8(a4),d1	; (the page and the scroller)
+	add.l	#SCROLL_W-STRIP_PLUS,d1
+	divu.l	(sp)+,d1
+	cmp.l	#STRIP_TABW,d1
+	bls.s	.w
+	move.l	#STRIP_TABW,d1
+.w:	move.l	g_WinPage(a4),d0
+	rts
+
+; GuiStripSync - (the shown tab in G) the strip there if there are two
+; tabs or more, gone if not (the page area changes), else painted
+GuiStripSync:
+	moveq	#0,d0
+	cmp.l	#2,g_TabN(a4)
+	blo.s	.w
+	moveq	#1,d0
+.w:	tst.l	g_StripH(a4)
+	sne	d1
+	and.l	#1,d1
+	cmp.l	d0,d1
+	beq	PaintStrip
+	bra	OnResize
+
+; GuiTabShown - (tabs.s TabShow) the tab now in G shown: all of the
+; window is its
+GuiTabShown:
+	movem.l	d2,-(sp)
+	moveq	#0,d0			; the strip (it may come or go)
+	cmp.l	#2,g_TabN(a4)
+	blo.s	.w
+	moveq	#1,d0
+.w:	tst.l	g_StripH(a4)
+	sne	d1
+	and.l	#1,d1
+	moveq	#0,d2			; d2 = 1: laid out and painted
+	cmp.l	d0,d1
+	beq.s	.st
+	bsr	OnResize
+	moveq	#1,d2
+.st:	lea	g_PageUrl(a4),a0	; its address
+	tst.l	g_Blank(a4)
+	bne.s	.nu
+	tst.b	(a0)
+	bne.s	.u
+.nu:	lea	g_NavUrl(a4),a0
+.u:	bsr	UrlPut
+	move.l	g_TabFront(a4),d0	; its title
+	jsr	TabCaption
+	bsr	GuiSetTitle
+	jsr	TaskBusy		; (done meanwhile: no progress bar)
+	bne.s	.b
+	clr.l	g_PrgOn(a4)
+.b:	tst.l	d2
+	bne.s	.s
+	tst.l	g_Blank(a4)		; its page
+	bne.s	.blank
+	tst.l	g_ViewLive(a4)
+	beq.s	.blank
+	bsr	GuiPageWidth
+	cmp.l	g_LayWidth(a4),d0
+	beq.s	.same
+	bsr	GuiRelayout		; (another width meanwhile)
+	bra.s	.s
+.same:	bsr	GuiPaintAll
+	bsr	UpdateScroller
+	bra.s	.s
+.blank:	bsr	PaintBlank
+.s:	bsr	DrawStatus
+	bsr	ProgDraw
+	movem.l	(sp)+,d2
+	bra	PaintStrip
+
+; StripStale - (event loop) the strip painted again if a tab's title or
+; its loading changed
+StripStale:
+	tst.l	g_StripH(a4)
+	beq.s	.x
+	movem.l	d2,-(sp)
+	move.l	g_TabN(a4),d2
+.l:	subq.l	#1,d2
+	bmi.s	.same
+	move.l	d2,d0
+	jsr	TabBase
+	tst.l	g_TkState-g_TabA(a0)
+	sne	d1
+	and.l	#1,d1
+	move.l	d2,d0
+	jsr	TabRec
+	cmp.l	tb_DrawnBusy(a0),d1
+	bne.s	.paint
+	move.l	d2,d0
+	jsr	TabCaption
+	move.l	a0,-(sp)
+	move.l	d2,d0
+	jsr	TabRec
+	lea	tb_Drawn(a0),a1
+	move.l	(sp)+,a0
+	moveq	#TAB_TITLE-2,d0
+.c:	move.b	(a0)+,d1
+	cmp.b	(a1)+,d1
+	bne.s	.paint
+	tst.b	d1
+	dbeq	d0,.c
+	bra.s	.l
+.same:	movem.l	(sp)+,d2
+.x:	rts
+.paint:	movem.l	(sp)+,d2
+	bra	PaintStrip
+
+; StripClick - (IDCMP_MOUSEBUTTONS d3, at d5/d6) on the strip?  A tab
+; shown, "+" a new tab, the middle button: a tab closed
+; Out: d0 = 1 if it was on the strip (CCR set)
+StripClick:
+	tst.l	g_StripH(a4)
+	beq.s	.no
+	move.l	d6,d0
+	sub.l	g_StripY(a4),d0
+	bmi.s	.no
+	cmp.l	g_StripH(a4),d0
+	bhs.s	.no
+	movem.l	d2,-(sp)
+	bsr	StripGeom
+	move.l	d5,d2
+	sub.l	d0,d2			; d2 = x in the strip
+	bmi.s	.y
+	divu.l	d1,d2			; d2 = the tab
+	cmp.l	g_TabN(a4),d2
+	blo.s	.tab
+	move.l	g_TabN(a4),-(sp)
+	mulu.l	(sp)+,d1		; "+"?
+	add.l	#STRIP_PLUS,d1
+	add.l	d0,d1
+	cmp.l	d1,d5
+	bhs.s	.y
+	cmp.w	#IECODE_LBUTTON,d3
+	bne.s	.y
+	suba.l	a0,a0
+	suba.l	a1,a1
+	moveq	#1,d0
+	jsr	TabNew
+	bmi.s	.y
+	bsr	ActivateUrl
+	bra.s	.y
+.tab:	move.l	d2,d0
+	cmp.w	#IECODE_LBUTTON,d3
+	bne.s	.mid
+	cmp.l	g_TabFront(a4),d0
+	beq.s	.y
+	jsr	TabShow
+	bra.s	.y
+.mid:	cmp.w	#IECODE_MBUTTON,d3
+	bne.s	.y
+	jsr	TabClose
+.y:	movem.l	(sp)+,d2
+	moveq	#1,d0
+	rts
+.no:	moveq	#0,d0
+	rts
+
+; PaintStrip - draw the tab strip (any tab in G)
+PaintStrip:
+	tst.l	g_StripH(a4)
+	beq	.x0
+	tst.l	g_Window(a4)
+	beq	.x0
+	movem.l	d2-d7/a2-a3,-(sp)
+	move.l	g_Window(a4),a0
+	move.l	wd_RPort(a0),a3		; a3 = RastPort
+	move.l	a3,a1
+	move.l	g_ScreenFont(a4),a0
+	GFX	SetFont
+	move.l	a3,a1
+	moveq	#0,d0
+	moveq	#7,d1
+	GFX	SetSoftStyle
+	moveq	#-1,d0			; (the window font changed)
+	move.l	d0,g_PaintFont(a4)
+	move.l	d0,g_PaintFont+4(a4)
+	move.l	a3,a1
+	moveq	#RP_JAM1,d0
+	GFX	SetDrMd
+	move.l	a3,a1			; the strip: the window's grey
+	moveq	#0,d0
+	GFX	SetAPen
+	move.l	a3,a1
+	move.l	g_WinPage(a4),d0
+	move.l	g_StripY(a4),d1
+	move.l	d0,d2
+	add.l	g_WinPage+8(a4),d2
+	add.l	#SCROLL_W-1,d2
+	move.l	d1,d3
+	add.l	g_StripH(a4),d3
+	subq.l	#1,d3
+	GFX	RectFill
+	moveq	#0,d7			; d7 = the tab
+.t:	cmp.l	g_TabN(a4),d7
+	bhs	.plus
+	bsr	StripGeom
+	move.l	d1,d6
+	mulu.l	d7,d6
+	add.l	d0,d6			; d6 = its left
+	move.l	d6,d2			; d2..d4 x d3..d5: its box
+	move.l	d6,d4
+	add.l	d1,d4
+	subq.l	#3,d4
+	move.l	g_StripY(a4),d3
+	move.l	d3,d5
+	add.l	g_StripH(a4),d5
+	subq.l	#1,d5
+	cmp.l	g_TabFront(a4),d7
+	bne.s	.nf
+	move.l	#$ffffff,d0		; the shown one: white
+	bsr	FillBox
+.nf:	move.l	d6,-(sp)
+	moveq	#1,d6
+	bsr	Bevel
+	move.l	(sp)+,d6
+	move.l	d7,d0			; loading?
+	jsr	TabBase
+	tst.l	g_TkState-g_TabA(a0)
+	sne	d1
+	and.l	#1,d1
+	move.l	d7,d0
+	jsr	TabRec
+	move.l	a0,a2			; a2 = its record
+	move.l	d1,tb_DrawnBusy(a2)
+	addq.l	#4,d6			; (text x)
+	tst.l	d1
+	beq.s	.nb
+	move.l	#$0000c0,d0		; a mark: it loads
+	movem.l	d2-d5,-(sp)
+	move.l	d6,d2
+	move.l	g_StripH(a4),d3		; (in the middle)
+	lsr.l	#1,d3
+	add.l	g_StripY(a4),d3
+	subq.l	#2,d3
+	move.l	d2,d4
+	addq.l	#3,d4
+	move.l	d3,d5
+	addq.l	#3,d5
+	move.l	#$0000c0,d0
+	bsr	FillBox
+	movem.l	(sp)+,d2-d5
+	addq.l	#6,d6
+.nb:	move.l	d7,d0			; its title, as it fits
+	jsr	TabCaption
+	move.l	a0,-(sp)
+	lea	tb_Drawn(a2),a1		; (what is shown: StripStale)
+	moveq	#TAB_TITLE-2,d0
+.cp:	move.b	(a0)+,(a1)+
+	dbeq	d0,.cp
+	clr.b	(a1)
+	move.l	#$000000,d0
+	bsr	SetPenRGB
+	move.l	(sp)+,a0
+	move.l	a0,a2			; a2 = the text
+	jsr	StrLen
+	move.l	d4,d2			; the room: to the right edge - 2
+	sub.l	d6,d2
+	subq.l	#2,d2
+	ble.s	.nt
+	lea	-16(sp),sp		; TextFit(rp, s, n, te, 0, 1, w, h)
+	move.l	a2,a0
+	move.l	a3,a1
+	movem.l	a2-a3,-(sp)
+	lea	8(sp),a2
+	suba.l	a3,a3
+	moveq	#1,d1
+	moveq	#127,d3
+	GFX	TextFit
+	movem.l	(sp)+,a2-a3
+	lea	16(sp),sp
+	move.l	d0,-(sp)
+	move.l	a3,a1
+	move.l	d6,d0
+	move.l	g_ScreenFont(a4),a0
+	moveq	#0,d1
+	move.w	tf_Baseline(a0),d1
+	add.l	g_StripY(a4),d1
+	addq.l	#2,d1
+	GFX	Move
+	move.l	(sp)+,d0
+	move.l	a3,a1
+	move.l	a2,a0
+	GFX	Text
+.nt:	addq.l	#1,d7
+	bra	.t
+.plus:	bsr	StripGeom		; "+": a new tab
+	move.l	g_TabN(a4),-(sp)
+	mulu.l	(sp)+,d1
+	add.l	d0,d1
+	move.l	d1,d2
+	move.l	d1,d4
+	add.l	#STRIP_PLUS-3,d4
+	move.l	g_StripY(a4),d3
+	move.l	d3,d5
+	add.l	g_StripH(a4),d5
+	subq.l	#1,d5
+	moveq	#1,d6
+	bsr	Bevel
+	move.l	#$000000,d0
+	bsr	SetPenRGB
+	move.l	a3,a1
+	move.l	d2,d0
+	addq.l	#6,d0
+	move.l	g_ScreenFont(a4),a0
+	moveq	#0,d1
+	move.w	tf_Baseline(a0),d1
+	add.l	g_StripY(a4),d1
+	addq.l	#2,d1
+	GFX	Move
+	move.l	a3,a1
+	lea	StrPlus(pc),a0
+	moveq	#1,d0
+	GFX	Text
+	movem.l	(sp)+,d2-d7/a2-a3
+.x0:	rts
+
+StrPlus:	dc.b	"+",0
+	even
+
 ; GuiSetTitle - In: a0 = window title (kept by the caller)
 GuiSetTitle:
 	tst.l	g_TabHidden(a4)		; (a tab in the background: not shown)
 	bne	HidX
 	move.l	g_Window(a4),d0
 	beq.s	.x
-	move.l	a0,a1
-	move.l	d0,a0
+	lea	g_WinTitle(a4),a1	; (Intuition keeps the pointer: a copy
+	move.l	#STATUS_MAX-2,d0	;  no tab changes)
+.c:	move.b	(a0)+,(a1)+
+	dbeq	d0,.c
+	clr.b	(a1)
+	lea	g_WinTitle(a4),a1
+	move.l	g_Window(a4),a0
 	move.l	a2,-(sp)
 	lea	ScreenTitle(pc),a2
 	INTUI	SetWindowTitles
@@ -3009,8 +3360,9 @@ GuiEventLoop:
 	jsr	TabSelect
 	beq.s	.idle			; (no memory to switch)
 	jsr	TaskResume
+	bsr	StripStale		; (a tab's title, its loading: shown)
 	tst.l	g_TkState(a4)		; done: a NavGo it asked for?
-	bne.s	.loop
+	bne	.loop
 	tst.l	g_TabHidden(a4)		; (the shown tab's: no progress bar)
 	bne.s	.nb
 	tst.l	g_PrgOn(a4)
@@ -3046,9 +3398,8 @@ GuiEventLoop:
 	beq.s	.x
 	jsr	NavStop
 	bra	.loop
-.x:	move.l	g_TabFront(a4),d0	; (each tab's load unwinds:
-	jsr	TabSelect		;  connections close)
-	jsr	TaskAbort
+.x:	jsr	TabQuit			; (each tab's load unwinds:
+	jsr	TaskAbort		;  connections close)
 	jsr	ImagesQuit		; (and its decoder ends)
 	movem.l	(sp)+,d2-d7/a2
 	rts
@@ -3415,13 +3766,18 @@ ScrollFlush:
 ; only noted (g_ScrollPend): of those waiting, only the last is shown,
 ; after the others (ScrollFlush), so the page keeps up with the knob.
 HandleEvent:
-	tst.l	g_FrN(a4)		; a page of frames: the view of the
+	cmp.l	#IDCMP_MOUSEBUTTONS,d2	; the tab strip's?
+	bne.s	.ns
+	bsr	StripClick
+	bne.s	.x
+.ns:	tst.l	g_FrN(a4)		; a page of frames: the view of the
 	beq.s	HandleEvent1		; event's frame in G, then the page's
 	bsr	FrameRoute		; again (a frame's scrollbar: the
 	bne.s	.sb			;  event is its)
 	bsr.s	HandleEvent1
 .sb:	moveq	#0,d0
 	jmp	ViewSelect
+.x:	rts
 HandleEvent1:
 	tst.l	g_ScrollPend(a4)
 	beq.s	.np
@@ -3457,7 +3813,8 @@ HandleEvent1:
 	move.l	g_Window(a4),a0
 	moveq	#-1,d0
 	GT	GT_EndRefresh
-	bra	GuiPaintAll
+	bsr	GuiPaintAll
+	bra	PaintStrip
 .nr:	cmp.l	#IDCMP_GADGETUP,d2
 	beq	OnGadget
 	cmp.l	#IDCMP_MOUSEMOVE,d2
@@ -3978,6 +4335,10 @@ MA_BOOKMARKS	equ	9
 MA_FIND		equ	10
 MA_COPY		equ	11
 MA_SOURCE	equ	12
+MA_NEWTAB	equ	13
+MA_CLOSETAB	equ	14
+MA_NEXTTAB	equ	15
+MA_PREVTAB	equ	16
 MenuActions:
 	dc.w	ActivateUrl-MenuActions,MenuSave-MenuActions
 	dc.w	GuiAbout-MenuActions,MenuQuit-MenuActions
@@ -3986,6 +4347,8 @@ MenuActions:
 	dc.w	MenuAddBm-MenuActions,MenuBookmarks-MenuActions
 	dc.w	MenuFind-MenuActions,MenuCopy-MenuActions
 	dc.w	MenuSource-MenuActions
+	dc.w	MenuNewTab-MenuActions,MenuCloseTab-MenuActions
+	dc.w	MenuNextTab-MenuActions,MenuPrevTab-MenuActions
 
 MenuSave:	jmp	SaveDownload
 MenuAddBm:	jmp	BookmarkAdd
@@ -3993,6 +4356,18 @@ MenuBookmarks:	jmp	BookmarksShow
 MenuFind:	jmp	FindStart
 MenuCopy:	jmp	CopyAddress
 MenuSource:	jmp	ViewSource
+MenuNewTab:	suba.l	a0,a0		; a new tab, its address typed
+		suba.l	a1,a1
+		moveq	#1,d0
+		jsr	TabNew
+		bpl	ActivateUrl
+		rts
+MenuCloseTab:	move.l	g_TabFront(a4),d0
+		jmp	TabClose
+MenuNextTab:	moveq	#1,d0
+		jmp	TabNext
+MenuPrevTab:	moveq	#-1,d0
+		jmp	TabNext
 MenuQuit:	moveq	#1,d0
 		move.l	d0,g_Quit(a4)
 		rts
@@ -4017,7 +4392,21 @@ AboutEasy:
 OnClick:
 	tst.l	g_Blank(a4)		; (blank: no links)
 	bne	ScrollNone
-	cmp.w	#IECODE_LBUTTON,d3
+	cmp.w	#IECODE_MBUTTON,d3	; the middle button on a link: a tab
+	bne.s	.nm			; of its own, behind
+	bsr	LinkAt
+	tst.l	d0
+	beq.s	.x
+	move.l	d0,a0
+	move.l	a0,-(sp)
+	jsr	FormIsControl
+	movem.l	(sp)+,a0
+	tst.l	d0
+	bne.s	.x
+	moveq	#1,d0
+	move.l	d0,g_LinkNewTab(a4)
+	bra	ToNavLink
+.nm:	cmp.w	#IECODE_LBUTTON,d3
 	bne.s	.up
 	bsr	LinkAt
 	move.l	d0,g_PressLink(a4)
@@ -4047,13 +4436,19 @@ Activate:
 	jsr	FormIsControl
 	movem.l	(sp)+,a0
 	tst.l	d0
-	beq	ToNavLink
+	beq.s	.link
 	moveq	#1,d0
 	move.w	d4,d1
 	and.w	#IEQUALIFIER_LSHIFT|IEQUALIFIER_RSHIFT,d1
 	beq	ToFormActivate
 	moveq	#-1,d0
 	jmp	FormActivate
+.link:	move.w	d4,d1			; Shift: a tab of its own, behind
+	and.w	#IEQUALIFIER_LSHIFT|IEQUALIFIER_RSHIFT,d1
+	beq	ToNavLink
+	moveq	#1,d0
+	move.l	d0,g_LinkNewTab(a4)
+	bra	ToNavLink
 
 ; OnResize - new window size: rebuild gadgets, lay out again
 OnResize:
@@ -4068,7 +4463,8 @@ OnResize:
 	clr.l	g_GadScroll(a4)
 	bsr	CreateGadgets
 	clr.l	g_BandsOk(a4)
-	bra	GuiRelayout
+	bsr	GuiRelayout
+	bra	PaintStrip
 
 ;--------------------------------------------------------------------
 ; GuiNetHook - called by the network code when a window message or
@@ -4522,6 +4918,11 @@ NewMenus:
 	NM	NM_ITEM,MCopy,KeyC,MA_COPY
 	NM	NM_ITEM,MSource,KeyU,MA_SOURCE
 	NM	NM_ITEM,NM_BARLABEL,0,0
+	NM	NM_ITEM,MNewTab,KeyT,MA_NEWTAB
+	NM	NM_ITEM,MCloseTab,KeyW,MA_CLOSETAB
+	NM	NM_ITEM,MNextTab,KeyDot,MA_NEXTTAB
+	NM	NM_ITEM,MPrevTab,KeyComma,MA_PREVTAB
+	NM	NM_ITEM,NM_BARLABEL,0,0
 	NM	NM_ITEM,MAbout,KeyA,MA_ABOUT
 	NM	NM_ITEM,NM_BARLABEL,0,0
 	NM	NM_ITEM,MQuit,KeyQ,MA_QUIT
@@ -4550,6 +4951,14 @@ MFind:		dc.b	"Find in page",0
 MCopy:		dc.b	"Copy address",0
 MSource:	dc.b	"View source",0
 MBookmarks:	dc.b	"Bookmarks",0
+MNewTab:	dc.b	"New tab",0
+MCloseTab:	dc.b	"Close tab",0
+MNextTab:	dc.b	"Next tab",0
+MPrevTab:	dc.b	"Previous tab",0
+KeyT:		dc.b	"T",0
+KeyW:		dc.b	"W",0
+KeyDot:		dc.b	".",0
+KeyComma:	dc.b	",",0
 KeyL:		dc.b	"L",0
 KeyS:		dc.b	"S",0
 KeyA:		dc.b	"?",0

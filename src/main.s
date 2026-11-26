@@ -14,7 +14,7 @@
 	xref	PutStr,PutBuf,PutNum,PutNL,FlushOut,ErrorText
 	xref	GuiOpen,GuiClose,GuiEventLoop,NavGo,NavExit,StrIPrefix,ParseDec
 	xref	StrCopyN,CacheInit,CookiesLoad,CookiesSave,TaskInit,TaskExit,DcInit
-	xref	TabInit
+	xref	TabInit,TabTemplate,TabExit
 
 STACK_SIZE	equ	65536
 
@@ -153,6 +153,7 @@ Main:
 	beq.s	.closegui
 	jsr	GuiOpen
 	beq.s	.closegui
+	jsr	TabTemplate		; (what a new tab begins with)
 	move.l	g_ArgArray+ARG_URL(a4),d0	; URL argument, URL tooltype,
 	bne.s	.arg				; home page, the start page
 	lea	g_StartUrl(a4),a0
@@ -176,6 +177,7 @@ Main:
 	jsr	GuiClose
 	jsr	NavExit
 	jsr	TaskExit
+	jsr	TabExit
 .cleanup:
 	move.l	g_LogFH(a4),d1
 	beq.s	.nologf

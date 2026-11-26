@@ -28,7 +28,7 @@
 
 	include	"velox.i"
 
-	xdef	FramesCompose,FrameNav,FrameSplit,FrameShow
+	xdef	FramesCompose,FrameNav,FrTargetOf,FrameSplit,FrameShow
 	xdef	FramesPage,FramesLayout,FramesFree,ViewSelect,ViewSlot,FrameAt
 	xdef	FramesSame,FramesUpdate
 	xref	LayoutDocument,FmtDec

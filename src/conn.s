@@ -1238,9 +1238,7 @@ TwRun:
 	bsr	TwWait
 	bne.s	.own
 	bra.s	.x
-.go:	move.l	g_TabIn(a4),d0		; this tab's job
-	addq.l	#1,d0
-	move.l	d0,g_TwOwner(a4)
+.go:	move.l	g_TabId(a4),g_TwOwner(a4)	; this tab's job
 	bsr	TwOrphan
 	move.l	d2,g_TwOp(a4)
 	move.l	a2,g_TwSSL(a4)

@@ -14,6 +14,10 @@
 	include	"velox.i"
 
 	xdef	TabSave,TabLoad,TabInit,TabSelect,TabRec,TabBase
+	xdef	TabTemplate,TabExit,TabNew,TabClose,TabShow,TabByName,TabQuit
+	xdef	TabCaption,TabNext
+	xref	TaskInit,TaskExit,TaskAbort,NavGo,NavTabFree,LogEvent,GuiStatus
+	xref	GuiTabShown,GuiStripSync,PaintStrip
 
 	section	code,code
 
@@ -199,6 +203,11 @@ TabInit:
 	clr.l	g_TabFront(a4)
 	clr.l	g_TabHidden(a4)
 	clr.l	g_TabRR(a4)
+	moveq	#1,d0			; (tab 0's id)
+	move.l	d0,g_Tabs+tb_Id(a4)
+	move.l	d0,g_TabId(a4)
+	addq.l	#1,d0
+	move.l	d0,g_TabIdNext(a4)
 	rts
 
 ; TabRec - In: d0 = tab; Out: a0 = its record (d0, d1 kept)
@@ -228,14 +237,39 @@ TabBase:
 ; tab in G stays)
 ;--------------------------------------------------------------------
 TabSelect:
-	movem.l	d2/a2,-(sp)
+	movem.l	d2,-(sp)
 	move.l	d0,d2
 	cmp.l	g_TabIn(a4),d2
-	beq	.ok
-	move.l	g_TabIn(a4),d0		; the one in G: its title (for the
-	bsr.s	TabRec			;  tab strip) and its globals
+	beq.s	.ok
+	tst.l	g_TabIn(a4)		; (none there: a tab just closed)
+	bmi.s	.load
+	bsr.s	TabPut
+	beq.s	.x
+.load:	move.l	d2,d0			; the other one's
+	bsr	TabRec
+	move.l	tb_Id(a0),g_TabId(a4)
+	move.l	tb_Save(a0),a0
+	bsr	TabLoad
+	move.l	d2,g_TabIn(a4)
+	bsr	TabWinPage
+.ok:	moveq	#0,d0			; shown?
+	cmp.l	g_TabFront(a4),d2
+	sne	d0
+	and.l	#1,d0
+	move.l	d0,g_TabHidden(a4)
+	moveq	#1,d0
+.x:	movem.l	(sp)+,d2
+	rts
+
+; TabPut - the tab in G to its save area (and its title, for the tab
+; strip); Out: d0 = 0 if there was no memory for it (CCR set)
+TabPut:
+	move.l	a2,-(sp)
+	move.l	g_TabIn(a4),d0
+	bsr	TabRec
 	move.l	a0,a2
-	lea	g_TitleText(a4),a0
+	move.l	g_TabIn(a4),d0
+	bsr	TabCaption
 	lea	tb_Title(a2),a1
 	moveq	#TAB_TITLE-2,d0
 .t:	move.b	(a0)+,(a1)+
@@ -261,20 +295,39 @@ TabSelect:
 	move.l	d1,tb_SaveLen(a2)
 .room:	move.l	tb_Save(a2),a0
 	bsr	TabSave
-	move.l	d2,d0			; the other one's
-	bsr	TabRec
-	move.l	tb_Save(a0),a0
-	bsr	TabLoad
-	move.l	d2,g_TabIn(a4)
-	bsr.s	TabWinPage
-.ok:	moveq	#0,d0			; shown?
-	cmp.l	g_TabFront(a4),d2
-	sne	d0
-	and.l	#1,d0
-	move.l	d0,g_TabHidden(a4)
 	moveq	#1,d0
-.x:	movem.l	(sp)+,d2/a2
+.x:	move.l	(sp)+,a2
 	rts
+
+; TabCaption - In: d0 = tab; Out: a0 = what the tab strip shows: its
+; title, else its URL, else "New tab"
+TabCaption:
+	cmp.l	g_TabIn(a4),d0
+	beq.s	.g
+	bsr	TabRec
+	lea	tb_Title(a0),a0
+	tst.b	(a0)
+	bne.s	.x
+	bra.s	.new
+.g:	lea	g_TitleText(a4),a0
+	tst.b	(a0)
+	bne.s	.x
+	lea	g_PageUrl(a4),a0
+	tst.b	(a0)
+	bne.s	.x
+	lea	g_NavUrl(a4),a0
+	tst.b	(a0)
+	bne.s	.x
+.new:	lea	MsgNewTab(pc),a0
+.x:	rts
+
+MsgNewTab:	dc.b	"New tab",0
+MsgMaxTabs:	dc.b	"No more tabs",0
+LogTabNew:	dc.b	"tabnew",0
+LogTabClose:	dc.b	"tabclose",0
+LogTabMem:	dc.b	"tabmem",0
+LogTab:		dc.b	"tab",0
+	even
 
 ; TabWinPage - the page area of the tab in G: the window's (g_WinPage)
 TabWinPage:
@@ -290,3 +343,253 @@ TabWinPage:
 	move.l	(a0)+,(a1)+
 	move.l	(a0)+,(a1)+
 .x:	rts
+
+;--------------------------------------------------------------------
+; TabTemplate - (start) what a new tab's globals begin as: those of the
+; tab in G now, before it loads anything
+;--------------------------------------------------------------------
+TabTemplate:
+	bsr	TabNeed
+	moveq	#MEMF_ANY,d1
+	EXEC	AllocVec
+	move.l	d0,g_TabTpl(a4)
+	beq.s	.x
+	move.l	d0,a0
+	bra	TabSave
+.x:	rts
+
+;--------------------------------------------------------------------
+; TabExit - (the end, the tabs closed) free the save areas
+;--------------------------------------------------------------------
+TabExit:
+	movem.l	d2,-(sp)
+	moveq	#TAB_MAX-1,d2
+.l:	move.l	d2,d0
+	bsr	TabRec
+	move.l	tb_Save(a0),a1
+	clr.l	tb_Save(a0)
+	clr.l	tb_SaveLen(a0)
+	EXEC	FreeVec
+	dbf	d2,.l
+	move.l	g_TabTpl(a4),a1
+	clr.l	g_TabTpl(a4)
+	EXEC	FreeVec
+	movem.l	(sp)+,d2
+	rts
+
+;--------------------------------------------------------------------
+; TabNew - (event loop) a new tab: shown (d0 = 1) or behind (0),
+; loading URL a0 (or nothing: a0 = 0), named a1 (links with that
+; target= go to it; a1 = 0 or "": none).  a0 and a1 must not be in a
+; tab's globals (G changes): g_LinkUrl, g_TabArg.
+; Out: d0 = the tab, -1 if there can be none (CCR set)
+;--------------------------------------------------------------------
+TabNew:
+	movem.l	d2-d3/a2-a3,-(sp)
+	move.l	d0,d3
+	move.l	a0,a2
+	move.l	a1,a3
+	cmp.l	#TAB_MAX,g_TabN(a4)
+	bhs	.full
+	tst.l	g_TabTpl(a4)
+	beq	.fail
+	bsr	TabPut			; the one in G: away
+	beq	.fail
+	move.l	g_TabN(a4),d2		; d2 = the new one
+	move.l	d2,d0
+	bsr	TabRec
+	move.w	#TB_SIZEOF/2-1,d0
+	move.l	a0,a1
+.c:	clr.w	(a1)+
+	dbf	d0,.c
+	move.l	g_TabIdNext(a4),tb_Id(a0)
+	move.l	g_TabIdNext(a4),g_TabId(a4)
+	addq.l	#1,g_TabIdNext(a4)
+	move.l	a3,d0			; its name
+	beq.s	.nn
+	lea	tb_Name(a0),a1
+	move.l	a3,a0
+	moveq	#TAB_NAME-1,d0
+.nc:	move.b	(a0)+,(a1)+
+	dbeq	d0,.nc
+	clr.b	-(a1)
+	tst.b	(a3)			; ("": none)
+	bne.s	.nn
+	clr.b	(a1)
+.nn:	addq.l	#1,g_TabN(a4)
+	move.l	g_TabTpl(a4),a0		; its globals: a new tab's
+	bsr	TabLoad
+	move.l	d2,g_TabIn(a4)
+	clr.l	g_TkStack(a4)
+	clr.l	g_TkState(a4)
+	moveq	#1,d0
+	move.l	d0,g_TabHidden(a4)
+	bsr	TabWinPage
+	jsr	TaskInit		; its loader's stack
+	bne.s	.st
+	subq.l	#1,g_TabN(a4)		; (none: no tab)
+	moveq	#-1,d0
+	move.l	d0,g_TabIn(a4)
+	move.l	g_TabFront(a4),d0
+	bsr	TabSelect
+	bra.s	.fail
+.st:	lea	LogTabNew(pc),a0
+	suba.l	a1,a1
+	move.l	d2,d0
+	jsr	LogEvent
+	move.l	a2,d0			; it loads
+	beq.s	.nl
+	move.l	a2,a0
+	moveq	#NAV_HISTORY,d0
+	jsr	NavGo
+.nl:	tst.l	d3
+	beq.s	.bg
+	move.l	d2,d0			; shown
+	bsr	TabShow
+	bra.s	.ok
+.bg:	move.l	g_TabFront(a4),d0	; behind: the shown one back
+	bsr	TabSelect
+	jsr	GuiStripSync		; (the strip: there now?)
+.ok:	move.l	d2,d0
+	bra.s	.x
+.full:	lea	MsgMaxTabs(pc),a0
+	jsr	GuiStatus
+.fail:	moveq	#-1,d0
+.x:	movem.l	(sp)+,d2-d3/a2-a3
+	tst.l	d0
+	rts
+
+;--------------------------------------------------------------------
+; TabShow - (event loop) show tab d0
+;--------------------------------------------------------------------
+TabShow:
+	move.l	d2,-(sp)
+	move.l	d0,d2
+	move.l	d0,g_TabFront(a4)
+	bsr	TabSelect
+	lea	LogTab(pc),a0
+	suba.l	a1,a1
+	move.l	d2,d0
+	jsr	LogEvent
+	move.l	(sp)+,d2
+	jmp	GuiTabShown
+
+; TabNext - (event loop) show the next tab (d0 = 1) or the one before
+; (d0 = -1)
+TabNext:
+	add.l	g_TabFront(a4),d0
+	bpl.s	.p
+	add.l	g_TabN(a4),d0
+.p:	cmp.l	g_TabN(a4),d0
+	blo.s	.s
+	sub.l	g_TabN(a4),d0
+.s:	cmp.l	g_TabFront(a4),d0
+	bne.s	TabShow
+	rts
+
+;--------------------------------------------------------------------
+; TabByName - In: a0 = name; Out: d0 = the tab of that name, -1 if
+; none (CCR set)
+;--------------------------------------------------------------------
+TabByName:
+	movem.l	d2/a2,-(sp)
+	move.l	a0,a2
+	move.l	g_TabN(a4),d2
+.l:	subq.l	#1,d2
+	bmi.s	.x
+	move.l	d2,d0
+	bsr	TabRec
+	lea	tb_Name(a0),a0
+	tst.b	(a0)
+	beq.s	.l
+	move.l	a2,a1
+.c:	move.b	(a0)+,d0
+	cmp.b	(a1)+,d0
+	bne.s	.l
+	tst.b	d0
+	bne.s	.c
+.x:	move.l	d2,d0
+	movem.l	(sp)+,d2/a2
+	rts
+
+;--------------------------------------------------------------------
+; TabClose - (event loop) close tab d0 (not the last one): its load
+; stops, all it has is freed; the one after it is shown (or the one
+; before, the last closed) if it was the shown one
+;--------------------------------------------------------------------
+TabClose:
+	cmp.l	#1,g_TabN(a4)
+	bls.s	.x
+	bsr.s	TabDrop
+	beq.s	.x
+	move.l	g_TabFront(a4),d0
+	bra	TabShow
+.x:	rts
+
+; TabQuit - (the end) close the tabs but the shown one, which stays in G
+TabQuit:
+.l:	cmp.l	#1,g_TabN(a4)
+	bls.s	.x
+	move.l	g_TabN(a4),d0		; the last one not shown
+	subq.l	#1,d0
+	cmp.l	g_TabFront(a4),d0
+	bne.s	.d
+	subq.l	#1,d0
+.d:	bsr.s	TabDrop
+	bra.s	.l
+.x:	move.l	g_TabFront(a4),d0
+	bra	TabSelect
+
+; TabDrop - tab d0 goes: its load stops, it is freed, its record taken
+; out; nothing is in G after (g_TabIn = -1), g_TabFront is the tab to
+; show then
+; Out: d0 = 0 if it could not be brought in (CCR set)
+TabDrop:
+	movem.l	d2/a2,-(sp)
+	move.l	d0,d2
+	bsr	TabSelect
+	beq	.x
+	jsr	TaskAbort		; (its connections close)
+	jsr	NavTabFree
+	jsr	TaskExit
+	move.l	d2,d0
+	bsr	TabRec
+	move.l	a0,a2
+	move.l	tb_Save(a2),a1
+	EXEC	FreeVec
+	move.l	g_TabN(a4),d0		; the records after it: one down
+	subq.l	#1,d0
+	sub.l	d2,d0
+	mulu.w	#TB_SIZEOF/2,d0
+	bra.s	.ms
+.m:	move.w	TB_SIZEOF(a2),(a2)+
+.ms:	dbf	d0,.m
+	move.w	#TB_SIZEOF/2-1,d0	; (the last: empty)
+.z:	clr.w	(a2)+
+	dbf	d0,.z
+	subq.l	#1,g_TabN(a4)
+	moveq	#-1,d0
+	move.l	d0,g_TabIn(a4)
+	clr.l	g_TabId(a4)
+	clr.l	g_TabRR(a4)
+	move.l	g_TabFront(a4),d0	; the shown one: still that one, or
+	cmp.l	d2,d0			; the one after it
+	bls.s	.f
+	subq.l	#1,d0
+.f:	cmp.l	g_TabN(a4),d0
+	blo.s	.f1
+	move.l	g_TabN(a4),d0
+	subq.l	#1,d0
+.f1:	move.l	d0,g_TabFront(a4)
+	lea	LogTabClose(pc),a0
+	suba.l	a1,a1
+	move.l	d2,d0
+	jsr	LogEvent
+	moveq	#MEMF_ANY,d1		; (for tests: memory comes back)
+	EXEC	AvailMem
+	lea	LogTabMem(pc),a0
+	suba.l	a1,a1
+	jsr	LogEvent
+	moveq	#1,d0
+.x:	movem.l	(sp)+,d2/a2
+	rts

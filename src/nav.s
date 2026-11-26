@@ -17,6 +17,8 @@
 	xref	ProfRead,ProfLog
 	ENDC
 	xdef	NavRefresh,PageFixups,CopyAddress,ViewSource,FragCheck
+	xdef	NavTabFree
+	xref	TabNew,TabShow,TabByName,FrTargetOf,KeepFreeAll,PageFree,DcImgFree
 	xref	FindAnchor
 	xref	ClipCopy
 	xref	GuiStatus,GuiSetUrl,GuiSetTitle,GuiRefresh,GuiNetHook
@@ -28,10 +30,6 @@
 	xref	FramesCompose,FrameNav,FrameSplit,FrameShow,FramesSame,FramesUpdate
 
 HIST_MAX	equ	HIST_ENTRIES
-NAV_HISTORY	equ	1
-NAV_CACHE	equ	2		; Back/Forward: from the cache if there
-NAV_RELOAD	equ	4		; fetch everything anew
-NAV_REPLACE	equ	8		; replaces the current history entry
 
 	section	code,code
 
@@ -1860,10 +1858,12 @@ NavPost:
 ; NavLink - follow a link
 ; In: a0 = <a> element
 NavLink:
-	move.l	a2,-(sp)
+	movem.l	d2/a2,-(sp)
 	move.l	a0,a2			; a2 = the link
+	move.l	g_LinkNewTab(a4),d2	; d2 = 1: into a background tab
+	clr.l	g_LinkNewTab(a4)
 	bsr	LinkTarget
-	beq.s	.x
+	beq	.x
 	cmp.l	g_IsMapA(a4),a2		; an ismap image clicked: "?x,y"
 	bne.s	.nism
 	bsr	IsMapPoint
@@ -1882,14 +1882,53 @@ NavLink:
 	lea	MsgNoMail(pc),a0
 	jsr	GuiStatus
 	bra.s	.x
-.go:	move.l	a2,a0			; into a frame?
+.go:	tst.l	d2			; Shift, the middle button: a tab
+	beq.s	.nt			; of its own, behind
+	lea	g_LinkUrl(a4),a0
+	suba.l	a1,a1
+	moveq	#0,d0
+	jsr	TabNew
+	bra.s	.x
+.nt:	move.l	a2,a0			; into a frame?
 	jsr	FrameNav
 	bne.s	.x
+	move.l	a2,a0			; target="_blank": a new tab; a name:
+	jsr	FrTargetOf		; the tab of that name (made if there
+	beq.s	.self			; is none)
+	move.l	d0,a0
+	lea	g_TabArg(a4),a1		; (the name: G changes)
+	moveq	#TAB_NAME-1,d0
+	jsr	StrCopyN
+	lea	g_TabArg(a4),a0
+	cmp.b	#'_',(a0)
+	bne.s	.name
+	lea	SBlank(pc),a1
+	jsr	StrIPrefix
+	beq.s	.self			; (_self, _top, _parent: here)
+	clr.b	g_TabArg(a4)
+.name:	lea	g_TabArg(a4),a0
+	tst.b	(a0)
+	beq.s	.new
+	jsr	TabByName
+	bmi.s	.new
+	jsr	TabShow			; that tab, shown: it goes there
 	lea	g_LinkUrl(a4),a0
 	moveq	#NAV_HISTORY,d0
 	bsr	NavGo
-.x:	move.l	(sp)+,a2
+	bra.s	.x
+.new:	lea	g_LinkUrl(a4),a0
+	lea	g_TabArg(a4),a1
+	moveq	#1,d0
+	jsr	TabNew
+	bra.s	.x
+.self:	lea	g_LinkUrl(a4),a0
+	moveq	#NAV_HISTORY,d0
+	bsr	NavGo
+.x:	movem.l	(sp)+,d2/a2
 	rts
+
+SBlank:	dc.b	"_blank",0
+	even
 
 ;--------------------------------------------------------------------
 ; IsMapPoint - (NavLink: an ismap image clicked) "?x,y" after
@@ -2318,6 +2357,29 @@ HomeUrl:	dc.b	"about:velox",0
 ; NavExit - free the history
 NavExit:
 	jsr	CacheFlush
+	bra.s	HistAll
+
+;--------------------------------------------------------------------
+; NavTabFree - (a tab closed) free what the tab in G has: its history
+; and the pages kept for it, its page, its buffers
+;--------------------------------------------------------------------
+NavTabFree:
+	bsr.s	HistAll
+	jsr	KeepFreeAll
+	jsr	PageFree		; (its images too: g_PageFreeHook)
+	lea	g_Resp+r_Body(a4),a0
+	jsr	BufFree
+	lea	g_ReqBuf(a4),a0	; (not g_RespSave's: a copy of g_Resp)
+	jsr	BufFree
+	lea	g_FormBuf(a4),a0
+	jsr	BufFree
+	lea	g_Download(a4),a0
+	jsr	BufFree
+	clr.l	g_PostData(a4)
+	jmp	DcImgFree
+
+; HistAll - the history goes (its URLs, the pages kept for it)
+HistAll:
 .l:	tst.l	g_HistCount(a4)
 	beq.s	.x
 	bsr	HistoryDropLast

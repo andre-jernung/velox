@@ -803,8 +803,7 @@ MsgStopped:	dc.b	"Stopped",0
 ; DecUnlock - the decoder free again (if this tab has it)
 ;--------------------------------------------------------------------
 DecLock:
-	move.l	g_TabIn(a4),d1
-	addq.l	#1,d1
+	move.l	g_TabId(a4),d1
 .l:	move.l	g_DecLock(a4),d0
 	beq.s	.take
 	cmp.l	d1,d0
@@ -823,8 +822,7 @@ DecLock:
 	rts
 
 DecUnlock:
-	move.l	g_TabIn(a4),d0
-	addq.l	#1,d0
+	move.l	g_TabId(a4),d0
 	cmp.l	g_DecLock(a4),d0
 	bne.s	.x
 	clr.l	g_DecLock(a4)

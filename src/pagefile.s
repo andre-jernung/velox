@@ -198,8 +198,7 @@ PfSaveKept:
 ; (freed by clearing g_PfLock)
 ;--------------------------------------------------------------------
 PfLockTry:
-	move.l	g_TabIn(a4),d0
-	addq.l	#1,d0
+	move.l	g_TabId(a4),d0
 	tst.l	g_PfLock(a4)
 	bne.s	.no
 	move.l	d0,g_PfLock(a4)

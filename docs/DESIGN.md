@@ -332,6 +332,39 @@ free; the kept page farthest from the current entry goes first, also
 when a page allocation or an image's chip memory would fail otherwise.
 Like other browsers, Back does not check the server; Reload does.
 
+### Tabs
+
+Each tab is a page with its own loader, history and kept pages, and all
+of them load at once. G holds one tab's state at a time: the globals of
+a page and its loader are gathered in two blocks of G (`g_TabA` ..
+`g_TabAEnd`, in reach of 16-bit offsets, and `g_TabB` .. `g_TabBEnd`
+with the big buffers), which `TabTab` (tabs.s) lists; the assembler
+checks that it covers them. The other tabs keep theirs in a save area
+each: the copied parts first (the loader's state at fixed places, so
+the scheduler reads any tab's), then the strings packed, so a tab
+behind takes about 8 KB plus its strings. `TabSelect` swaps a tab in;
+the event loop does it only when a tab must run or the shown tab has
+window events, which keeps the copying (about 2 ms on a stock A1200)
+rare.
+
+The scheduler (task.s) runs the shown tab's loader first when it is
+ready, the others in turn; it sleeps on all their sockets and signals
+in one `WaitSelect`. A background tab's loader that computes yields
+after 0.1 s (`TaskPoll`), so it never holds up the shown tab. A tab
+behind paints nothing (`g_TabHidden`); showing it paints all of it
+(and lays it out again if the window's width changed meanwhile).
+
+What the loaders share is used by one tab at a time, with a lock that
+another tab's loader waits for (`LS_LOCK`, `TaskWaitLock`): the image
+decoder (`DecLock`; the decoder process reads only shared fields, so
+`BgRun` moves the body and cached pixels there first), the TLS process
+(`g_TwOwner`: a job's result is taken before another tab's job runs;
+`TlsFlush` sends from the BIO itself, so nothing waits in a shared
+buffer) and page files (`g_PfLock`; a tab that finds it taken does not
+save its page, or gets it otherwise). Locks name tabs by `tb_Id`, which
+does not change when tabs before them close. A new tab begins as a copy
+of the first tab's globals before it loaded anything (`TabTemplate`).
+
 ### Painting
 
 Painting never shows a half-drawn page. `PaintRange` draws the runs into
@@ -426,7 +459,8 @@ JS is not on the roadmap yet, but it must stay possible to add. That means:
 | url.s       | parsing, resolving (RFC 3986), fixing typed addresses           |
 | conn.s      | sockets (non-blocking), AmiSSL, DNS cache, I/O through `WaitSelect` |
 | http.s      | requests, responses, redirects, keep-alive                      |
-| task.s      | the loader: a coroutine of the event loop                       |
+| task.s      | the loaders (one a tab): coroutines of the event loop, the scheduler |
+| tabs.s      | tabs: their globals swapped in and out of G, new, shown, closed |
 | keep.s      | pages kept for Back/Forward                                     |
 | pagefile.s  | laid-out pages in the disk cache                                 |
 | cache.s     | memory cache of recent responses                                |
