@@ -163,6 +163,27 @@ At the bottom, the @{b}status line@{ub}: the address of the link under the mouse
 
 The Amiga key works in place of Ctrl for the menu commands. Keys typed while a page loads are not lost.
 
+@{b}Editing text@{ub}
+
+In a text field or a text area, the keys work as in a notepad. A text area wraps its lines at the blanks that fit.
+
+  Cursor keys          a character, a line up or down
+  Ctrl-Left, -Right    the line's start, its end
+  Ctrl-Up, -Down       the text's start, its end
+  Shift with them      select
+  Ctrl-A               select all
+  Ctrl-C               copy the selection
+  Ctrl-X               cut it
+  Ctrl-V               paste
+  Ctrl-Z               undo (as many steps as you like)
+  Ctrl-Y               redo (also Shift-Ctrl-Z)
+  Backspace, Del       delete (the selection, if there is one)
+  Return               a new line (in a field: send the form)
+  Esc                  stop editing
+  Tab                  on to the next field
+
+Amiga works in place of Ctrl here too. Typing is undone a word at a time.
+
 @endnode
 
 @node Mouse "The mouse"
@@ -172,6 +193,8 @@ The Amiga key works in place of Ctrl for the menu commands. Keys typed while a p
 A click on a link follows it; the status line shows where it goes. Shift-click, or the middle button, opens it in a tab behind the one shown.
 
 Drag over text to select it: it is copied to the clipboard at once.
+
+In a text field or text area, a click puts the cursor where you click, a Shift-click selects from the cursor to there, and dragging selects.
 
 In the tab strip, a click shows a tab, a click on its close box or the middle button closes it, and "+" opens a new one.
 

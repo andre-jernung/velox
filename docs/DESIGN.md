@@ -481,7 +481,8 @@ JS is not on the roadmap yet, but it must stay possible to add. That means:
 | css.s       | author style sheets: parsing, matching, cascade                 |
 | layout.s    | blocks, inline text, replaced elements: the run list            |
 | table.s     | automatic table layout                                          |
-| forms.s     | form controls, editing, submission                              |
+| forms.s     | form controls, their keys, submission                           |
+| edit.s      | editing a field or text area: soft-wrapped lines, moves, selection, undo |
 | img.s       | loading images (also backgrounds), the decoder process, datatypes |
 | pic.s       | image formats, the decoded image (ARGB)                         |
 | gif.s png.s jpeg.s webp.s vp8.s vp8l.s inflate.s | the decoders     |

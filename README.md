@@ -128,6 +128,23 @@ saved in `ENVARC:Velox/Cookies`; delete that file to forget them.
 
 The Amiga key works in place of Ctrl for the menu commands.
 
+In a text field or text area, the keys work as in a notepad (text
+areas wrap their lines):
+
+| Key                     | Action                                  |
+|-------------------------|-----------------------------------------|
+| Cursor keys             | a character, a line up or down          |
+| Ctrl-Left / Ctrl-Right  | the line's start / end                  |
+| Ctrl-Up / Ctrl-Down     | the text's start / end                  |
+| Shift with any of them  | select                                  |
+| Ctrl-A                  | select all                              |
+| Ctrl-C, Ctrl-X, Ctrl-V  | copy, cut, paste (the clipboard)        |
+| Ctrl-Z / Ctrl-Y         | undo / redo (Shift-Ctrl-Z redoes too)   |
+| Esc, Tab                | stop editing / the next field           |
+
+A click puts the cursor where it is, Shift-click selects to there, and
+dragging selects.
+
 ## https through a proxy
 
 Without AmiSSL, or on a slow machine, run `velox-proxy.py` on a modern

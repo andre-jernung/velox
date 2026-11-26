@@ -1,0 +1,5 @@
+#!/bin/sh
+# checks for edit.script
+d=$(dirname "$1")
+sed 's/^/driver: /' "$d/edit.driver"
+grep -qx ok "$d/edit.driver" && grep -q '^exit rc=0' "$1"

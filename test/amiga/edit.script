@@ -1,0 +1,6 @@
+; edit: a text area edited as in a notepad (test/amiga/edit.host)
+Echo >VELOX:r/edit.txt "edit"
+Echo >VELOX:r/edit.start ""
+VELOX:velox http://127.0.0.1:8080/edit.html LOG=VELOX:r/edit.log
+Echo >>VELOX:r/edit.txt "exit rc=$RC"
+Echo >>VELOX:r/edit.txt "done"

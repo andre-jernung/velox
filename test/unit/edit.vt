@@ -1,0 +1,24 @@
+# editing a text area (edit.s): WIDTH ROWS OPS, a character 8 pixels
+# soft wrapping at the last blank that fits, or inside a long word
+edit 80 3 t:hello_world_this_wraps
+edit 80 3 t:abcdefghijklmnop
+# moving: by character, line (Up/Down keep the column), line start/end
+edit 80 3 t:hello_world,L,L,L,L,L,t:X
+edit 80 3 t:abc|defgh|ij,U,H,sE,t:Z
+edit 80 3 t:hello_world_this_wraps,T,E,t:X
+edit 80 3 t:hello_world_this_wraps,T,D,D,D,t:X
+edit 80 3 t:hello_world_this_wraps,U,U,U,t:X
+edit 80 3 t:one|two,T,R,R,R,R,t:X
+# a selection with Shift: typing, Backspace replace it; Left/Right end it
+edit 80 3 t:abc|defgh|ij,T,sD,sR,bs
+edit 80 3 t:abcdef,sL,sL,L,t:X
+edit 80 3 t:abcdef,H,sR,sR,R,t:X
+# the mouse: a click, Shift-click
+edit 80 3 t:hello_world_this_wraps,hit:20:12
+edit 80 3 t:abc|defgh,hit:4:3,shit:30:12,t:Q,undo
+# undo and redo: typing a word at a time; a new change ends redo
+edit 80 3 t:one_two_three,undo
+edit 80 3 t:one_two_three,undo,undo,redo
+edit 80 3 t:one_two,undo,t:six,redo
+edit 80 3 t:abc,all,del,undo
+edit 80 3 t:abcd,bs,bs,undo,undo,redo

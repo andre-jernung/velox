@@ -1,0 +1,24 @@
+# editing a text area (edit.s): WIDTH ROWS OPS, a character 8 pixels
+# soft wrapping at the last blank that fits, or inside a long word
+edit 80 3 t:hello_world_this_wraps => text=[hello world this wraps] cur=22 anc=-1 lines=[hello ][world ][this wraps]
+edit 80 3 t:abcdefghijklmnop => text=[abcdefghijklmnop] cur=16 anc=-1 lines=[abcdefghij][klmnop]
+# moving: by character, line (Up/Down keep the column), line start/end
+edit 80 3 t:hello_world,L,L,L,L,L,t:X => text=[hello Xworld] cur=7 anc=-1 lines=[hello ][Xworld]
+edit 80 3 t:abc|defgh|ij,U,H,sE,t:Z => text=[abc|Z|ij] cur=5 anc=-1 lines=[abc][Z][ij]
+edit 80 3 t:hello_world_this_wraps,T,E,t:X => text=[helloX world this wraps] cur=6 anc=-1 lines=[helloX ][world ][this wraps]
+edit 80 3 t:hello_world_this_wraps,T,D,D,D,t:X => text=[hello world this wrapsX] cur=23 anc=-1 lines=[hello ][world ][this ][wrapsX]
+edit 80 3 t:hello_world_this_wraps,U,U,U,t:X => text=[Xhello world this wraps] cur=1 anc=-1 lines=[Xhello ][world ][this wraps]
+edit 80 3 t:one|two,T,R,R,R,R,t:X => text=[one|Xtwo] cur=5 anc=-1 lines=[one][Xtwo]
+# a selection with Shift: typing, Backspace replace it; Left/Right end it
+edit 80 3 t:abc|defgh|ij,T,sD,sR,bs => text=[efgh|ij] cur=0 anc=-1 lines=[efgh][ij]
+edit 80 3 t:abcdef,sL,sL,L,t:X => text=[abcdXef] cur=5 anc=-1 lines=[abcdXef]
+edit 80 3 t:abcdef,H,sR,sR,R,t:X => text=[abXcdef] cur=3 anc=-1 lines=[abXcdef]
+# the mouse: a click, Shift-click
+edit 80 3 t:hello_world_this_wraps,hit:20:12 => text=[hello world this wraps] cur=9 anc=-1 lines=[hello ][world ][this wraps]
+edit 80 3 t:abc|defgh,hit:4:3,shit:30:12,t:Q,undo => text=[abc|defgh] cur=8 anc=1 lines=[abc][defgh]
+# undo and redo: typing a word at a time; a new change ends redo
+edit 80 3 t:one_two_three,undo => text=[one two ] cur=8 anc=-1 lines=[one two ]
+edit 80 3 t:one_two_three,undo,undo,redo => text=[one two ] cur=8 anc=-1 lines=[one two ]
+edit 80 3 t:one_two,undo,t:six,redo => text=[one six] cur=7 anc=-1 lines=[one six]
+edit 80 3 t:abc,all,del,undo => text=[abc] cur=3 anc=0 lines=[abc]
+edit 80 3 t:abcd,bs,bs,undo,undo,redo => text=[abc] cur=3 anc=-1 lines=[abc]

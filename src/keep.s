@@ -17,7 +17,7 @@
 	include	"velox.i"
 
 	xdef	PageLeave,PageRestore,KeepEvict,KeepDrop,KeepFreeAll,KeepCopy
-	xref	FramesFree,TabHistBase
+	xref	FramesFree,TabHistBase,EdForget
 	xref	PageFree,Alloc,Free,BufFree,ImgListFree,LogEvent,ArenaFree,PfWrite
 
 	section	code,code
@@ -134,6 +134,7 @@ KeepClear:
 ; history entry if it can be, else freed
 ;--------------------------------------------------------------------
 PageLeave:
+	jsr	EdForget		; (undo steps of its fields: none)
 	tst.l	g_Blank(a4)		; blank meanwhile: nothing comes back
 	beq.s	.nb			; now (GuiUnblank)
 	moveq	#2,d0

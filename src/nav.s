@@ -18,6 +18,7 @@
 	ENDC
 	xdef	NavRefresh,PageFixups,CopyAddress,ViewSource,FragCheck
 	xdef	NavTabFree,NavTarget
+	xref	FormCopy
 	xref	TabNew,TabShow,TabByName,FrTargetOf,KeepFreeAll,PageFree,DcImgFree
 	xref	FindAnchor
 	xref	ClipCopy
@@ -2005,7 +2006,11 @@ LinkTarget:
 ; clipboard
 ;--------------------------------------------------------------------
 CopyAddress:
-	move.l	g_FocusLink(a4),d0
+	jsr	FormCopy		; a field's selection, if it has one
+	beq.s	.addr
+	lea	MsgCopied(pc),a0
+	jmp	GuiStatus
+.addr:	move.l	g_FocusLink(a4),d0
 	beq.s	.page
 	move.l	d0,a0
 	bsr	LinkTarget
@@ -2388,6 +2393,8 @@ NavTabFree:
 	lea	g_ReqBuf(a4),a0	; (not g_RespSave's: a copy of g_Resp)
 	jsr	BufFree
 	lea	g_FormBuf(a4),a0
+	jsr	BufFree
+	lea	g_Undo(a4),a0		; (its fields' undo steps)
 	jsr	BufFree
 	lea	g_Download(a4),a0
 	jsr	BufFree

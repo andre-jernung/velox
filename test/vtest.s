@@ -32,6 +32,8 @@
 	xref	CookieSet,CookieHeader,UrlParse,BufFree,PageFixups,PfBuild,PfApply
 	xref	CssAddSheet,CssInvalidate,PageAlloc,KeepCopy,Alloc,Free
 	xref	TabSave,TabLoad
+	xref	StrIPrefix
+	xref	EdMove,EdType,EdBack,EdDel,EdSelAll,EdUndo,EdRedo,EdHit,EdForget,EdNextLine,EdWidths
 
 T_LINEMAX	equ	2048
 T_MAXWORDS	equ	4
@@ -185,6 +187,7 @@ Commands:
 	dc.w	CnPagefile-Commands,CmdPagefile-Commands
 	dc.w	CnCssFilter-Commands,CmdCssFilter-Commands
 	dc.w	CnTabSwap-Commands,CmdTabSwap-Commands
+	dc.w	CnEdit-Commands,CmdEdit-Commands
 	dc.w	0
 
 CnParse:	dc.b	"parse",0
@@ -202,6 +205,7 @@ CnInflate:	dc.b	"inflate",0
 CnPagefile:	dc.b	"pagefile",0
 CnCssFilter:	dc.b	"cssfilter",0
 CnTabSwap:	dc.b	"tabswap",0
+CnEdit:		dc.b	"edit",0
 Empty:		dc.b	0
 ResultSep:	dc.b	" => ",0
 MsgUnknown:	dc.b	"unknown command",0
@@ -1405,6 +1409,202 @@ CmdTabSwap:
 MsgTsDiffer:	dc.b	"the areas differ",0
 	even
 
+;--------------------------------------------------------------------
+; CmdEdit - edit WIDTH ROWS OPS: a text area WIDTH pixels wide (the test
+; font: 8 pixels a character), edited by OPS, separated by commas:
+; t:TEXT types it ("_" a blank, "|" a newline); L R U D H E T B move
+; (left, right, up, down, line start, line end, text start, text end),
+; with an s before them with Shift; bs, del, all, undo, redo;
+; hit:X:Y (shit:X:Y with Shift) the mouse there.  Then: the text, the
+; cursor, the anchor and the wrapped lines.
+;--------------------------------------------------------------------
+CmdEdit:
+	movem.l	d2-d3/a2-a3,-(sp)
+	bsr	TestMetrics
+	lea	T_Fs,a3
+	move.l	a3,a0
+	moveq	#FS_SIZEOF/2-1,d0
+.cl:	clr.w	(a0)+
+	dbf	d0,.cl
+	move.b	#FK_TEXTAREA,fs_Kind(a3)
+	move.l	#T_EDMAX,fs_Max(a3)
+	moveq	#-1,d0
+	move.l	d0,fs_Anchor(a3)
+	move.l	d0,fs_Goal(a3)
+	move.w	#1,fs_Font(a3)
+	lea	T_EdVal,a0
+	clr.b	(a0)
+	move.l	a0,fs_Value(a3)
+	jsr	EdForget
+	move.l	T_Words+4,a0
+	jsr	ParseDec
+	move.w	d0,fs_TextW(a3)
+	move.l	T_Words+8,a0
+	jsr	ParseDec
+	move.w	d0,fs_Rows(a3)
+	jsr	EdWidths
+	move.l	T_Words+12,a2		; a2 = the ops
+.op:	tst.b	(a2)
+	beq	.show
+	moveq	#0,d3			; d3 = Shift
+	cmp.b	#'s',(a2)
+	bne.s	.ns
+	cmp.b	#'h',1(a2)		; ("shit:")
+	beq.s	.ns
+	moveq	#1,d3
+	addq.l	#1,a2
+.ns:	lea	EdMoves(pc),a0		; a move?
+	moveq	#0,d2
+.mv:	move.b	(a0)+,d0
+	beq.s	.notmv
+	cmp.b	(a2),d0
+	bne.s	.mn
+	move.b	1(a2),d1
+	beq.s	.ismv
+	cmp.b	#',',d1
+	beq.s	.ismv
+.mn:	addq.l	#1,d2
+	bra.s	.mv
+.ismv:	addq.l	#1,a2
+	move.l	d2,d0
+	move.l	d3,d1
+	jsr	EdMove
+	bra	.next
+.notmv:	move.l	a2,a0
+	lea	EdOpT(pc),a1
+	jsr	StrIPrefix
+	beq.s	.n1
+	lea	2(a2),a0		; t:TEXT (to the comma, or the end)
+	lea	T_EdTmp,a1
+	moveq	#0,d2
+.tc:	move.b	(a0),d0
+	beq.s	.te
+	cmp.b	#',',d0
+	beq.s	.te
+	addq.l	#1,a0
+	cmp.b	#'_',d0
+	bne.s	.t1
+	moveq	#' ',d0
+.t1:	cmp.b	#'|',d0
+	bne.s	.t2
+	moveq	#10,d0
+.t2:	move.b	d0,(a1)+
+	addq.l	#1,d2
+	bra.s	.tc
+.te:	move.l	a0,a2
+	lea	T_EdTmp,a1		; typed one character at a time
+.tk:	subq.l	#1,d2
+	bmi	.next
+	move.l	a1,-(sp)
+	move.l	a1,a0
+	moveq	#1,d0
+	jsr	EdType
+	move.l	(sp)+,a1
+	addq.l	#1,a1
+	bra.s	.tk
+.n1:	lea	EdOpHit(pc),a1		; hit:X:Y / shit:X:Y
+	move.l	a2,a0
+	cmp.b	#'s',(a0)
+	bne.s	.h0
+	moveq	#1,d3
+	addq.l	#1,a0
+.h0:	move.l	a0,-(sp)
+	jsr	StrIPrefix
+	movem.l	(sp)+,a0
+	beq.s	.n2
+	addq.l	#4,a0
+	jsr	ParseDec
+	move.l	d0,d2
+	addq.l	#1,a0
+	jsr	ParseDec
+	move.l	a0,a2
+	move.l	d0,d1
+	move.l	d2,d0
+	move.l	d3,d2
+	jsr	EdHit
+	bra.s	.next
+.n2:	lea	EdOps(pc),a1		; the others, by name
+	lea	EdOpFn(pc),a3
+	exg	a3,a1
+	; (a1 = the functions, a3 = the names)
+.on:	tst.b	(a3)
+	beq.s	.skip
+	move.l	a2,a0
+	move.l	a1,-(sp)
+	move.l	a3,a1
+	jsr	StrIPrefix
+	movem.l	(sp)+,a1
+	bne.s	.fn
+.os:	tst.b	(a3)+
+	bne.s	.os
+	addq.l	#4,a1
+	bra.s	.on
+.fn:	move.l	a0,a2			; (after the name)
+	move.l	(a1),a0
+	lea	T_Fs,a3
+	jsr	(a0)
+	bra.s	.next
+.skip:	lea	T_Fs,a3
+	addq.l	#1,a2
+.next:	lea	T_Fs,a3
+.c:	move.b	(a2),d0			; to the next op
+	beq.s	.show
+	addq.l	#1,a2
+	cmp.b	#',',d0
+	bne.s	.c
+	bra	.op
+.show:	lea	MsgEdText(pc),a0	; text=[...] (newlines as |)
+	jsr	PutStr
+	move.l	fs_Value(a3),a2
+.sh:	move.b	(a2)+,d0
+	beq.s	.she
+	cmp.b	#10,d0
+	bne.s	.sh1
+	moveq	#'|',d0
+.sh1:	jsr	PutChar
+	bra.s	.sh
+.she:	lea	MsgEdCur(pc),a0
+	jsr	PutStr
+	move.l	fs_Cursor(a3),d0
+	jsr	PutNum
+	lea	MsgEdAnc(pc),a0
+	jsr	PutStr
+	move.l	fs_Anchor(a3),d0
+	jsr	PutNum
+	lea	MsgEdLines(pc),a0	; the wrapped lines: [..][..]
+	jsr	PutStr
+	move.l	fs_Value(a3),a2
+.ln:	moveq	#'[',d0
+	jsr	PutChar
+	move.l	a2,a0
+	jsr	EdNextLine
+	move.l	d0,d3
+	move.l	a1,-(sp)
+	move.l	a0,d2
+.lc:	cmp.l	d2,a2
+	bhs.s	.le
+	move.b	(a2)+,d0
+	jsr	PutChar
+	bra.s	.lc
+.le:	moveq	#']',d0
+	jsr	PutChar
+	move.l	(sp)+,a2
+	tst.l	d3
+	bne.s	.ln
+	movem.l	(sp)+,d2-d3/a2-a3
+	rts
+
+EdMoves:	dc.b	"LRUDHETB",0
+EdOpT:		dc.b	"t:",0
+EdOpHit:	dc.b	"hit:",0
+EdOps:		dc.b	"bs",0,"del",0,"all",0,"undo",0,"redo",0,0
+MsgEdText:	dc.b	"text=[",0
+MsgEdCur:	dc.b	"] cur=",0
+MsgEdAnc:	dc.b	" anc=",0
+MsgEdLines:	dc.b	" lines=",0
+	even
+EdOpFn:		dc.l	EdBack,EdDel,EdSelAll,EdUndo,EdRedo
+
 	section	bss,bss
 ;====================================================================
 G:		ds.b	g_SIZEOF
@@ -1413,4 +1613,8 @@ T_Buf:		ds.b	BUF_SIZEOF
 T_Sums:		ds.l	8		; PageSum: its parts (DOM, runs), before and now
 T_NoBody:	ds.b	2
 T_Words:	ds.l	T_MAXWORDS
+T_EDMAX		equ	400
+T_Fs:		ds.b	FS_SIZEOF
+T_EdVal:	ds.b	T_EDMAX+2
+T_EdTmp:	ds.b	T_LINEMAX
 T_Line:		ds.b	T_LINEMAX

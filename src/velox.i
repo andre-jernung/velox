@@ -442,7 +442,21 @@ fs_Cursor	rs.l	1
 fs_Scroll	rs.l	1		; first visible character
 fs_Value	rs.l	1		; text, NUL terminated
 fs_Label	rs.l	1		; button / select label
+fs_Anchor	rs.l	1		; the selection's other end, -1: none
+fs_Goal		rs.l	1		; Up/Down: the x to keep, -1: none
+fs_TextW	rs.w	1		; text area: its text's width (painted)
+fs_Font		rs.w	1		; its font | soft << 8 (painted)
 FS_SIZEOF	rs.b	0
+
+; edit.s EdMove's moves
+MV_LEFT		equ	0
+MV_RIGHT	equ	1
+MV_UP		equ	2
+MV_DOWN		equ	3
+MV_HOME		equ	4		; the line's start
+MV_END		equ	5		; ... its end
+MV_TOP		equ	6		; the text's start
+MV_BOTTOM	equ	7		; ... its end
 
 ;--------------------------------------------------------------------
 ; ImageInfo - a loaded image (in the <img> element's n_Data2)
@@ -673,6 +687,10 @@ g_CssBase	rs.l	1		; URL of the sheet being used, or 0
 g_StyleGen	rs.l	1		; style.s: changes when kept styles are stale
 g_RespFrom	rs.l	1		; cache.s: g_Resp came from 0 the network,
 					; 1 memory, 2 the disk cache as it was
+g_Undo		rs.b	BUF_SIZEOF	; edit.s: undo steps of the field edited,
+g_UndoAt	rs.l	1		; ... the end of those done (redo after),
+g_UndoState	rs.l	1		; ... its FormState (0: none),
+g_UndoMerge	rs.l	1		; ... typing goes on in the last step
 g_ImgKeyOk	rs.l	1		; img.s: g_ImgKey is the image's
 g_ImgHash	rs.l	1		; the cached image's file hash
 g_TabAEnd	rs.b	0
@@ -1109,6 +1127,11 @@ g_TabId		rs.l	1		; the tb_Id of the one in G (locks)
 g_TabIdNext	rs.l	1		; ... the next one made
 g_TabTpl	rs.l	1		; a new tab's globals (a save area)
 g_TabArg	rs.b	TAB_NAME	; a tab's name, passed (TabNew)
+g_EdWid		rs.w	256		; edit.s: the width of each character,
+g_EdWFont	rs.l	1		; ... in this font | soft << 8, + 1
+g_FieldDrag	rs.l	1		; gui.s: the field the mouse selects in,
+g_FieldRun	rs.l	1		; ... its run (index)
+g_LinkRun	rs.l	1		; gui.s LinkAt: the run found (index)
 g_TabPost	rs.b	BUF_SIZEOF	; a POST's data, to another tab (forms.s)
 g_LinkNewTab	rs.l	1		; NavLink: into a background tab
 g_StripY	rs.l	1		; gui.s: the tab strip (2 tabs or more)

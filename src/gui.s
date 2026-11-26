@@ -35,6 +35,7 @@
 	xref	TaskResume,TaskLoopWait,TaskBusy,TaskAbort,NavStop,ImagesReap,ImagesReapNow,ImagesQuit,FragCheck,TaskNow
 	xref	TaskPick,TabSelect,TabNew,TabClose,TabNext,TabShow,TabQuit,TabCaption
 	xref	TabBase,TabRec
+	xref	EdWidths,EdNextLine,EdLocate,EdLine,EdXOf,EdSel,EdHit,EdIndexAt
 	xdef	GuiTabShown,GuiStripSync,PaintStrip
 
 PROP_FONT	equ	0
@@ -2180,6 +2181,9 @@ WidgetText:
 ; cursor when it is being edited.  Only what fits is drawn.
 FieldText:
 	movem.l	d2-d7/a2,-(sp)
+	clr.w	fs_TextW(a5)		; (for edit.s: one line, this font)
+	move.b	ru_Soft(a2),fs_Font(a5)
+	move.b	ru_Font(a2),fs_Font+1(a5)
 	move.l	d4,d7
 	sub.l	d2,d7
 	subq.l	#6,d7			; room for text
@@ -2225,7 +2229,53 @@ FieldText:
 .cursor:
 	move.l	ru_Text(a2),d0
 	cmp.l	g_EditField(a4),d0
-	bne.s	.x
+	bne	.x
+	exg	a3,a5			; the selection, where it is shown
+	jsr	EdSel
+	exg	a3,a5
+	move.l	fs_Scroll(a5),d4	; d4 .. d5: the characters shown
+	cmp.l	d4,d0
+	bhs.s	.sf
+	move.l	d4,d0
+.sf:	move.l	d4,-(sp)
+	add.l	d6,d4
+	cmp.l	d4,d1
+	bls.s	.st
+	move.l	d4,d1
+.st:	move.l	(sp)+,d4
+	cmp.l	d0,d1
+	bls.s	.bar
+	movem.l	d0-d1,-(sp)
+	sub.l	d4,d1			; x of the end
+	move.l	fs_Value(a5),a0
+	add.l	d4,a0
+	bsr	.measure
+	move.l	d0,4(sp)
+	move.l	(sp),d1			; x of the start
+	sub.l	d4,d1
+	move.l	fs_Value(a5),a0
+	add.l	d4,a0
+	bsr	.measure
+	move.l	d0,(sp)
+	move.l	a3,a1
+	moveq	#RP_COMPLEMENT,d0
+	GFX	SetDrMd
+	movem.l	(sp)+,d0-d1
+	movem.l	d2-d3,-(sp)
+	add.l	d2,d0
+	add.l	d1,d2
+	subq.l	#1,d2
+	move.l	d3,d1
+	addq.l	#2,d1
+	move.l	d5,d3
+	subq.l	#2,d3
+	move.l	a3,a1
+	GFX	RectFill
+	move.l	a3,a1
+	moveq	#RP_JAM1,d0
+	GFX	SetDrMd
+	movem.l	(sp)+,d2-d3
+.bar:
 	bsr	.width			; x of the cursor
 	add.l	d2,d0
 	move.l	d0,-(sp)
@@ -2268,140 +2318,193 @@ STARS_MAX	equ	64
 Stars:	dcb.b	STARS_MAX,'*'
 	even
 
-; AreaText - the lines of a textarea (a5 = state, a2 = run, a3 =
-; RastPort); the view scrolls (fs_Scroll = first line shown) to keep the
-; cursor visible.  d4 holds the current line.
+; AreaText - the lines of a text area (a5 = state, a2 = run, a3 =
+; RastPort), soft-wrapped (edit.s: its width and font noted for it in
+; the state); the view scrolls (fs_Scroll = the first line shown) to
+; keep the cursor in it; the selection is complemented, the cursor drawn
+; while it is edited
+AT_H	equ	0			; (locals: font height,
+AT_X	equ	4			;  the text's x,
+AT_Y	equ	8			;  the box's y,
+AT_N	equ	12			;  the line shown,
+AT_MORE	equ	16			;  1: a line after this one,
+AT_NEXT	equ	20			;  its start (pointer),
+AT_ED	equ	24			;  1: edited)
+AT_SIZE	equ	28
 AreaText:
 	movem.l	d2-d7/a2/a5,-(sp)
-	sub.l	#12,sp			; locals: 0 font h, 4 width, 8 line no.
+	lea	-AT_SIZE(sp),sp
 	moveq	#0,d0
 	move.b	ru_Font(a2),d0
 	add.w	d0,d0
 	lea	g_FontH(a4),a0
 	moveq	#0,d1
 	move.w	(a0,d0.w),d1
-	move.l	d1,(sp)
-	move.l	d4,d0
+	move.l	d1,AT_H(sp)
+	move.l	d4,d0			; the width for the text: the editor's
 	sub.l	d2,d0
 	subq.l	#6,d0
-	move.l	d0,4(sp)
-	addq.l	#4,d2			; text x
-	; line of the cursor
-	moveq	#0,d6
-	move.l	fs_Value(a5),a0
-	move.l	fs_Cursor(a5),d0
-	bra.s	.cle
-.cl:	cmp.b	#10,(a0)+
-	bne.s	.cle
-	addq.l	#1,d6
-.cle:	dbf	d0,.cl
-	cmp.l	fs_Scroll(a5),d6
+	move.w	d0,fs_TextW(a5)
+	move.b	ru_Soft(a2),fs_Font(a5)
+	move.b	ru_Font(a2),fs_Font+1(a5)
+	addq.l	#4,d2
+	move.l	d2,AT_X(sp)
+	move.l	d3,AT_Y(sp)
+	clr.l	AT_ED(sp)
+	move.l	ru_Text(a2),d0
+	cmp.l	g_EditField(a4),d0
+	bne.s	.ne
+	addq.l	#1,AT_ED(sp)
+.ne:	exg	a3,a5			; (edit.s: a3 = the state)
+	jsr	EdWidths
+	tst.l	AT_ED(sp)		; edited: the cursor's line in view
+	beq.s	.s2
+	move.l	fs_Cursor(a3),d0
+	jsr	EdLocate
+	cmp.l	fs_Scroll(a3),d0
 	bhs.s	.s1
-	move.l	d6,fs_Scroll(a5)
-.s1:	moveq	#0,d0
-	move.w	fs_Rows(a5),d0
-	move.l	d6,d1
-	sub.l	fs_Scroll(a5),d1
-	cmp.l	d0,d1
+	move.l	d0,fs_Scroll(a3)
+.s1:	moveq	#0,d1
+	move.w	fs_Rows(a3),d1
+	move.l	d0,d2
+	sub.l	fs_Scroll(a3),d2
+	cmp.l	d1,d2
 	blo.s	.s2
-	move.l	d6,d1
-	sub.l	d0,d1
-	addq.l	#1,d1
-	move.l	d1,fs_Scroll(a5)
-.s2:	; start of the first line shown
-	move.l	fs_Value(a5),a0
-	move.l	fs_Scroll(a5),d0
-	bra.s	.sk
-.skl:	tst.b	(a0)
-	beq.s	.go
-	cmp.b	#10,(a0)+
-	bne.s	.skl
-.sk:	subq.l	#1,d0
-	bpl.s	.skl
-.go:	move.l	a0,d4			; d4 = current line
-	clr.l	8(sp)
+	sub.l	d1,d0
+	addq.l	#1,d0
+	move.l	d0,fs_Scroll(a3)
+.s2:	move.l	fs_Scroll(a3),d0	; the first line shown
+	jsr	EdLine
+	move.l	d0,fs_Scroll(a3)
+	move.l	fs_Value(a3),d6
+	add.l	d1,d6			; d6 = the line (pointer)
+	exg	a3,a5
+	clr.l	AT_N(sp)
 .line:	moveq	#0,d0
 	move.w	fs_Rows(a5),d0
-	cmp.l	8(sp),d0
+	cmp.l	AT_N(sp),d0
 	bls	.x
-	move.l	d4,a0			; length of this line
-.ll:	move.b	(a0),d0
-	beq.s	.le
-	cmp.b	#10,d0
-	beq.s	.le
-	addq.l	#1,a0
-	bra.s	.ll
-.le:	move.l	a0,d7
-	sub.l	d4,d7			; d7 = line length
-	move.l	d7,d5
-.fit:	tst.l	d5			; characters that fit
-	beq.s	.draw
-	move.l	d4,a0
-	move.l	d5,d1
-	bsr	.measure
-	cmp.l	4(sp),d0
-	ble.s	.draw
-	subq.l	#1,d5
-	bra.s	.fit
-.draw:	move.l	d3,d6			; d6 = y of the box; d3 = of the line
-	move.l	8(sp),d0
-	mulu.l	(sp),d0
-	add.l	d0,d3
-	tst.l	d5
-	beq.s	.cur
-	move.l	d4,a0
-	move.l	d5,d0
-	move.l	d6,-(sp)
-	move.l	d2,d6
+	exg	a3,a5
+	move.l	d6,a0
+	jsr	EdNextLine
+	exg	a3,a5
+	move.l	d0,AT_MORE(sp)
+	move.l	a1,AT_NEXT(sp)
+	move.l	a0,d7			; d7 = its end (pointer)
+	move.l	AT_N(sp),d3		; d3 = its y
+	mulu.l	AT_H(sp),d3
+	add.l	AT_Y(sp),d3
+	move.l	d7,d0
+	sub.l	d6,d0
+	beq.s	.sel
+	move.l	d6,a0
+	movem.l	d6,-(sp)
+	move.l	AT_X+4(sp),d6
 	bsr	WidgetText
-	move.l	(sp)+,d6
-.cur:	move.l	ru_Text(a2),d0		; the cursor, if it is on this line
-	cmp.l	g_EditField(a4),d0
-	bne.s	.nocur
-	move.l	fs_Value(a5),d1
-	add.l	fs_Cursor(a5),d1
-	cmp.l	d4,d1
-	blo.s	.nocur
-	move.l	d4,d0
-	add.l	d7,d0
+	movem.l	(sp)+,d6
+.sel:	tst.l	AT_ED(sp)		; the selection on this line
+	beq	.next
+	exg	a3,a5
+	jsr	EdSel
+	exg	a3,a5
 	cmp.l	d0,d1
-	bhi.s	.nocur
-	sub.l	d4,d1
-	move.l	d4,a0
-	bsr	.measure
-	add.l	d2,d0
+	beq.s	.cur
+	move.l	d6,d4			; d4/d5 = the line's start/end
+	sub.l	fs_Value(a5),d4
+	move.l	d7,d5
+	sub.l	fs_Value(a5),d5
+	cmp.l	d4,d0			; from max(start, its start)
+	bhs.s	.sf
+	move.l	d4,d0
+.sf:	cmp.l	d5,d1			; to min(end, its end)
+	bls.s	.st
+	move.l	d5,d1
+.st:	cmp.l	d0,d1
+	bls.s	.cur
+	movem.l	d0-d1,-(sp)		; x of both
+	move.l	d4,d0
+	move.l	(sp),d1
+	exg	a3,a5
+	jsr	EdXOf
+	exg	a3,a5
+	move.l	d0,(sp)
+	move.l	d4,d0
+	move.l	4(sp),d1
+	exg	a3,a5
+	jsr	EdXOf
+	exg	a3,a5
+	move.l	d0,4(sp)
+	movem.l	(sp)+,d0-d1
+	bsr	.inv
+.cur:	exg	a3,a5			; the cursor, if it is on this line
+	move.l	fs_Cursor(a3),d0
+	exg	a3,a5
+	move.l	d6,d1
+	sub.l	fs_Value(a5),d1
+	cmp.l	d1,d0
+	blo.s	.next
+	tst.l	AT_MORE(sp)		; (before the next line's start)
+	beq.s	.on
+	move.l	AT_NEXT(sp),d1
+	sub.l	fs_Value(a5),d1
+	cmp.l	d1,d0
+	bhs.s	.next
+.on:	move.l	d0,d1
+	move.l	d6,d0
+	sub.l	fs_Value(a5),d0
+	exg	a3,a5
+	jsr	EdXOf
+	exg	a3,a5
+	move.l	d0,d1			; a bar 2 pixels wide
+	addq.l	#2,d1
+	move.l	a3,a1
 	move.l	d0,-(sp)
 	move.l	g_PageFg(a4),d0
 	bsr	SetPenRGB
 	move.l	(sp)+,d0
-	move.l	d3,d1
-	addq.l	#3,d1
 	movem.l	d2-d3,-(sp)
+	add.l	AT_X+8(sp),d0
 	move.l	d0,d2
 	addq.l	#1,d2
+	move.l	d3,d1
+	addq.l	#3,d1
 	move.l	d1,d3
-	add.l	8(sp),d3		; + font height (locals at 8 now)
+	add.l	AT_H+8(sp),d3
 	subq.l	#1,d3
 	move.l	a3,a1
 	GFX	RectFill
 	movem.l	(sp)+,d2-d3
-.nocur:	move.l	d6,d3
-	add.l	d7,d4			; next line
-	move.l	d4,a0
-	tst.b	(a0)
+.next:	tst.l	AT_MORE(sp)
 	beq.s	.x
-	addq.l	#1,d4
-	addq.l	#1,8(sp)
+	move.l	AT_NEXT(sp),d6
+	addq.l	#1,AT_N(sp)
 	bra	.line
-.x:	add.l	#12,sp
+.x:	lea	AT_SIZE(sp),sp
 	movem.l	(sp)+,d2-d7/a2/a5
 	rts
-.measure:
-	moveq	#0,d0
-	move.b	ru_Soft(a2),d0
-	lsl.w	#8,d0
-	move.b	ru_Font(a2),d0
-	bra	GuiMeasure
+; .inv - complement x d0 .. d1 (from the text's left) of the line at y d3
+.inv:	movem.l	d2-d3,-(sp)
+	move.l	a3,a1
+	movem.l	d0-d1,-(sp)
+	moveq	#RP_COMPLEMENT,d0
+	GFX	SetDrMd
+	movem.l	(sp)+,d0-d1
+	move.l	AT_X+4+8(sp),d2		; (locals: past the return address
+	add.l	d2,d0			;  and d2-d3)
+	add.l	d1,d2
+	subq.l	#1,d2
+	move.l	d3,d1
+	addq.l	#3,d1
+	move.l	d1,d3
+	add.l	AT_H+4+8(sp),d3
+	subq.l	#1,d3
+	move.l	a3,a1
+	GFX	RectFill
+	move.l	a3,a1
+	moveq	#RP_JAM1,d0
+	GFX	SetDrMd
+	movem.l	(sp)+,d2-d3
+	rts
 
 ; DrawStatus - draw g_StatusText in the status line (over the old
 ; text, then clearing what is right of it, so that it does not flicker)
@@ -2946,6 +3049,85 @@ UrlX:	rts
 
 ; HidX - (a tab in the background) nothing painted
 HidX:	rts
+
+;--------------------------------------------------------------------
+; FieldPress - (the left button pressed on element a0, LinkAt's run
+; g_LinkRun) a text field or area: edited, the cursor where the mouse
+; is (Shift: the selection to there), a drag selects on (OnHover)
+; In: d4 = qualifier, d5/d6 = the mouse
+; Out: d0 = 1 if it was a text field (CCR set)
+;--------------------------------------------------------------------
+FieldPress:
+	movem.l	d2/a2-a3,-(sp)
+	move.l	a0,a2
+	jsr	FormStateOf
+	tst.l	d0
+	beq.s	.no
+	move.l	d0,a3
+	move.b	fs_Kind(a3),d0
+	cmp.b	#FK_PASSWORD,d0
+	bls.s	.yes
+	cmp.b	#FK_TEXTAREA,d0
+	bne.s	.no
+.yes:	cmp.l	g_EditField(a4),a2	; (edited now, if it was not)
+	beq.s	.ed
+	jsr	FormLeave
+	move.l	a2,a0
+	moveq	#1,d0
+	jsr	FormActivate
+.ed:	move.l	g_LinkRun(a4),g_FieldRun(a4)
+	move.l	a2,g_FieldDrag(a4)
+	moveq	#0,d0			; Shift: the selection follows
+	move.w	d4,d1
+	and.w	#IEQUALIFIER_LSHIFT|IEQUALIFIER_RSHIFT,d1
+	beq.s	.ns
+	moveq	#1,d0
+.ns:	move.l	a2,a0
+	bsr.s	FieldAt
+	moveq	#1,d0
+	bra.s	.x
+.no:	moveq	#0,d0
+.x:	movem.l	(sp)+,d2/a2-a3
+	tst.l	d0
+	rts
+
+; FieldAt - the cursor of field a0 (its run g_FieldRun) where the mouse
+; is (d5/d6); d0 = 1: the selection follows
+FieldAt:
+	movem.l	d2-d3/a2-a3,-(sp)
+	move.l	a0,a2
+	move.l	d0,d2
+	jsr	FormStateOf
+	tst.l	d0
+	beq.s	.x
+	move.l	d0,a3
+	move.l	g_FieldRun(a4),d0	; its run (the same as when pressed?)
+	jsr	RunCount
+	cmp.l	g_FieldRun(a4),d0
+	bls.s	.stop
+	move.l	g_FieldRun(a4),d0
+	jsr	RunPtr
+	cmp.l	ru_Text(a0),a2
+	bne.s	.stop
+	move.l	d5,d3			; the mouse in its text
+	sub.l	g_PageX(a4),d3
+	moveq	#0,d0
+	move.w	ru_X(a0),d0
+	ext.l	d0
+	sub.l	d0,d3
+	subq.l	#4,d3
+	move.l	d6,d1
+	sub.l	g_PageY(a4),d1
+	add.l	g_ScrollY(a4),d1
+	sub.l	ru_Y(a0),d1
+	move.l	d3,d0
+	jsr	EdHit
+	move.l	a2,a0
+	bsr	GuiPaintNode
+	bra.s	.x
+.stop:	clr.l	g_FieldDrag(a4)
+.x:	movem.l	(sp)+,d2-d3/a2-a3
+	rts
 
 ;--------------------------------------------------------------------
 ; The tab strip, between the toolbar and the page (two tabs or more):
@@ -4372,7 +4554,8 @@ LinkAt:
 	jsr	MapHit
 	beq.s	.l
 	bra.s	.x
-.lk:	move.l	ru_Link(a0),d0
+.lk:	move.l	d4,g_LinkRun(a4)	; (the run: FieldPress)
+	move.l	ru_Link(a0),d0
 	bra.s	.x
 .none:	moveq	#0,d0
 .x:	movem.l	(sp)+,d2-d4
@@ -4382,7 +4565,12 @@ LinkAt:
 OnHover:
 	tst.l	g_Blank(a4)		; (blank: no links)
 	bne	ScrollNone
-	tst.l	g_SelOn(a4)		; selecting
+	move.l	g_FieldDrag(a4),d0	; selecting in a field
+	beq.s	.nofd
+	move.l	d0,a0
+	moveq	#1,d0
+	bra	FieldAt
+.nofd:	tst.l	g_SelOn(a4)		; selecting
 	beq.s	.nosel
 	jmp	SelMove
 .nosel:	bsr	LinkAt
@@ -4519,14 +4707,20 @@ OnClick:
 	bne.s	.up
 	bsr	LinkAt
 	move.l	d0,g_PressLink(a4)
-	bne.s	.link
-	jsr	SelPress		; on text: a selection starts
+	beq.s	.text
+	move.l	d0,a0			; a text field: the cursor there
+	bsr	FieldPress
+	bne.s	.x
+	move.l	g_PressLink(a4),d0
+	bra.s	.link
+.text:	jsr	SelPress		; on text: a selection starts
 	moveq	#0,d0
 .link:	cmp.l	g_EditField(a4),d0	; clicking elsewhere ends editing
 	beq.s	.x
 	jmp	FormLeave
 .up:	cmp.w	#IECODE_LBUTTON|IECODE_UP_PREFIX,d3
 	bne.s	.x
+	clr.l	g_FieldDrag(a4)		; (a selection in a field: done)
 	jsr	SelRelease
 	bsr	LinkAt
 	tst.l	d0

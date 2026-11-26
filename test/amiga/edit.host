@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+"""Host side of edit.script: a text area edited with the keys of a
+notepad (edit.s): lines typed, Up, Ctrl-Left/Right to a line's start
+and end, a selection with Shift replaced by typing and undone, a copy
+pasted at the end, undone and redone; then sent: the server must get
+exactly the text made."""
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from xdrive import Amiga, wait_log  # noqa: E402
+
+r = sys.argv[1]
+log = os.path.join(r, "edit.log")
+out = open(os.path.join(r, "edit.driver"), "w")
+U = "http://127.0.0.1:8080/"
+
+
+def step(m):
+    out.write(m + "\n")
+    out.flush()
+
+
+try:
+    a = Amiga()
+    wait_log(log, "page " + U + "edit.html")
+    time.sleep(1)
+    a.key("Tab")                        # the text area: edited at once
+    wait_log(log, "focus t")
+    a.type("one two")
+    a.key("Return")
+    a.type("three four")
+    a.key("Return")
+    a.type("five")
+    a.key("Up")                         # on "three four" ...
+    a.key("ctrl+Left")                  # ... its start
+    a.type(">")
+    a.key("ctrl+Right")                 # its end
+    a.type("<")
+    a.key("shift+ctrl+Left")            # all of it selected,
+    a.type("X")                         # replaced,
+    a.key("ctrl+z")                     # and back (selected again)
+    a.key("Right")                      # (the selection ends: at its end)
+    a.type("!")
+    a.key("ctrl+Up")                    # the text's start
+    a.key("shift+Right", 3)             # "one" selected
+    a.key("ctrl+c")                     # copied
+    a.key("ctrl+Down")                  # the text's end
+    a.key("ctrl+v")                     # pasted,
+    a.key("ctrl+z")                     # gone,
+    a.key("ctrl+y")                     # back again
+    time.sleep(1)
+    a.shot(os.path.join(r, "edit.png"))
+    a.key("Tab")                        # Send
+    a.key("Return")
+    wait_log(log, "page " + U + "echo-edit")
+    time.sleep(1)
+    srv = open(os.path.join(r, "..", "server.log"), encoding="latin-1").read()
+    want = "POST /echo-edit body=t=one+two%0D%0A%3Ethree+four%3C%21%0D%0Afiveone"
+    got = [l for l in srv.splitlines() if "POST /echo-edit body=" in l]
+    step("sent: " + (got[-1] if got else "nothing"))
+    if not got or want not in got[-1]:
+        raise AssertionError("not the text made")
+    a.key("ctrl+q")
+    step("ok")
+except Exception as e:
+    step("FAIL %r" % e)
+    try:
+        Amiga().key("ctrl+q")
+    except Exception:
+        pass

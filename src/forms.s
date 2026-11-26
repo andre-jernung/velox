@@ -15,6 +15,8 @@
 	xref	PageAlloc,DomGetAttr,StrIPrefix,ParseDec,Measure
 	xref	BufAppendByte,BufAppendStr,BufClear,UrlResolve
 	xref	FrameNav,NavTarget,BufFree
+	xref	EdMove,EdType,EdBack,EdDel,EdSelAll,EdSel,EdUndo,EdRedo,ClipCopyN,ClipPaste
+	xdef	FormCopy
 	xref	NavGo,NavPost,GuiPaintAll,GuiStatus,GuiPaintNode
 
 DEFAULT_MAX	equ	1024		; text input capacity without maxlength
@@ -58,6 +60,9 @@ FormStateOf:
 	jsr	PageAlloc
 	beq	.fail
 	move.l	d0,a3
+	moveq	#-1,d0			; no selection, no column kept
+	move.l	d0,fs_Anchor(a3)
+	move.l	d0,fs_Goal(a3)
 	move.w	#20,fs_Size(a3)
 	move.w	#1,fs_Rows(a3)
 	move.l	#DEFAULT_MAX,fs_Max(a3)
@@ -495,8 +500,12 @@ FormActivate:
 	beq.s	.select
 	bra.s	.x
 .edit:	move.l	g_EditField(a4),d0	; (another field: it shows no
-	move.l	a5,g_EditField(a4)	;  cursor any more)
+	cmp.l	a5,d0			;  cursor any more; this one edited
+	beq.s	.node			;  already: the cursor stays)
+	move.l	a5,g_EditField(a4)
 	move.l	fs_Len(a3),fs_Cursor(a3)
+	moveq	#-1,d1
+	move.l	d1,fs_Anchor(a3)
 	tst.l	d0
 	beq.s	.node
 	cmp.l	a5,d0
@@ -648,7 +657,12 @@ FormLeave:
 .x:	rts
 
 ;--------------------------------------------------------------------
-; FormEditKey - a key while a field is being edited
+; FormEditKey - a key while a field is being edited, as in a notepad
+; (edit.s): the cursor keys move by character and by line, with Ctrl
+; to the line's start and end (Left, Right) and the text's (Up, Down),
+; with Shift selecting; Backspace, Del; Return a new line in a text
+; area, else the form is sent; Ctrl or Amiga with A selects all, C
+; copies, X cuts, V pastes, Z undoes (with Shift, or Y: redoes)
 ; In:  d0 = raw key code, d1 = qualifier
 ; Out: d0 = 1 if the key was used
 ;--------------------------------------------------------------------
@@ -683,77 +697,169 @@ FormEditKey:
 	bsr	DefaultButton
 	bsr	FormSubmit
 	bra	.yes
-.nl:	moveq	#10,d0
-	bsr	Insert
+.nl:	lea	NewLine(pc),a0
+	moveq	#1,d0
+	jsr	EdType
 	bra	.changed
 .n3:	cmp.w	#$41,d2			; Backspace
 	bne.s	.n4
-	move.l	fs_Cursor(a3),d0
-	beq	.yes
-	subq.l	#1,fs_Cursor(a3)
-	bsr	DeleteAt
+	jsr	EdBack
 	bra	.changed
 .n4:	cmp.w	#$46,d2			; Del
 	bne.s	.n5
-	move.l	fs_Cursor(a3),d0
-	cmp.l	fs_Len(a3),d0
-	bhs	.yes
-	bsr	DeleteAt
+	jsr	EdDel
 	bra	.changed
-.n5:	cmp.w	#$4f,d2			; cursor left (Shift: start)
-	bne.s	.n6
-	move.w	d3,d0
-	and.w	#3,d0
-	beq.s	.left
-	clr.l	fs_Cursor(a3)
-	bra	.changed
-.left:	tst.l	fs_Cursor(a3)
-	beq	.yes
-	subq.l	#1,fs_Cursor(a3)
-	bra	.changed
-.n6:	cmp.w	#$4e,d2			; cursor right (Shift: end)
-	bne.s	.n7
-	move.l	fs_Len(a3),d1
-	move.w	d3,d0
-	and.w	#3,d0
-	beq.s	.right
-	move.l	d1,fs_Cursor(a3)
-	bra	.changed
-.right:	cmp.l	fs_Cursor(a3),d1
-	bls	.yes
-	addq.l	#1,fs_Cursor(a3)
-	bra	.changed
-.n7:	cmp.w	#$4c,d2			; cursor up/down: other keys are
-	beq	.yes			; not for us
-	cmp.w	#$4d,d2
-	beq	.yes
-	move.w	d3,d0			; Amiga/Ctrl combinations are commands
+.n5:	lea	MoveKeys(pc),a0		; the cursor keys
+	moveq	#3,d0
+.mk:	cmp.b	(a0)+,d2
+	beq.s	.move
+	addq.l	#2,a0
+	dbf	d0,.mk
+	move.w	d3,d0			; Amiga/Ctrl combinations
 	and.w	#$00c8,d0
-	bne	.no
-	move.l	d2,d0			; characters through the keymap
+	beq.s	.chars
+	lea	CmdKeys(pc),a0		; ours, else commands
+.ck:	move.b	(a0)+,d0
+	beq	.no
+	addq.l	#1,a0
+	cmp.b	d0,d2
+	bne.s	.ck
+	move.b	-(a0),d0
+	ext.w	d0
+	move.w	.cj(pc,d0.w),d0
+	jmp	.cj(pc,d0.w)
+.cj:	dc.w	.all-.cj,.copy-.cj,.cut-.cj,.paste-.cj,.undo-.cj,.redo-.cj
+.move:	moveq	#0,d0			; the move: plain, or with Ctrl
+	move.b	(a0),d0
+	btst	#IEQUALIFIERB_CONTROL,d3
+	beq.s	.mv
+	move.b	1(a0),d0
+.mv:	moveq	#0,d1			; Shift: selecting
+	move.w	d3,d4
+	and.w	#IEQUALIFIER_LSHIFT|IEQUALIFIER_RSHIFT,d4
+	beq.s	.mv1
+	moveq	#1,d1
+.mv1:	jsr	EdMove
+	bra	.shown
+.all:	jsr	EdSelAll
+	bra	.shown
+.copy:	bsr	FormCopy
+	bra	.yes
+.cut:	bsr	FormCopy
+	beq	.yes
+	jsr	EdBack			; (the selection goes)
+	bra	.changed
+.paste:	bsr	Paste
+	bra	.changed
+.undo:	btst	#IEQUALIFIERB_LSHIFT,d3	; (Shift: redo)
+	bne.s	.redo
+	btst	#IEQUALIFIERB_RSHIFT,d3
+	bne.s	.redo
+	jsr	EdUndo
+	bra.s	.changed
+.redo:	jsr	EdRedo
+	bra.s	.changed
+.chars:	move.l	d2,d0			; characters through the keymap
 	move.l	d3,d1
 	bsr	KeyToChars
 	move.l	d0,d4
 	ble	.yes
 	lea	g_KeyChars(a4),a2
 .ch:	moveq	#0,d0
-	move.b	(a2)+,d0
+	move.b	(a2),d0
 	cmp.b	#32,d0
 	blo.s	.chn
 	cmp.b	#127,d0
 	beq.s	.chn
-	bsr	Insert
-.chn:	subq.l	#1,d4
+	move.l	a2,a0			; (one at a time: undo goes by words)
+	moveq	#1,d0
+	jsr	EdType
+.chn:	addq.l	#1,a2
+	subq.l	#1,d4
 	bne.s	.ch
 .changed:
 	moveq	#1,d0			; (a newer version of the page must not
 	move.l	d0,g_FormTouched(a4)	;  undo this)
-	move.l	a5,a0			; just the field: typing is instant
+.shown:	move.l	a5,a0			; just the field: typing is instant
 	jsr	GuiPaintNode
 .yes:	moveq	#1,d0
 	bra.s	.x
 .no:	moveq	#0,d0
 .x:	movem.l	(sp)+,d2-d4/a2-a3/a5
+	rts
+
+; the cursor keys: raw code, the move, the move with Ctrl
+MoveKeys:	dc.b	$4f,MV_LEFT,MV_HOME,$4e,MV_RIGHT,MV_END
+		dc.b	$4c,MV_UP,MV_TOP,$4d,MV_DOWN,MV_BOTTOM
+; Ctrl/Amiga with: raw code, the command (an offset in FormEditKey's .cj)
+CmdKeys:	dc.b	$20,0,$33,2,$32,4,$34,6,$31,8,$15,10,0
+NewLine:	dc.b	10
+	even
+
+;--------------------------------------------------------------------
+; FormCopy - the selection of the field being edited to the clipboard
+; (not a password's)
+; Out: d0 = 1 if there was one (CCR set)
+;--------------------------------------------------------------------
+FormCopy:
+	move.l	a3,-(sp)
+	move.l	g_EditField(a4),d0
+	beq.s	.no
+	move.l	d0,a0
+	move.l	n_Data2(a0),d0
+	beq.s	.no
+	move.l	d0,a3
+	cmp.b	#FK_PASSWORD,fs_Kind(a3)
+	beq.s	.no
+	jsr	EdSel
+	sub.l	d0,d1
+	beq.s	.no
+	move.l	fs_Value(a3),a0
+	add.l	d0,a0
+	move.l	d1,d0
+	jsr	ClipCopyN
+	moveq	#1,d0
+	bra.s	.x
+.no:	moveq	#0,d0
+.x:	move.l	(sp)+,a3
+	tst.l	d0
+	rts
+
+; Paste - (a3 = the field's state) the clipboard's text in place of the
+; selection: its CR LF a LF, other control characters left out, its
+; newlines blanks in a field of one line
+Paste:
+	movem.l	d2/a2,-(sp)
+	jsr	ClipPaste
+	beq.s	.x
+	move.l	d0,a2
+	move.l	d0,a0			; a0 from, a1 to
+	move.l	d0,a1
+	move.l	d1,d2
+	bra.s	.e
+.l:	move.b	(a0)+,d0
+	cmp.b	#13,d0
+	beq.s	.e
+	cmp.b	#10,d0
+	bne.s	.c
+	cmp.b	#FK_TEXTAREA,fs_Kind(a3)
+	beq.s	.put
+	moveq	#' ',d0
+	bra.s	.put
+.c:	cmp.b	#32,d0
+	blo.s	.e
+	cmp.b	#127,d0
+	beq.s	.e
+.put:	move.b	d0,(a1)+
+.e:	subq.l	#1,d2
+	bpl.s	.l
+	move.l	a1,d0			; one step
+	sub.l	a2,d0
+	move.l	a2,a0
+	jsr	EdType
+	move.l	a2,a1
+	EXEC	FreeVec
+.x:	movem.l	(sp)+,d2/a2
 	rts
 
 ;--------------------------------------------------------------------
