@@ -8,6 +8,12 @@ and a single event dispatch point.
 ## Build
 
 - `make`: assembles `src/*.s` into `build/velox` (Amiga hunk executable)
+- `make aminet`: `build/aminet/velox.lha` (the dist folder with the
+  source in `Velox/Source`, as the GPL wants) and `velox.readme` from
+  `tools/aminet.readme` (edit its changes section for each release),
+  checked against Aminet's rules by `tools/aminetcheck.py`. Upload both
+  to ftp://main.aminet.net/new (anonymous). The archives are written
+  by `tools/mklha.py` (-lh5-; `7z t` tests them).
 - `make release`: `build/Velox-VERSION.lha` and `.zip` of the dist
   folder, for a GitHub release (VERSION_STR in `src/velox.i`; a release
   raises the last digit and sets VERSION_DATE).

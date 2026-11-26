@@ -65,7 +65,7 @@ def main():
         0, 0 if drawer else 1,     # no default tool; tool types follow
         -0x80000000, -0x80000000,  # NO_ICON_POSITION
         1 if drawer else 0, 0,     # drawer data follows, no tool window
-        0 if drawer else 16384)    # stack
+        0 if drawer else 65536)    # stack (64 KB)
     if drawer:
         # DrawerData: a NewWindow (the drawer's window) and the scroll
         # position of its contents

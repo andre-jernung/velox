@@ -1,0 +1,62 @@
+Short:        Web browser written in 68k assembly
+Author:       @AUTHOR@
+Uploader:     @AUTHOR@
+Type:         comm/www
+Version:      @VERSION@
+Architecture: m68k-amigaos >= 3.1.0
+Requires:     68020+, a TCP/IP stack, AmiSSL 6 for https
+Kurz:         Webbrowser in 68k-Assembler geschrieben
+
+Velox is a small, fast web browser for classic AmigaOS 3.x, written
+entirely in 68k assembly. It stays responsive while pages load: the
+page scrolls, and links, gadgets and menus work at once.
+
+Features
+--------
+
+- HTML with a tolerant HTML5-style parser; UTF-8, Latin-1 and
+  Windows-1252 pages
+- CSS: selectors with specificity, colours, fonts, margins, padding,
+  borders, widths, alignment, floats, media queries
+- Tables, lists, forms (GET and POST), frames (each scrolling on its
+  own), image maps, background images
+- Images decoded by Velox itself: JPEG (also progressive), PNG, GIF and
+  WebP, dithered to the screen's colours; other formats through the
+  picture datatypes
+- Tabs, each loading on its own, all at once
+- http and https (AmiSSL 6, with certificate checks), keep-alive,
+  cookies, a memory and a disk cache, Back and Forward from pages kept
+  in memory or on disk, bookmarks, downloads, find in page, view
+  source, selecting text to the clipboard
+- Keyboard navigation for everything
+
+Requirements
+------------
+
+- AmigaOS 3.1 or newer, a 68020 or better
+- A TCP/IP stack with bsdsocket.library (Roadshow, AmiTCP, Miami...)
+- For https: AmiSSL 6, or velox-proxy.py (included) running on another
+  computer
+
+Installing
+----------
+
+Copy the Velox drawer anywhere and start Velox from its icon or from a
+Shell. Velox/README.md lists the tool types, the Shell arguments and
+the keys.
+
+Source
+------
+
+Velox is free software under the GNU General Public License version 3
+(Velox/LICENSE). Its source is in Velox/Source, and at
+https://github.com/johansmolinski/velox
+
+Changes in @VERSION@
+----------------
+
+The first upload to Aminet. Since 0.1.1 on GitHub: tabs; logging in
+with the keyboard (Tab goes on from a field clicked into, Return sends
+the form as its submit button would); links styled as buttons look
+like buttons (a background, padding and an outline behind inline
+elements); icons in MagicWB's colours.

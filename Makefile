@@ -28,7 +28,7 @@ INCS    := $(wildcard src/*.i)
 TARGET  := build/velox
 VTEST   := build/vtest
 
-.PHONY: all clean size test dist lint release
+.PHONY: aminet all clean size test dist lint release
 
 all: $(TARGET) build/wbrun build/mouse
 
@@ -92,6 +92,19 @@ release: dist
 	python3 tools/mklha.py build/Velox-$(VERSION).lha build/dist/Velox build/dist/Velox.info
 	cd build/dist && rm -f ../Velox-$(VERSION).zip && python3 -m zipfile -c ../Velox-$(VERSION).zip Velox Velox.info
 	@ls -l build/Velox-$(VERSION).lha build/Velox-$(VERSION).zip
+
+# aminet: build/aminet/velox.lha and velox.readme for Aminet: the dist
+# folder with the source in Velox/Source (the GPL: the committed tree,
+# without the tests); the readme from tools/aminet.readme (its changes
+# section: edit it for each release), checked by tools/aminetcheck.py
+aminet: dist
+	rm -rf build/aminet && mkdir -p build/aminet/stage/Velox/Source
+	cp -r build/dist/Velox build/dist/Velox.info build/aminet/stage/
+	git archive HEAD -- . ':!test' | tar -x -C build/aminet/stage/Velox/Source
+	python3 tools/mklha.py build/aminet/velox.lha build/aminet/stage/Velox build/aminet/stage/Velox.info
+	sed -e 's/@VERSION@/$(VERSION)/g' -e "s/@AUTHOR@/$$(git config user.name) ($$(git config user.email))/g" tools/aminet.readme >build/aminet/velox.readme
+	python3 tools/aminetcheck.py build/aminet/velox.lha build/aminet/velox.readme
+	@ls -l build/aminet/velox.lha build/aminet/velox.readme
 
 size: $(TARGET)
 	@s=$$(stat -c %s $(TARGET)); echo "$(TARGET): $$s bytes ($$((s * 100 / $(BUDGET)))% of the $(BUDGET) target)"
