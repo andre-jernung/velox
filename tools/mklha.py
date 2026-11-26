@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Write an LHA archive (method -lh0-: stored, which every LhA reads)
-of the files under a directory, paths kept ("Velox/Velox.info").
+of files and the files under directories, paths kept from their parent
+("Velox/Velox.info", "Velox.info").
 
-usage: mklha.py archive.lha dir
+usage: mklha.py archive.lha dir|file ...
 """
 import os
 import sys
@@ -38,13 +39,18 @@ def entry(name, data, mtime):
 
 
 def main():
-    out, top = sys.argv[1], sys.argv[2]
-    base = os.path.dirname(os.path.abspath(top))
+    out = sys.argv[1]
     parts = []
-    for root, dirs, files in os.walk(top):
-        dirs.sort()
-        for f in sorted(files):
-            p = os.path.join(root, f)
+    for top in sys.argv[2:]:
+        base = os.path.dirname(os.path.abspath(top))
+        if os.path.isdir(top):
+            paths = []
+            for root, dirs, files in os.walk(top):
+                dirs.sort()
+                paths += [os.path.join(root, f) for f in sorted(files)]
+        else:
+            paths = [top]
+        for p in paths:
             name = os.path.relpath(p, base).replace(os.sep, "/")
             with open(p, "rb") as fh:
                 parts.append(entry(name, fh.read(), os.path.getmtime(p)))

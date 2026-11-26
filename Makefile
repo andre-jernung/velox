@@ -76,19 +76,21 @@ test: $(VTEST)
 lint:
 	python3 tools/lint.py
 
-# build/dist/Velox: the program, its icon, the proxy and the read-me
+# build/dist/Velox and its drawer icon: the program, its icon, the proxy
+# and the read-me. The icons are MagicWB's 8 colours.
 dist: $(TARGET)
 	rm -rf build/dist && mkdir -p build/dist/Velox
 	cp $(TARGET) build/dist/Velox/Velox
-	python3 tools/mkicon.py build/dist/Velox/Velox.info
+	python3 tools/mkicon.py gfx/icon-mwb.png build/dist/Velox/Velox.info
+	python3 tools/mkicon.py --drawer gfx/drawer-mwb.png build/dist/Velox.info
 	cp tools/velox-proxy.py README.md LICENSE build/dist/Velox/
 
 # release: build/Velox-VERSION.lha and .zip of the dist folder (the
 # version: VERSION_STR in src/velox.i)
 VERSION := $(shell awk -F'"' '/^VERSION_STR/{getline; print $$2; exit}' src/velox.i)
 release: dist
-	python3 tools/mklha.py build/Velox-$(VERSION).lha build/dist/Velox
-	cd build/dist && python3 -c "import shutil; shutil.make_archive('../Velox-$(VERSION)', 'zip', '.', 'Velox')"
+	python3 tools/mklha.py build/Velox-$(VERSION).lha build/dist/Velox build/dist/Velox.info
+	cd build/dist && rm -f ../Velox-$(VERSION).zip && python3 -m zipfile -c ../Velox-$(VERSION).zip Velox Velox.info
 	@ls -l build/Velox-$(VERSION).lha build/Velox-$(VERSION).zip
 
 size: $(TARGET)

@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
-"""Write a Workbench tool icon (.info) for Velox.
+"""Write a Workbench tool or drawer icon (.info) for Velox.
 
-usage: mkicon.py OUTPUT.info [TOOLTYPE ...]
+usage: mkicon.py [--drawer] IMAGE.png OUTPUT.info [TOOLTYPE ...]
 
-A 4 colour (2 plane) image of a globe, as the standard Workbench palette
-shows it (grey, black, white, blue).  Without TOOLTYPE arguments the icon
-gets the documented tool types, disabled with parentheses.
+The picture is an indexed PNG: pen numbers as they are, as many planes
+as its highest pen needs (Velox's are 3 planes for MagicWB, made by
+tools/mwbicon.py and tools/mkdrawer.py).  Without TOOLTYPE arguments
+the icon gets the documented tool types, disabled with parentheses.
+--drawer makes a
+drawer icon (no tool types; its window opens at 80,40, 300x100, until
+the user snapshots it).
 """
-import math
 import struct
 import sys
 
-W, H = 46, 23
+from PIL import Image
+
 DEFAULT_TOOLTYPES = [
     "(PROXY=192.168.1.10:8888)",
     "(HOME=about:velox)",
@@ -21,45 +25,35 @@ DEFAULT_TOOLTYPES = [
 ]
 
 
-def pixel(x, y):
-    """0 grey, 1 black, 2 white, 3 blue"""
-    # pixels are about twice as high as wide on a 640x256 screen
-    cx, cy, r = W / 2 - 0.5, H / 2 - 0.5, 10.5
-    dx, dy = (x - cx) / 2.0, y - cy
-    d = math.hypot(dx, dy)
-    if d > r + 0.5:
-        return 0
-    if d > r - 0.7:
-        return 1                      # outline
-    # meridians and parallels
-    lon = math.asin(max(-1, min(1, dx / math.sqrt(max(r * r - dy * dy, 0.01)))))
-    if abs(dy) < 0.5 or abs(abs(dy) - r / 2) < 0.5:
-        return 2
-    for m in (-math.pi / 4, 0, math.pi / 4):
-        if abs(lon - m) < 0.09:
-            return 2
-    return 3
-
-
-def planes():
-    rowbytes = ((W + 15) // 16) * 2
+def planes(w, h, depth, pen):
+    rowbytes = ((w + 15) // 16) * 2
     out = b""
-    for p in range(2):
-        for y in range(H):
+    for p in range(depth):
+        for y in range(h):
             row = bytearray(rowbytes)
-            for x in range(W):
-                if pixel(x, y) >> p & 1:
+            for x in range(w):
+                if pen(x, y) >> p & 1:
                     row[x // 8] |= 0x80 >> (x % 8)
             out += bytes(row)
     return out
 
 
 def main():
-    path = sys.argv[1]
-    tooltypes = sys.argv[2:] or DEFAULT_TOOLTYPES
+    args = sys.argv[1:]
+    drawer = args[0] == "--drawer"
+    if drawer:
+        args = args[1:]
+    im = Image.open(args[0])
+    if im.mode != "P":
+        sys.exit(f"{args[0]}: not an indexed image")
+    w, h = im.size
+    px = im.load()
+    depth = max(1, max(px[x, y] for x in range(w) for y in range(h)).bit_length())
+    path = args[1]
+    tooltypes = [] if drawer else args[2:] or DEFAULT_TOOLTYPES
     gadget = struct.pack(
         ">IhhhhHHHIIIIIHI",
-        0, 0, 0, W, H + 1,
+        0, 0, 0, w, h + 1,
         0x0005,          # GFLG_GADGIMAGE | GFLG_GADGBACKFILL
         0x0003,          # RELVERIFY | GADGIMMEDIATE
         0x0001,          # BOOLGADGET
@@ -67,15 +61,34 @@ def main():
         0, 1)            # UserData 1: OS 2.x icon revision
     dobj = struct.pack(">HH", 0xE310, 1) + gadget + struct.pack(
         ">BBIIiiIIi",
-        3, 0,            # WBTOOL
-        0, 1,            # no default tool; tool types follow
+        2 if drawer else 3, 0,     # WBDRAWER / WBTOOL
+        0, 0 if drawer else 1,     # no default tool; tool types follow
         -0x80000000, -0x80000000,  # NO_ICON_POSITION
-        0, 0, 16384)     # no drawer data / tool window, stack
-    image = struct.pack(">hhhhhIBBI", 0, 0, W, H, 2, 1, 3, 0, 0) + planes()
-    tt = struct.pack(">I", (len(tooltypes) + 1) * 4)
+        1 if drawer else 0, 0,     # drawer data follows, no tool window
+        0 if drawer else 16384)    # stack
+    if drawer:
+        # DrawerData: a NewWindow (the drawer's window) and the scroll
+        # position of its contents
+        dobj += struct.pack(
+            ">hhhhBBIIIIIIIhhhhHii",
+            80, 40, 300, 100,      # place and size
+            255, 255,              # default pens
+            0, 0, 0, 0, 0, 0, 0,   # flags, gadgets, title, screen: Workbench's
+            90, 40, -1, -1,        # min and max size
+            1,                     # WBENCHSCREEN
+            0, 0)                  # CurrentX/Y
+    image = struct.pack(">hhhhhIBBI", 0, 0, w, h, depth, 1, (1 << depth) - 1, 0, 0) \
+        + planes(w, h, depth, lambda x, y: px[x, y])
+    tt = b""
+    if tooltypes:
+        tt = struct.pack(">I", (len(tooltypes) + 1) * 4)
     for t in tooltypes:
         b = t.encode("latin-1") + b"\0"
         tt += struct.pack(">I", len(b)) + b
+    if drawer:
+        # OS 2.x drawer data (icon revision 1): flags, view modes (both
+        # default: show icons, view by icon)
+        tt += struct.pack(">IH", 0, 0)
     with open(path, "wb") as f:
         f.write(dobj + image + tt)
 

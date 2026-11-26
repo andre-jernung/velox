@@ -67,8 +67,9 @@ From the Shell:
 
     Velox [URL] [PROXY=host:port] [LOG=file]
 
-From Workbench, double-click the icon. Settings can be tool types in the
-icon (remove the parentheses to enable one) or environment variables
+From Workbench, double-click the icon. The icons are in MagicWB's 8
+colours. Settings can be tool types in the icon (remove the
+parentheses to enable one) or environment variables
 (`SetEnv SAVE Velox/Home http://frogfind.com/`):
 
 | Tool type            | Variable            | Meaning                             |
@@ -140,7 +141,9 @@ the network.
 
 See `CLAUDE.md` for the toolchain and tests and `docs/DESIGN.md` for the
 architecture. `make dist` puts the program, its icon, the proxy, this
-file and the license in `build/dist/Velox`.
+file and the license in `build/dist/Velox`, and the drawer's icon beside
+it. The icon images are in `gfx`, made from `gfx/icon-hires.png`: the
+program's by `tools/mwbicon.py`, the drawer's by `tools/mkdrawer.py`.
 
 ## License
 
