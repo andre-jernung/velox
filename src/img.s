@@ -46,7 +46,7 @@ bmh_Height		equ	2
 	xref	G,BusyEvents,PicInfo,PicDecode,PicFree,PalInit,PicToBitMap,PicAlloc,BufAppend,BufClear,GuiStatus,GuiRelayout,GuiRefresh,GuiPageWidth,GuiPaintImage
 	xref	FmtDec,StrCopy,LogEvent,ImgNetHook
 
-MAX_IMAGES	equ	64
+MAX_IMAGES	equ	32767		; <img>s a page (PfWalk counts with dbf)
 MAX_IMAGE	equ	2*1024*1024	; bytes of an image file
 CHIP_RESERVE	equ	200*1024	; keep this much chip memory free
 RELAYOUT_EVERY	equ	4
@@ -68,17 +68,31 @@ ImagesStart:
 	clr.l	g_ImgLoaded(a4)
 	clr.l	g_ImgRelayout(a4)
 	tst.l	g_NoImages(a4)
-	bne	.x
+	bne.s	.x
 	move.l	g_Doc(a4),d0
-	beq	.x
-	move.l	#MAX_IMAGES*4,d0
+	beq.s	.x
+	suba.l	a2,a2			; count them,
+	bsr.s	ImgWalk
+	move.l	g_ImgCount(a4),d0
+	beq.s	.x
+	clr.l	g_ImgCount(a4)
+	lsl.l	#2,d0
 	jsr	PageAlloc
 	move.l	d0,g_ImgQueue(a4)
-	beq	.x
+	beq.s	.x
+	move.l	d0,a2			; then queue them
+	bsr.s	ImgWalk
+.x:	movem.l	(sp)+,d2/a2-a3/a5
+	rts
+
+; ImgWalk - the <img> elements of the page with a src to load (not a
+; data: URL), in document order: g_ImgCount of them, each put in the
+; queue at a2 (none if a2 = 0)
+ImgWalk:
 	move.l	g_Doc(a4),a5
 	move.l	n_First(a5),a3
 .walk:	move.l	a3,d0
-	beq	.x
+	beq.s	.x
 	cmp.b	#DN_ELEMENT,n_Type(a3)
 	bne.s	.next
 	cmp.w	#TAG_IMG,n_Tag(a3)
@@ -98,9 +112,10 @@ ImagesStart:
 .q:	move.l	g_ImgCount(a4),d0
 	cmp.l	#MAX_IMAGES,d0
 	bhs.s	.x
-	move.l	g_ImgQueue(a4),a0
-	move.l	a3,(a0,d0.l*4)
-	addq.l	#1,g_ImgCount(a4)
+	move.l	a2,d1
+	beq.s	.c
+	move.l	a3,(a2,d0.l*4)
+.c:	addq.l	#1,g_ImgCount(a4)
 	bra.s	.next
 .down:	move.l	n_First(a3),d0
 	beq.s	.next
@@ -115,10 +130,8 @@ ImagesStart:
 	beq.s	.x
 	bra.s	.next
 .go:	move.l	d0,a3
-	bra	.walk
-.x:	movem.l	(sp)+,d2/a2-a3/a5
-	rts
-
+	bra.s	.walk
+.x:	rts
 AnSrc:	dc.b	"src",0
 AnWidth:	dc.b	"width",0
 AnHeight:	dc.b	"height",0
