@@ -1,0 +1,5 @@
+#!/bin/sh
+# checks for complete.script
+d=$(dirname "$1")
+sed 's/^/driver: /' "$d/complete.driver"
+grep -qx ok "$d/complete.driver" && grep -q '^exit rc=0' "$1"

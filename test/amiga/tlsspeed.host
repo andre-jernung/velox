@@ -14,7 +14,7 @@ try:
     a = Amiga()
     wait_log(log, "page https://localhost:8443/hello-close?1", timeout=600)
     time.sleep(2)
-    a.key("ctrl+l")
+    a.key("ctrl+l"); a.key("amiga+x")
     a.type("https://localhost:8443/hello-close?2")
     a.key("Return")
     wait_log(log, "page https://localhost:8443/hello-close?2", timeout=600)

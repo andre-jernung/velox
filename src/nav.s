@@ -17,8 +17,8 @@
 	xref	ProfRead,ProfLog
 	ENDC
 	xdef	NavRefresh,PageFixups,CopyAddress,ViewSource,FragCheck
-	xdef	NavTabFree,NavTarget
-	xref	FormCopy
+	xdef	NavTabFree,NavTarget,NavIsHome
+	xref	FormCopy,VisitAdd,ToLower
 	xref	TabNew,TabShow,TabByName,FrTargetOf,KeepFreeAll,PageFree,DcImgFree
 	xref	FindAnchor
 	xref	ClipCopy
@@ -545,7 +545,9 @@ NavHistory:
 	beq.s	.push
 	bsr	HistoryReplace
 	bra.s	.x
-.push:	lea	g_PageUrl(a4),a0
+.push:	lea	g_PageUrl(a4),a0	; (and among the visits: completing
+	jsr	VisitAdd		;  addresses typed)
+	lea	g_PageUrl(a4),a0
 	bsr	HistoryPush
 .x:	move.l	g_HistPos(a4),g_PageHist(a4)
 	rts
@@ -2374,6 +2376,33 @@ NavHome:
 
 HomeUrl:	dc.b	"about:velox",0
 	even
+
+;--------------------------------------------------------------------
+; NavIsHome - is address a0 the home page's?  (case ignored)
+; Out: d0 = 1 if so (CCR set)
+;--------------------------------------------------------------------
+NavIsHome:
+	move.l	a2,-(sp)
+	lea	g_HomeUrl(a4),a1
+	tst.b	(a1)
+	bne.s	.c
+	lea	HomeUrl(pc),a1
+.c:	move.l	a0,a2
+.l:	move.b	(a2)+,d0
+	jsr	ToLower
+	move.b	d0,d1
+	move.b	(a1)+,d0
+	jsr	ToLower
+	cmp.b	d0,d1
+	bne.s	.no
+	tst.b	d0
+	bne.s	.l
+	moveq	#1,d0
+	bra.s	.x
+.no:	moveq	#0,d0
+.x:	move.l	(sp)+,a2
+	tst.l	d0
+	rts
 
 ; NavExit - free the history
 NavExit:

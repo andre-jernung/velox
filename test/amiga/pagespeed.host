@@ -18,7 +18,7 @@ names = {"a": "  read: bitmap", "b": "  read: relocate", "c": "  read: globals",
 
 
 def go(a, path):
-    a.key("ctrl+l")
+    a.key("ctrl+l"); a.key("amiga+x")
     a.type("127.0.0.1:8080/" + path)
     a.key("Return")
 

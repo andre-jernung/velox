@@ -483,6 +483,8 @@ JS is not on the roadmap yet, but it must stay possible to add. That means:
 | table.s     | automatic table layout                                          |
 | forms.s     | form controls, their keys, submission                           |
 | edit.s      | editing a field or text area: soft-wrapped lines, moves, selection, undo |
+| visits.s    | the pages visited (ENVARC:Velox/Visited), matching a text typed   |
+| drop.s      | the list under the address field: filtered as typed, in a window of its own |
 | img.s       | loading images (also backgrounds), the decoder process, datatypes |
 | pic.s       | image formats, the decoded image (ARGB)                         |
 | gif.s png.s jpeg.s webp.s vp8.s vp8l.s inflate.s | the decoders     |

@@ -35,7 +35,7 @@ def count(prefix):
 
 def go(a, url):
     g = count("go ")
-    a.key("ctrl+l")
+    a.key("ctrl+l"); a.key("amiga+x")
     a.type(url)
     a.key("Return")
     wait_log(log, "go ", g + 1, timeout=30)

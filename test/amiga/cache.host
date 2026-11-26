@@ -33,7 +33,7 @@ def from_file(lines, url):
 
 
 def go(a, path):
-    a.key("ctrl+l")
+    a.key("ctrl+l"); a.key("amiga+x")
     a.type("127.0.0.1:8080/" + path)
     a.key("Return")
 

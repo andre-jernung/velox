@@ -20,7 +20,7 @@ def step(msg):
 
 
 def go(a, url):
-    a.key("ctrl+l")
+    a.key("ctrl+l"); a.key("amiga+x")
     a.type(url)
     a.key("Return")
 

@@ -24,12 +24,12 @@ try:
     a = Amiga()
     wait_log(log, "page " + U + "index.html")
     time.sleep(1)
-    a.key("ctrl+l")
+    a.key("ctrl+l"); a.key("amiga+x")
     a.type("127.0.0.1:8080/slowpage")
     a.key("Return")
     wait_log(log, "go " + U + "slowpage")
     time.sleep(0.5)
-    a.key("ctrl+l")                 # while the slow page loads
+    a.key("ctrl+l"); a.key("amiga+x")                 # while the slow page loads
     a.type("127.0.0.1:8080/third.html")
     a.key("Return")
     t0 = time.time()

@@ -32,7 +32,7 @@
 	xref	CookieSet,CookieHeader,UrlParse,BufFree,PageFixups,PfBuild,PfApply
 	xref	CssAddSheet,CssInvalidate,PageAlloc,KeepCopy,Alloc,Free
 	xref	TabSave,TabLoad
-	xref	StrIPrefix
+	xref	StrIPrefix,VisitAdd,VisitMatch
 	xref	EdMove,EdType,EdBack,EdDel,EdSelAll,EdUndo,EdRedo,EdHit,EdForget,EdNextLine,EdWidths
 
 T_LINEMAX	equ	2048
@@ -188,6 +188,8 @@ Commands:
 	dc.w	CnCssFilter-Commands,CmdCssFilter-Commands
 	dc.w	CnTabSwap-Commands,CmdTabSwap-Commands
 	dc.w	CnEdit-Commands,CmdEdit-Commands
+	dc.w	CnVisit-Commands,CmdVisit-Commands
+	dc.w	CnComplete-Commands,CmdComplete-Commands
 	dc.w	0
 
 CnParse:	dc.b	"parse",0
@@ -206,6 +208,8 @@ CnPagefile:	dc.b	"pagefile",0
 CnCssFilter:	dc.b	"cssfilter",0
 CnTabSwap:	dc.b	"tabswap",0
 CnEdit:		dc.b	"edit",0
+CnVisit:	dc.b	"visit",0
+CnComplete:	dc.b	"complete",0
 Empty:		dc.b	0
 ResultSep:	dc.b	" => ",0
 MsgUnknown:	dc.b	"unknown command",0
@@ -1605,6 +1609,36 @@ MsgEdLines:	dc.b	" lines=",0
 	even
 EdOpFn:		dc.l	EdBack,EdDel,EdSelAll,EdUndo,EdRedo
 
+;--------------------------------------------------------------------
+; CmdVisit - visit URL: a page visited (visits.s)
+; CmdComplete - complete TEXT: the visits it finds, one a line
+;--------------------------------------------------------------------
+CmdVisit:
+	move.l	T_Words+4,a0
+	jsr	VisitAdd
+	lea	MsgOk(pc),a0
+	jmp	PutStr
+
+CmdComplete:
+	movem.l	d2/a2,-(sp)
+	move.l	T_Words+4,a0
+	lea	T_Found,a1
+	moveq	#8,d0
+	moveq	#0,d1
+	jsr	VisitMatch
+	move.l	d0,d2
+	jsr	PutNum
+	lea	T_Found,a2
+.l:	subq.l	#1,d2
+	bmi.s	.x
+	moveq	#' ',d0
+	jsr	PutChar
+	move.l	(a2)+,a0
+	jsr	PutStr
+	bra.s	.l
+.x:	movem.l	(sp)+,d2/a2
+	rts
+
 	section	bss,bss
 ;====================================================================
 G:		ds.b	g_SIZEOF
@@ -1615,6 +1649,7 @@ T_NoBody:	ds.b	2
 T_Words:	ds.l	T_MAXWORDS
 T_EDMAX		equ	400
 T_Fs:		ds.b	FS_SIZEOF
+T_Found:	ds.l	8
 T_EdVal:	ds.b	T_EDMAX+2
 T_EdTmp:	ds.b	T_LINEMAX
 T_Line:		ds.b	T_LINEMAX

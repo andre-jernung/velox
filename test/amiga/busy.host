@@ -78,7 +78,7 @@ try:
     if bar:
         raise AssertionError("a progress bar while nothing loads")
     step("nothing loads: no progress bar")
-    a.key("ctrl+l")
+    a.key("ctrl+l"); a.key("amiga+x")
     a.type("127.0.0.1:8080/slowpage")
     a.key("Return")
     wait_log(log, "go " + U + "slowpage")

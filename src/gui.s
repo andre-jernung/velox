@@ -28,12 +28,15 @@
 	xref	CopyAddress,ViewSource,SelPress,SelMove,SelRelease,SelHighlight,ParseDec,FmtDec,StrCopy
 	xref	LayoutDocument,RunCount,RunPtr,StrLen,StrCopyN
 	xref	NavGo,NavBack,NavForward,NavReload,NavHome,NavLink,UrlFixup
+	xref	NavIsHome
 	xref	DomGetAttr,LogEvent,FormStateOf,FormIsControl,FormActivate
 	xref	FormEditKey,FormLeave,FormFocus,SaveDownload,BookmarkAdd,BookmarksShow
 	xref	PalFree,ImagesStop,ImagesPending,ImagesStep,ImagesFree,ImagePaint
 	xref	KeepFreeAll
 	xref	TaskResume,TaskLoopWait,TaskBusy,TaskAbort,NavStop,ImagesReap,ImagesReapNow,ImagesQuit,FragCheck,TaskNow
 	xref	TaskPick,TabSelect,TabNew,TabClose,TabNext,TabShow,TabQuit,TabCaption
+	xref	DropInit,DropExit,DropUpdate,DropCheck,DropClick,DropChosen,UrlHook
+	xdef	GetPen
 	xref	TabBase,TabRec
 	xref	EdWidths,EdNextLine,EdLocate,EdLine,EdXOf,EdSel,EdHit,EdIndexAt
 	xdef	GuiTabShown,GuiStripSync,PaintStrip
@@ -167,6 +170,7 @@ GuiOpen:
 	suba.l	a1,a1
 	jsr	LogEvent
 	bsr	CreateMenus		; (no menus is not fatal)
+	jsr	DropInit		; (the list under the address field)
 	moveq	#1,d0
 	bra.s	.x
 .fail:	moveq	#0,d0
@@ -197,6 +201,7 @@ MenuTags:	dc.l	GTMN_NewLookMenus,1,TAG_DONE
 ; GuiClose - close everything GuiOpen opened (safe on partial opens)
 ;--------------------------------------------------------------------
 GuiClose:
+	jsr	DropExit		; (its window shares our port: first)
 	bsr	StripFree
 	move.l	g_Window(a4),d0
 	beq.s	.nowin
@@ -3291,12 +3296,13 @@ StripClick:
 	bhs.s	.y
 	cmp.w	#IECODE_LBUTTON,d3
 	bne.s	.y
-	suba.l	a0,a0		; (a new tab: the home page)
-	suba.l	a1,a1
+	suba.l	a0,a0		; (a new tab: the home page, the
+	suba.l	a1,a1		;  address field ready for typing)
 	moveq	#1,d0
 	jsr	TabNew
 	bmi.s	.y
 	jsr	NavHome
+	bsr	ActivateUrl
 	bra.s	.y
 .tab:	cmp.w	#IECODE_LBUTTON,d3
 	bne.s	.mid
@@ -3601,6 +3607,10 @@ GuiEventLoop:
 	move.l	d0,-(sp)
 	ENDC
 	bsr	HandleMessages
+	tst.l	g_DropDirty(a4)		; then the list under the address
+	beq.s	.nlist			; field, if it is to change
+	jsr	DropUpdate
+.nlist:
 	IFD	PROFILE
 	jsr	TaskNow
 	sub.l	(sp)+,d0
@@ -3643,8 +3653,14 @@ GuiEventLoop:
 	bsr	ProgOff
 .ir:	jsr	ImagesReap		; (a stopped load's decoder)
 	move.l	d0,d2
+	or.l	g_DropSigMask(a4),d0	; (and the address field's keys)
 	jsr	TaskLoopWait
 	move.l	d0,d3
+	and.l	g_DropSigMask(a4),d0
+	beq.s	.nk
+	moveq	#1,d0
+	move.l	d0,g_DropDirty(a4)
+.nk:	move.l	d3,d0
 	and.l	d2,d0
 	beq.s	.nr
 	jsr	ImagesReapNow
@@ -3665,6 +3681,15 @@ GuiEventLoop:
 ; FrontWork - Out: d0 = 1 if the shown tab has something to do:
 ; window messages, events kept, a refresh cut short (CCR set)
 FrontWork:
+	moveq	#0,d0			; the address field's keys (UrlHook)
+	move.l	g_DropSigMask(a4),d1
+	EXEC	SetSignal
+	and.l	g_DropSigMask(a4),d0
+	beq.s	.nd
+	moveq	#1,d0
+	move.l	d0,g_DropDirty(a4)
+.nd:	tst.l	g_DropDirty(a4)
+	bne.s	.y
 	tst.l	g_TaCount(a4)
 	bne.s	.y
 	tst.l	g_RefreshPend(a4)
@@ -3706,7 +3731,22 @@ HandleMessages:
 	tst.l	d0
 	beq.s	.x
 	move.l	d0,a1
+	move.l	g_DropWin(a4),d0	; the list's window: a click there
+	beq.s	.main
+	cmp.l	im_IDCMPWindow(a1),d0
+	bne.s	.main
 	move.l	im_Class(a1),d2
+	moveq	#0,d3
+	move.w	im_Code(a1),d3
+	move.w	im_MouseY(a1),d6
+	ext.l	d6
+	GT	GT_ReplyIMsg
+	jsr	DropClick
+	beq.s	.next
+	move.l	d0,a0
+	bsr	UrlGo
+	bra.s	.next
+.main:	move.l	im_Class(a1),d2
 	moveq	#0,d3
 	move.w	im_Code(a1),d3
 	moveq	#0,d4
@@ -3724,6 +3764,7 @@ HandleMessages:
 	tst.l	g_Quit(a4)
 	beq.s	.next
 .x:	bsr	ScrollFlush
+	jsr	DropCheck		; (the field left: no list)
 	movem.l	(sp)+,d2-d7/a2
 	rts
 
@@ -4171,7 +4212,11 @@ OnGadget:
 	beq	ToNavHome
 	cmp.w	#GID_URL,d0
 	bne.s	.x
-	move.l	gg_SpecialInfo(a2),a0
+	jsr	DropChosen		; one chosen in the list: there
+	beq.s	.typed
+	move.l	d0,a0
+	bra.s	UrlGo
+.typed:	move.l	gg_SpecialInfo(a2),a0
 	move.l	si_Buffer(a0),a0
 	lea	g_UrlTmp2(a4),a1
 	jsr	UrlFixup
@@ -4179,6 +4224,18 @@ OnGadget:
 	moveq	#1,d0
 	jmp	NavGo
 .x:	rts
+
+; UrlGo - to address a0 (from the list under the address field): shown
+; in the field, gone to
+UrlGo:
+	lea	g_UrlTmp2(a4),a1
+	move.l	#URL_MAX-1,d0
+	jsr	StrCopyN
+	lea	g_UrlTmp2(a4),a0
+	bsr	UrlPut
+	lea	g_UrlTmp2(a4),a0
+	moveq	#1,d0
+	jmp	NavGo
 
 ; OnKey - raw keys: cursor up/down, space, backspace, mouse wheel
 OnKey:
@@ -4322,10 +4379,27 @@ ToFormActivate:	jmp	FormActivate
 ; ("open location"; clicking the gadget edits the current URL instead)
 ActivateUrl:
 	movem.l	d2-d4/a2-a3,-(sp)
-	; keys typed right after Ctrl-L may already be queued (when the
-	; event loop was busy): they belong in the field
-	lea	g_StatusBuf(a4),a3
+	; the address shown stays (the cursor after it), unless it is the
+	; home page's: then the field is empty, for a new one
+	lea	g_LinkUrl(a4),a3
 	moveq	#0,d4			; length
+	move.l	g_GadUrl(a4),d0
+	beq.s	.peek
+	move.l	d0,a0
+	move.l	gg_SpecialInfo(a0),a0
+	move.l	si_Buffer(a0),a2
+	move.l	a2,a0
+	jsr	NavIsHome
+	bne.s	.peek
+.kc:	move.b	(a2)+,d0
+	beq.s	.peek
+	cmp.l	#URL_MAX-2,d4
+	bhs.s	.peek
+	move.b	d0,(a3,d4.l)
+	addq.l	#1,d4
+	bra.s	.kc
+	; keys typed right after Ctrl-L may already be queued (when the
+	; event loop was busy): they belong in the field, after it
 .peek:	bsr	TypeAheadKey
 	beq.s	.port
 	move.l	d0,d2
@@ -4352,7 +4426,13 @@ ActivateUrl:
 	GT	GT_ReplyIMsg
 .key:	cmp.w	#$80,d2			; releases
 	bhs.s	.peek
-	cmp.w	#RAW_RETURN,d2
+	cmp.w	#$32,d2			; right Amiga-X: empty, as Intuition
+	bne.s	.nx			; does in a field
+	btst	#IEQUALIFIERB_RCOMMAND,d3
+	beq.s	.nx
+	moveq	#0,d4
+	bra.s	.peek
+.nx:	cmp.w	#RAW_RETURN,d2
 	beq.s	.go
 	cmp.w	#RAW_ENTER,d2
 	beq.s	.go
@@ -4365,7 +4445,7 @@ ActivateUrl:
 .ch:	move.b	(a0)+,d0
 	cmp.b	#32,d0
 	blo.s	.chn
-	cmp.l	#STATUS_MAX-2,d4
+	cmp.l	#URL_MAX-2,d4
 	bhs.s	.chn
 	move.b	d0,(a3,d4.l)
 	addq.l	#1,d4
@@ -4653,12 +4733,14 @@ MenuBookmarks:	jmp	BookmarksShow
 MenuFind:	jmp	FindStart
 MenuCopy:	jmp	CopyAddress
 MenuSource:	jmp	ViewSource
-MenuNewTab:	suba.l	a0,a0		; a new tab: the home page
-		suba.l	a1,a1
-		moveq	#1,d0
+MenuNewTab:	suba.l	a0,a0		; a new tab: the home page, the
+		suba.l	a1,a1		; address field empty, ready for
+		moveq	#1,d0		; typing
 		jsr	TabNew
-		bpl	ToNavHome
-		rts
+		bmi.s	.x
+		jsr	NavHome
+		bra	ActivateUrl
+.x:		rts
 MenuCloseTab:	move.l	g_TabFront(a4),d0
 		jmp	TabClose
 MenuNextTab:	moveq	#1,d0
@@ -5205,13 +5287,16 @@ WinTagScr:
 	dc.l	WA_Activate,1
 	dc.l	WA_ReportMouse,1
 	dc.l	WA_NewLookMenus,1
-	dc.l	WA_IDCMP,IDCMP_CLOSEWINDOW|IDCMP_NEWSIZE|IDCMP_REFRESHWINDOW|IDCMP_GADGETUP|IDCMP_GADGETDOWN|IDCMP_MOUSEMOVE|IDCMP_MOUSEBUTTONS|IDCMP_RAWKEY|IDCMP_INTUITICKS|IDCMP_MENUPICK
+	dc.l	WA_IDCMP,IDCMP_CLOSEWINDOW|IDCMP_NEWSIZE|IDCMP_REFRESHWINDOW|IDCMP_GADGETUP|IDCMP_GADGETDOWN|IDCMP_MOUSEMOVE|IDCMP_MOUSEBUTTONS|IDCMP_RAWKEY|IDCMP_INTUITICKS|IDCMP_MENUPICK|IDCMP_INACTIVEWINDOW
 	dc.l	TAG_DONE
 
 UrlTags:
 	dc.l	GTST_MaxChars,URL_MAX-1
 	dc.l	GTST_String,0
+	dc.l	GTST_EditHook,UrlEditHook
 	dc.l	TAG_DONE
+UrlEditHook:				; (drop.s UrlHook: Up, Down, Esc,
+	dc.l	0,0,UrlHook,0,0		;  and every key signalled)
 UrlSetTags:
 	dc.l	GTST_String,0
 	dc.l	TAG_DONE

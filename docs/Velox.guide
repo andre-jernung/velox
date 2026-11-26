@@ -124,6 +124,8 @@ Without a home page, Home goes to about:velox.
 
 At the top, the @{b}toolbar@{ub}: Back, Forward, Reload (it stops a page while it loads) and Home, and the address field. Type an address and press Return; "amiga.org" is enough.
 
+As you type, a list under the address field offers the pages you visited that match: those beginning with what you typed first (http://, https:// and www. do not count), then those that have it anywhere, the latest first. Down and Up choose one, Return goes there, and so does a click; Esc closes the list. Typing never waits for the list: it follows when there is time.
+
 With two tabs or more, the @{b}tab strip@{ub} lies below it: each tab's title, a small mark while it loads, a close box, and "+" for a new tab. See @{" Tabs " link Tabs}.
 
 The @{b}page@{ub} fills the rest, with its scroller at the right. A page of frames shows its frames side by side or stacked, each scrolling on its own, with a scrollbar of its own where it needs one.
@@ -136,7 +138,8 @@ At the bottom, the @{b}status line@{ub}: the address of the link under the mouse
 
 @{b}Keys@{ub}
 
-  Ctrl-L               the address field
+  Ctrl-L               the address field: the address stays, the
+                       cursor after it (the home page's is emptied)
   Tab, Shift-Tab       next, previous link or form field
                        (a text field: ready for typing)
   Return               follow the link, use the control
@@ -156,7 +159,8 @@ At the bottom, the @{b}status line@{ub}: the address of the link under the mouse
   Amiga-S              save the page or file
   Amiga-C              copy the address (of the focused link)
   Amiga-U              view the page's source
-  Amiga-T              a new tab, with the home page
+  Amiga-T              a new tab: the home page, the address
+                       field ready for typing
   Amiga-W              close the tab
   Amiga-.  Amiga-,     the next, the previous tab
   Ctrl-Q               quit
@@ -222,6 +226,10 @@ A tab behind that loads nothing gives its memory for loading back; when memory r
 @{b}Bookmarks@{ub}
 
 Ctrl-D adds the page shown to ENVARC:Velox/Bookmarks.html and Ctrl-K shows them. It is an ordinary page: edit it as you like.
+
+@{b}Pages visited@{ub}
+
+The last 500 pages visited are kept in ENVARC:Velox/Visited, for the list under the address field. Delete that file to forget them.
 
 @{b}Cookies@{ub}
 

@@ -1,0 +1,19 @@
+# the pages visited (visits.s) and what completes a text typed: those
+# that begin with it first (http://, https://, www. left out, case
+# ignored), then those that have it; the latest first; only http(s)
+visit http://aminet.net/
+visit https://www.amigaportal.cz/
+visit http://www.amiga.org/forums/
+visit https://safir.amigaos.se/main.php
+visit about:velox
+visit http://aminet.net/recent#top
+complete ami
+complete AMIGA
+complete https://www.ami
+complete net
+complete safir
+complete zzz
+complete ""
+# visited again: the latest
+visit http://aminet.net/
+complete ami

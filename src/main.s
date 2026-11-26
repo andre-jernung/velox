@@ -14,7 +14,7 @@
 	xref	PutStr,PutBuf,PutNum,PutNL,FlushOut,ErrorText
 	xref	GuiOpen,GuiClose,GuiEventLoop,NavGo,NavExit,StrIPrefix,ParseDec
 	xref	StrCopyN,CacheInit,CookiesLoad,CookiesSave,TaskInit,TaskExit,DcInit
-	xref	TabInit,TabTemplate,TabExit
+	xref	TabInit,TabTemplate,TabExit,VisitsLoad,VisitsSave
 
 STACK_SIZE	equ	65536
 
@@ -110,6 +110,7 @@ Main:
 	bsr	LoadSettings
 	jsr	DcInit
 	jsr	CookiesLoad
+	jsr	VisitsLoad
 	tst.l	g_WBMsg(a4)
 	beq.s	.notwb
 	bsr	ToolTypes
@@ -193,6 +194,7 @@ Main:
 	tst.l	g_AppPool(a4)		; (cookies live there)
 	beq.s	.nock
 	jsr	CookiesSave
+	jsr	VisitsSave
 .nock:	jsr	NetExit
 	jsr	MemExit
 	bsr	CloseLibs

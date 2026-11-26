@@ -45,6 +45,10 @@ A small, fast web browser for classic AmigaOS 3.x, written entirely in
   fetch again (Reload does)
 - Downloads of anything that is not a page, with a file requester
 - History, bookmarks, local `file:` pages, a home page, find in page
+- Address completion: as an address is typed, a list under the field
+  offers the pages visited that match (those beginning with it first,
+  the latest first); Down and Up choose, Return goes there, Esc closes
+  it. Typing never waits for it: the list follows when there is time
 - Frames: a frameset shows its frames' pages side by side or stacked
   (as its cols and rows say, nested framesets too), each scrolling on
   its own, with its own scrollbar where needed: the mouse wheel scrolls
@@ -97,14 +101,15 @@ parentheses to enable one) or environment variables
 
 The window opens where it was last closed (`Velox/Window`).
 Bookmarks are kept in `ENVARC:Velox/Bookmarks.html`, an ordinary page
-you can edit. Cookies that a site wants kept (with an expiry date) are
+you can edit. The pages visited (the last 500, for completing
+addresses) are kept in `ENVARC:Velox/Visited`. Cookies that a site wants kept (with an expiry date) are
 saved in `ENVARC:Velox/Cookies`; delete that file to forget them.
 
 ## Keys
 
 | Key                  | Action                                  |
 |----------------------|-----------------------------------------|
-| Ctrl-L               | go to the URL field                     |
+| Ctrl-L               | the address field (the address stays, the cursor after it; the home page's is emptied) |
 | Tab / Shift-Tab      | next / previous link or form field      |
 |                      | (a text field: ready for typing)        |
 | Return               | follow the link, activate the field     |
@@ -123,7 +128,7 @@ saved in `ENVARC:Velox/Cookies`; delete that file to forget them.
 | Amiga-S              | save the page or file                   |
 | Amiga-C              | copy the address (of the focused link)  |
 | Amiga-U              | view the page source                    |
-| Amiga-T              | a new tab, with the home page           |
+| Amiga-T              | a new tab: the home page, the address field ready for typing |
 | Amiga-W              | close the tab                           |
 | Amiga-. / Amiga-,    | next / previous tab                     |
 | Shift-Return         | open the focused link in a tab behind   |

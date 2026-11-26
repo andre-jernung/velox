@@ -36,7 +36,7 @@ print(len(set(im.getpixel((x, y)) for x in range(560, 790) for y in range(380, 4
         raise AssertionError("the body's background is dithered")
     # its background colour (navy, under the image) does not go on to
     # a page without one: white
-    a.key("ctrl+l")
+    a.key("ctrl+l"); a.key("amiga+x")
     a.type("127.0.0.1:8080/index.html")
     a.key("Return")
     wait_log(log, "page http://127.0.0.1:8080/index.html", timeout=60)

@@ -41,7 +41,7 @@ try:
     time.sleep(1)
     a.shot(os.path.join(r, "browse-second.png"))
     step("return follows the link")
-    a.key("ctrl+l")
+    a.key("ctrl+l"); a.key("amiga+x")
     a.type("127.0.0.1:8080/third.html#middle")
     a.key("Return")
     lines = wait_log(log, "page " + U + "third.html#middle")

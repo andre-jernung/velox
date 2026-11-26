@@ -1129,6 +1129,23 @@ g_TabTpl	rs.l	1		; a new tab's globals (a save area)
 g_TabArg	rs.b	TAB_NAME	; a tab's name, passed (TabNew)
 g_EdWid		rs.w	256		; edit.s: the width of each character,
 g_EdWFont	rs.l	1		; ... in this font | soft << 8, + 1
+g_Visits	rs.l	1		; visits.s: the pages visited (latest first),
+g_VisitN	rs.l	1		; ... how many,
+g_VisitsDirty	rs.l	1		; ... changed since read
+DROP_TEXT	equ	256
+g_DropWin	rs.l	1		; drop.s: the list's window, or 0,
+g_DropN		rs.l	1		; ... its entries,
+g_DropSel	rs.l	1		; ... the one chosen, -1: none,
+g_DropItems	rs.l	8		; ... their addresses,
+g_DropLineH	rs.l	1		; ... a line's height,
+g_DropText	rs.b	DROP_TEXT	; ... the text they are for,
+g_DropDirty	rs.l	1		; ... to be looked at (DropUpdate),
+g_DropMove	rs.l	1		; ... Up/Down typed (UrlHook),
+g_DropEsc	rs.b	1		; ... Esc typed,
+g_DropShut	rs.b	1		; ... closed by Esc,
+g_DropTask	rs.l	1		; ... the task UrlHook signals,
+g_DropSigBit	rs.l	1		; ... with this signal
+g_DropSigMask	rs.l	1
 g_FieldDrag	rs.l	1		; gui.s: the field the mouse selects in,
 g_FieldRun	rs.l	1		; ... its run (index)
 g_LinkRun	rs.l	1		; gui.s LinkAt: the run found (index)

@@ -43,7 +43,7 @@ def load(a, url, until, keys=True, most=600):
     the key answer times."""
     n0 = len(seen)
     t0 = time.time()
-    a.key("ctrl+l")
+    a.key("ctrl+l"); a.key("amiga+x")
     a.type(url)
     a.key("Return")
     sent = []

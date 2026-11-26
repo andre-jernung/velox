@@ -12,7 +12,7 @@ for i, url in enumerate(["http://68k.news/", "http://frogfind.com/?q=amiga",
                          "https://text.npr.org/"]):
     try:
         if i:
-            a.key("ctrl+l"); a.type(url); a.key("Return")
+            a.key("ctrl+l"); a.key("amiga+x"); a.type(url); a.key("Return")
         lines = wait_log(log, "page ", i + 1, timeout=240)
         time.sleep(2)
         a.shot(os.path.join(r, "real-%d.png" % i))

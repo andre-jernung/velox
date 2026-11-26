@@ -29,7 +29,7 @@ try:
     a = Amiga()
     wait_log(log, "page " + U + "index.html")
     time.sleep(1)
-    a.key("ctrl+l")
+    a.key("ctrl+l"); a.key("amiga+x")
     a.type("127.0.0.1:8080/trickle")
     a.key("Return")
     wait_log(log, "shown " + U + "trickle", timeout=4)

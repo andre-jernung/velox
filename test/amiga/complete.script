@@ -1,0 +1,8 @@
+; complete: the list of pages visited under the address field
+; (test/amiga/complete.host)
+Echo >VELOX:r/complete.txt "complete"
+Delete >NIL: ENVARC:Velox/Visited
+Echo >VELOX:r/complete.start ""
+VELOX:velox http://127.0.0.1:8080/index.html LOG=VELOX:r/complete.log
+Echo >>VELOX:r/complete.txt "exit rc=$RC"
+Echo >>VELOX:r/complete.txt "done"
