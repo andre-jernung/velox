@@ -28,11 +28,44 @@ import http.server
 import ipaddress
 import ssl
 import sys
+import threading
+import time
 import urllib.parse
 
 HOP_BY_HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
               "te", "trailers", "transfer-encoding", "upgrade", "proxy-connection"}
 MAX_BODY = 32 * 1024 * 1024
+IDLE_MAX = 4        # idle connections kept a server
+IDLE_SECS = 30      # dropped when idle longer than this
+
+# Upstream connections are kept alive and reused.  Opening a new one for
+# every request (each image of a page) makes some servers refuse
+# connections for a while: the Wayback Machine does after about 50 in a
+# minute or two, and the rest of a page's images then fail.
+pool = {}
+pool_lock = threading.Lock()
+
+
+def pool_get(key):
+    """An idle connection to key, or None."""
+    now = time.monotonic()
+    with pool_lock:
+        idle = pool.get(key, [])
+        while idle:
+            c, t = idle.pop()
+            if now - t < IDLE_SECS:
+                return c
+            c.close()
+    return None
+
+
+def pool_put(key, c):
+    with pool_lock:
+        idle = pool.setdefault(key, [])
+        if len(idle) < IDLE_MAX:
+            idle.append((c, time.monotonic()))
+            return
+    c.close()
 
 
 class Proxy(http.server.BaseHTTPRequestHandler):
@@ -68,17 +101,33 @@ class Proxy(http.server.BaseHTTPRequestHandler):
                    if k.lower() not in HOP_BY_HOP and k.lower() != "host"}
         headers["Accept-Encoding"] = "identity"
         target = urllib.parse.urlunsplit(("", "", u.path or "/", u.query, ""))
+        key = (u.scheme, u.hostname, u.port)
         try:
-            if u.scheme == "https":
-                c = http.client.HTTPSConnection(u.hostname, u.port or 443, timeout=60,
-                                                context=self.ctx)
-            else:
-                c = http.client.HTTPConnection(u.hostname, u.port or 80, timeout=60)
-            c.request(self.command, target, body=body, headers=headers)
-            r = c.getresponse()
-            data = r.read(MAX_BODY)
+            for attempt in (0, 1):
+                c = pool_get(key) if attempt == 0 else None
+                reused = c is not None
+                if c is None:
+                    if u.scheme == "https":
+                        c = http.client.HTTPSConnection(u.hostname, u.port or 443,
+                                                        timeout=60, context=self.ctx)
+                    else:
+                        c = http.client.HTTPConnection(u.hostname, u.port or 80, timeout=60)
+                try:
+                    c.request(self.command, target, body=body, headers=headers)
+                    r = c.getresponse()
+                    data = r.read(MAX_BODY)
+                    break
+                except (http.client.RemoteDisconnected, ConnectionError):
+                    c.close()
+                    if not reused:      # a kept connection the server closed: once more
+                        raise
         except Exception as e:
+            c.close()
             return self.reply(502, "velox-proxy: %s: %s\n" % (u.hostname, e))
+        if r.will_close or not r.isclosed():
+            c.close()
+        else:
+            pool_put(key, c)
         self.log_request(r.status)
         self.send_response_only(r.status, r.reason)
         for k, v in r.getheaders():
@@ -90,7 +139,6 @@ class Proxy(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(data)
-        c.close()
 
     do_GET = do_POST = do_HEAD = do_PUT = do_DELETE = handle_any
 
