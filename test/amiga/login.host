@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+"""Host side of login.script: click into the user name field, type,
+Tab to the password field, type, Return."""
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from xdrive import Amiga, wait_log  # noqa: E402
+
+r = sys.argv[1]
+log = os.path.join(r, "login.log")
+out = open(os.path.join(r, "login.driver"), "w")
+U = "http://127.0.0.1:8080/"
+
+
+def step(msg):
+    out.write(msg + "\n")
+    out.flush()
+
+
+def go(name, cmds):
+    with open(os.path.join(r, name + ".tmp"), "w") as f:
+        f.write("\n".join(cmds) + "\n")
+    os.rename(os.path.join(r, name + ".tmp"), os.path.join(r, name))
+
+
+try:
+    a = Amiga()
+    lines = wait_log(log, "page " + U + "login.html")
+    x = int([l for l in lines if l.startswith("pagex ")][-1].split()[1])
+    y = int([l for l in lines if l.startswith("pagey ")][-1].split()[1])
+    time.sleep(1)
+    # the user name field: below the link and its label
+    fx, fy = x + 30, y + 52
+    go("login.go", ["VELOX:mouse %d %d" % (fx, fy),
+                    "VELOX:mouse %d %d DOWN" % (fx, fy),
+                    "VELOX:mouse %d %d UP" % (fx, fy),
+                    'Echo >VELOX:r/login.clicked ""'])
+    end = time.time() + 30
+    while not os.path.exists(os.path.join(r, "login.clicked")):
+        if time.time() > end:
+            raise AssertionError("the click did not happen")
+        time.sleep(0.5)
+    time.sleep(1)
+    a.type("alice")
+    a.key("Tab")               # on to the password field, not the link
+    wait_log(log, "focus pass", timeout=10)
+    step("Tab: from the user name to the password")
+    a.type("secret")           # typed at once: the field is edited
+    time.sleep(0.5)
+    a.shot(os.path.join(r, "login.png"))
+    a.key("Return")
+    wait_log(log, "page " + U + "echo-login")
+    step("Return submitted the form")
+    a.key("ctrl+q")
+    step("ok")
+except Exception as e:
+    step("FAIL " + repr(e))
+    try:
+        Amiga().shot(os.path.join(r, "login.png"))
+        Amiga().key("ctrl+q")
+    except Exception:
+        pass
+finally:
+    open(os.path.join(r, "login.end"), "w").close()

@@ -10,7 +10,7 @@
 	include	"velox.i"
 
 	xdef	FormStateOf,FormControlSize,FormIsControl,FormActivate
-	xdef	FormEditKey,FormSubmit,FormLeave
+	xdef	FormEditKey,FormSubmit,FormLeave,FormFocus
 	xdef	KeyToChars
 	xref	PageAlloc,DomGetAttr,StrIPrefix,ParseDec,Measure
 	xref	BufAppendByte,BufAppendStr,BufClear,UrlResolve
@@ -680,6 +680,7 @@ FormEditKey:
 	beq.s	.nl
 	clr.l	g_EditField(a4)
 	move.l	a5,a0
+	bsr	DefaultButton
 	bsr	FormSubmit
 	bra	.yes
 .nl:	moveq	#10,d0
@@ -754,6 +755,65 @@ FormEditKey:
 .no:	moveq	#0,d0
 .x:	movem.l	(sp)+,d2-d4/a2-a3/a5
 	rts
+
+;--------------------------------------------------------------------
+; FormFocus - the keyboard focus moved to an element (Tab): a text
+; field is edited at once, with the cursor at its end
+; In: a0 = element
+;--------------------------------------------------------------------
+FormFocus:
+	bsr	FormIsControl
+	beq.s	.x
+	move.l	a0,-(sp)
+	bsr	FormStateOf
+	move.l	(sp)+,a0
+	tst.l	d0
+	beq.s	.x
+	move.l	d0,a1
+	move.b	fs_Kind(a1),d0
+	cmp.b	#FK_PASSWORD,d0
+	bls.s	.ed
+	cmp.b	#FK_TEXTAREA,d0
+	bne.s	.x
+.ed:	moveq	#1,d0
+	bra	FormActivate
+.x:	rts
+
+; DefaultButton - what Return in a field submits as: the form's first
+; submit button (its name=value is sent, as a click would), else the
+; field itself
+; In: a0 = field; Out: a0 = submitter
+DefaultButton:
+	movem.l	d2-d3,-(sp)
+	move.l	a0,d3
+	moveq	#0,d2			; d2 = the button found
+	bsr	FormOf
+	tst.l	d0
+	beq.s	.x
+	move.l	d0,a0
+	lea	.one(pc),a1
+	bsr	ForControls
+.x:	move.l	d2,a0
+	tst.l	d2
+	bne.s	.r
+	move.l	d3,a0
+.r:	movem.l	(sp)+,d2-d3
+	rts
+.one:	tst.l	d2			; (ForControls and FormStateOf keep d2)
+	bne.s	.ox
+	move.l	a0,-(sp)
+	bsr	FormStateOf
+	move.l	(sp)+,a0
+	tst.l	d0
+	beq.s	.ox
+	move.l	d0,a1
+	move.b	fs_Kind(a1),d0
+	cmp.b	#FK_SUBMIT,d0
+	beq.s	.got
+	cmp.b	#FK_IMAGE,d0
+	bne.s	.ox
+.got:	move.l	a0,d2
+.ox:	rts
 
 ;--------------------------------------------------------------------
 ; KeyToChars - the characters of a raw key (keymap, dead keys)

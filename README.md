@@ -97,7 +97,9 @@ saved in `ENVARC:Velox/Cookies`; delete that file to forget them.
 |----------------------|-----------------------------------------|
 | Ctrl-L               | go to the URL field                     |
 | Tab / Shift-Tab      | next / previous link or form field      |
+|                      | (a text field: ready for typing)        |
 | Return               | follow the link, activate the field     |
+|                      | (in a text field: submit the form)      |
 | Cursor up/down       | scroll a line (with Shift: a page)      |
 | Space                | page down                               |
 | Ctrl-Up / Ctrl-Down  | top / bottom of the page                |

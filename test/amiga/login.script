@@ -1,0 +1,19 @@
+; login: a login form like safir.amigaos.se's: a click into the user
+; field, Tab to the password field, typing, Return submits with the
+; form's submit button (test/amiga/login.host)
+Echo >VELOX:r/login.txt "login"
+Delete >NIL: VELOX:r/login.go VELOX:r/login.end
+Echo >VELOX:r/login.start ""
+Run >NIL: VELOX:velox http://127.0.0.1:8080/login.html LOG=VELOX:r/login.log
+Lab wait
+IF NOT EXISTS VELOX:r/login.go
+  Wait 1
+  Skip wait BACK
+EndIF
+Execute VELOX:r/login.go
+Lab wait2
+IF NOT EXISTS VELOX:r/login.end
+  Wait 1
+  Skip wait2 BACK
+EndIF
+Echo >>VELOX:r/login.txt "done"

@@ -35,9 +35,8 @@ try:
     a = Amiga()
     wait_log(log, "page " + U + "form.html")
     time.sleep(1)
-    a.key("Tab")
+    a.key("Tab")               # the field: editing it starts
     wait_log(log, "focus q")
-    a.key("Return")            # edit the field
     a.type(" xyz")
     a.key("Escape")            # done editing (the focus stays)
     time.sleep(0.5)

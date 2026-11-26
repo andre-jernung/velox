@@ -29,7 +29,7 @@
 	xref	LayoutDocument,RunCount,RunPtr,StrLen,StrCopyN
 	xref	NavGo,NavBack,NavForward,NavReload,NavHome,NavLink,UrlFixup
 	xref	DomGetAttr,LogEvent,FormStateOf,FormIsControl,FormActivate
-	xref	FormEditKey,FormLeave,SaveDownload,BookmarkAdd,BookmarksShow
+	xref	FormEditKey,FormLeave,FormFocus,SaveDownload,BookmarkAdd,BookmarksShow
 	xref	PalFree,ImagesStop,ImagesPending,ImagesStep,ImagesFree,ImagePaint
 	xref	KeepFreeAll
 	xref	TaskResume,TaskLoopWait,TaskBusy,TaskAbort,NavStop,ImagesReap,ImagesReapNow,ImagesQuit,FragCheck,TaskNow
@@ -3713,7 +3713,8 @@ PaintSb:
 	rts
 
 ; FocusTab - (Tab) FocusNext d0; a page of frames: past the last link
-; of the active frame, on in the next frame (that one active then)
+; of the active frame, on in the next frame (that one active then).
+; A text field that gets the focus is edited at once.
 FocusTab:
 	movem.l	d2-d3,-(sp)
 	move.l	d0,d2
@@ -3739,7 +3740,11 @@ FocusTab:
 	move.l	d2,d0
 	bsr	FocusNext
 	bra.s	.f
-.x:	bsr	UpdateScroller
+.x:	move.l	g_FocusLink(a4),d0	; a text field: editing it starts
+	beq.s	.u
+	move.l	d0,a0
+	jsr	FormFocus
+.u:	bsr	UpdateScroller
 	movem.l	(sp)+,d2-d3
 	rts
 
@@ -4425,9 +4430,36 @@ OnClick:
 	cmp.l	g_PressLink(a4),d0
 	bne.s	.x
 	clr.l	g_PressLink(a4)
-	move.l	d0,a0
+	move.l	d0,-(sp)
+	bsr	FocusSet		; (a control: Tab goes on from it)
+	move.l	(sp)+,a0
 	bra	Activate
 .x:	rts
+
+; FocusSet - a clicked form control gets the keyboard focus
+; In: d0 = element, a0 = one of its runs
+FocusSet:
+	move.l	a2,-(sp)
+	move.l	a0,a2
+	move.l	d0,a0
+	jsr	FormIsControl
+	beq.s	.x
+	move.l	g_FocusLink(a4),d1
+	move.l	a0,g_FocusLink(a4)
+	move.l	a2,d0
+	sub.l	g_Runs+buf_Data(a4),d0
+	lsr.l	#5,d0			; RUN_SIZEOF = 32
+	move.l	d0,g_FocusIdx(a4)
+	cmp.l	a0,d1
+	beq.s	.x
+	tst.l	d1			; the old one loses its outline
+	beq.s	.new
+	move.l	d1,a0
+	bsr	GuiPaintNode
+.new:	move.l	g_FocusLink(a4),a0
+	bsr	GuiPaintNode
+.x:	move.l	(sp)+,a2
+	rts
 
 ; Activate - follow a link or use a form control
 ; In: a0 = <a> element or control; d4 = qualifier (Shift = backwards)

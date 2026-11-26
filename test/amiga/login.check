@@ -1,0 +1,12 @@
+#!/bin/sh
+# checks for login.script; $1 = result file
+d=$(dirname "$1"); fail=0
+sed 's/^/driver: /' "$d/login.driver"
+grep -q '^ok$' "$d/login.driver" || fail=1
+body=$(grep 'POST /echo-login body=' "$d/../server.log" | tail -1 | sed 's/^server: \[[0-9]*\] /server: /')
+echo "server: $body"
+case "$body" in
+	*"body=user=alice&pass=secret&rememberme=on&redirect=L21h&submit=Log+in") ;;
+	*) echo "unexpected POST body (the submit button must be sent too)"; fail=1 ;;
+esac
+exit $fail

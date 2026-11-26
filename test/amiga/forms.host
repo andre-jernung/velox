@@ -22,9 +22,8 @@ try:
     a = Amiga()
     wait_log(log, "page " + U + "form.html")
     time.sleep(1)
-    a.key("Tab")
+    a.key("Tab")               # focus on the field: editing starts
     wait_log(log, "focus q")
-    a.key("Return")            # start editing the field
     a.type(" amiga")
     time.sleep(0.5)
     a.shot(os.path.join(r, "forms-edit.png"))
@@ -33,8 +32,8 @@ try:
     if "\npaint " in typed:
         raise AssertionError("typing repainted the whole view")
     step("typing repaints only the field")
-    a.key("Return")            # submit from the field
-    want = U + "echo?q=hello+amiga&c1=on&s=g&h=x+y"
+    a.key("Return")            # submit from the field: as its button
+    want = U + "echo?q=hello+amiga&c1=on&s=g&h=x+y&go=Search"
     wait_log(log, "page " + want)
     step("GET form: " + want)
     a.key("BackSpace")
@@ -44,7 +43,8 @@ try:
     a.key("Tab", 3)
     wait_log(log, "focus s")
     a.key("Return")
-    # radio "2": q c1 c2 s go msg r r -> two more after go, msg
+    # radio "2": q c1 c2 s go msg r r -> two more after go, msg (Tab
+    # goes on from a field being edited)
     a.key("Tab", 4)
     wait_log(log, "focus r", 2)
     a.key("Return")
