@@ -231,3 +231,17 @@ text 45 54 32 10 8 f1 s0 c000000 "Tall"
 img  55 54 40 40 40 f1 s0 c000000
 text 55 100 48 10 8 f1 s0 c000000 "Beside"
 
+# a link styled as a button (Safir's "Ny Blogg"): a background behind
+# it, its paddings around it, its box-shadow an outline; a highlighted
+# span gets its background too
+layout test/unit/layout/linkbutton.html 300 => 
+height 46
+rect 0 8 76 16 11 f1 s1 cf5f5f5 L
+box  0 8 76 16 11 f1 s1 c888888 L
+text 3 14 64 10 8 f1 s1 c565656 L "Ny Blogg"
+text 3 86 88 10 8 f1 s0 c000000 "Text after."
+text 26 8 32 10 8 f1 s0 c000000 "Some"
+rect 26 48 88 10 8 f1 s0 cffff00
+text 26 48 88 10 8 f1 s0 c000000 "highlighted"
+text 26 144 48 10 8 f1 s0 c000000 "words."
+

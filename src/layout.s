@@ -254,7 +254,15 @@ LayoutNode:
 	bsr	LayoutBlock
 	bra.s	.pop
 .inline:
-	move.l	a5,a0
+	tst.l	st_Bg(a3)		; a background or an outline: a box
+	bpl.s	.ibox
+	tst.l	st_Edge(a3)
+	bpl.s	.ibox
+	tst.l	st_Shadow(a3)
+	bmi.s	.inl
+.ibox:	bsr	InlineBox
+	bra.s	.pop
+.inl:	move.l	a5,a0
 	move.l	a3,a1
 	bsr	LayoutChildren
 	bra.s	.pop
@@ -279,6 +287,157 @@ LayoutNode:
 .pop:	lea	STYLE_SIZEOF(sp),sp
 	subq.l	#1,g_LayDepth(a4)
 .x:	movem.l	(sp)+,a2-a3/a5
+	rts
+
+;--------------------------------------------------------------------
+; InlineBox - (LayoutNode) an inline element with a background or an
+; outline (border, box-shadow): a box behind its content (a background
+; run, then an outline run), its paddings around it; the vertical ones
+; make the line taller.  Like an inline-block (a button made of a
+; link), it begins a new line if all of it does not fit; if it is cut
+; at a line's end even so, it gets no box.
+; In: a5 = element, a3 = its style
+;--------------------------------------------------------------------
+InlineBox:
+	movem.l	d2-d7,-(sp)
+	moveq	#0,d6			; d6 = font | soft << 8
+	move.b	st_Soft(a3),d6
+	lsl.w	#8,d6
+	move.b	st_Font(a3),d6
+	bsr	BoxTextW		; d2 = all of it: margins, paddings,
+	move.l	d0,d2			; its text
+	move.w	st_MLeft(a3),d0
+	ext.l	d0
+	add.l	d0,d2
+	move.w	st_MRight(a3),d0
+	ext.l	d0
+	add.l	d0,d2
+	moveq	#0,d0			; d3 = height, d4 = baseline: the
+	move.b	d6,d0			; font's and the vertical paddings
+	add.w	d0,d0
+	lea	g_FontH(a4),a0
+	moveq	#0,d3
+	move.w	(a0,d0.w),d3
+	lea	g_FontBase(a4),a0
+	moveq	#0,d4
+	move.w	(a0,d0.w),d4
+	moveq	#0,d0
+	move.b	st_Pad(a3),d0
+	add.l	d0,d3
+	add.l	d0,d4
+	move.b	st_Pad+2(a3),d0
+	add.l	d0,d3
+	moveq	#RT_RECT,d5
+	bsr	LayRunCount
+	move.l	d0,d7			; d7 = the background run (index)
+	bsr	PlaceBox		; (a new line first if it does not fit)
+	bsr	LayRunCount
+	cmp.l	d7,d0
+	bls	.plain			; (no memory for the run)
+	move.l	d7,d0
+	bsr	LayRunPtr
+	move.w	st_MLeft(a3),d0		; its margin is not the box's
+	moveq	#0,d1
+	move.b	st_Pad+3(a3),d1
+	sub.w	d1,d0
+	add.w	d0,ru_X(a0)
+	moveq	#0,d0			; the text after the left padding
+	move.w	ru_X(a0),d0
+	add.l	d1,d0
+	move.l	d0,g_LineX(a4)
+	move.l	st_Bg(a3),ru_Color(a0)	; (-1: none)
+	clr.l	ru_Text(a0)		; (no background image)
+	clr.l	ru_Len(a0)
+	move.l	st_Edge(a3),d0		; the outline: a run like it (the
+	bpl.s	.ol			;  border's, else the shadow's)
+	move.l	st_Shadow(a3),d0
+	bmi.s	.kids
+.ol:	move.l	d0,-(sp)
+	bsr	AddRun
+	movem.l	(sp)+,d1
+	tst.l	d0
+	beq.s	.kids
+	move.l	d0,a1
+	move.l	d7,d0
+	bsr	LayRunPtr
+	moveq	#RUN_SIZEOF/2-1,d0
+.cp:	move.w	(a0)+,(a1)+
+	dbf	d0,.cp
+	lea	-RUN_SIZEOF(a1),a1
+	move.b	#RT_BOX,ru_Type(a1)
+	move.l	d1,ru_Color(a1)
+.kids:	move.l	a5,a0			; its content
+	move.l	a3,a1
+	bsr	LayoutChildren
+	moveq	#0,d0			; the right padding
+	move.b	st_Pad+1(a3),d0
+	add.l	d0,g_LineX(a4)
+	moveq	#0,d5			; d5 = its width: to here, or 0 if it
+	cmp.l	g_LineStart(a4),d7	; was cut at a line's end
+	blo.s	.w
+	move.l	d7,d0
+	bsr	LayRunPtr
+	move.l	g_LineX(a4),d5
+	moveq	#0,d0
+	move.w	ru_X(a0),d0
+	sub.l	d0,d5
+	bpl.s	.w
+	moveq	#0,d5
+.w:	move.l	d7,d0
+	bsr	LayRunPtr
+	move.w	d5,ru_W(a0)
+	bsr	LayRunCount		; (the outline, if there is one)
+	subq.l	#1,d0
+	cmp.l	d7,d0
+	bls.s	.mr
+	move.l	d7,d0
+	bsr	LayRunPtr
+	cmp.b	#RT_BOX,ru_Type+RUN_SIZEOF(a0)
+	bne.s	.mr
+	move.w	d5,ru_W+RUN_SIZEOF(a0)
+.mr:	move.w	st_MRight(a3),d0	; then the right margin
+	moveq	#0,d1
+	move.b	st_Pad+1(a3),d1
+	sub.w	d1,d0
+	ext.l	d0
+	add.l	d0,g_LineX(a4)
+	bra.s	.x
+.plain:	move.l	a5,a0
+	move.l	a3,a1
+	bsr	LayoutChildren
+.x:	movem.l	(sp)+,d2-d7
+	rts
+
+; BoxTextW - (InlineBox) the width of the text in element a5, in font
+; d6 (its own; one line); Out: d0
+BoxTextW:
+	movem.l	d2/a2/a5,-(sp)
+	moveq	#0,d2
+	move.l	a5,a2			; a2 = the element
+	move.l	n_First(a2),d0
+	beq.s	.x
+.go:	move.l	d0,a5
+	cmp.b	#DN_TEXT,n_Type(a5)
+	bne.s	.el
+	move.l	d6,d0
+	move.l	n_Data(a5),a0
+	move.l	n_Data2(a5),d1
+	bsr	Measure
+	add.l	d0,d2
+	bra.s	.next
+.el:	cmp.b	#DN_ELEMENT,n_Type(a5)
+	bne.s	.next
+	move.l	n_First(a5),d0
+	bne.s	.go
+.next:	move.l	n_Next(a5),d0
+	bne.s	.go
+	move.l	n_Parent(a5),a5		; up, until the element
+	cmp.l	a2,a5
+	beq.s	.x
+	move.l	a5,d0
+	bne.s	.next
+.x:	move.l	d2,d0
+	movem.l	(sp)+,d2/a2/a5
 	rts
 
 ;--------------------------------------------------------------------

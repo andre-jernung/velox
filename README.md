@@ -19,7 +19,10 @@ A small, fast web browser for classic AmigaOS 3.x, written entirely in
   Windows-1252 pages
 - CSS subset: selectors (including `:not()`, `:is()`, attribute and
   structural ones) with specificity, colors, fonts, margins, padding,
-  borders, widths, alignment, display, media queries
+  borders, widths, alignment, display, media queries; inline elements
+  with a background (buttons made of links, highlighted words) get it
+  behind them with their padding, and an outline for `border` or
+  `box-shadow`
 - Tables, lists, preformatted text, headings, horizontal rules, images
   floated left or right with the text flowing around them
 - Forms: text, password, checkboxes, radio buttons, selects, text areas;

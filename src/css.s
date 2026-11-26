@@ -77,6 +77,8 @@ CP_OPACITY	rs.b	1
 CP_FLOAT	rs.b	1
 CP_BGIMAGE	rs.b	1
 CP_BGREPEAT	rs.b	1
+CP_BORDER	rs.b	1		; border, box-shadow: a colour
+CP_SHADOW	rs.b	1
 CP_COUNT	rs.b	0
 
 	section	code,code
@@ -1202,6 +1204,8 @@ PropNames:
 	PN	CP_TOP,"top"
 	PN	CP_OPACITY,"opacity"
 	PN	CP_FLOAT,"float"
+	PN	CP_BORDER,"border"
+	PN	CP_SHADOW,"box-shadow"
 	dc.b	0
 	even
 
@@ -2104,13 +2108,22 @@ CssApply:
 	rts
 
 ; FinishBox - margins and paddings set by CSS into the style (a3):
-; each side becomes margin (or the UA margin) + padding
+; each side becomes margin (or the UA margin) + padding; the paddings
+; alone also into st_Pad (an inline box's: layout.s InlineBox)
 FinishBox:
-	movem.l	d2-d3,-(sp)
+	movem.l	d2-d3/a2,-(sp)
 	lea	g_CssBox(a4),a0
 	lea	SideOffs(pc),a1
+	lea	st_Pad(a3),a2
 	moveq	#3,d3
 .l:	move.w	(a1)+,d2		; style field of this side
+	move.l	16(a0),d1		; padding: alone
+	bpl.s	.pp
+	moveq	#0,d1
+.pp:	cmp.l	#255,d1
+	bls.s	.pb
+	move.l	#255,d1
+.pb:	move.b	d1,(a2)+
 	move.l	(a0),d0			; margin
 	move.l	16(a0),d1		; padding
 	cmp.l	#-1,d0
@@ -2126,7 +2139,7 @@ FinishBox:
 	move.w	d0,(a3,d2.w)
 .next:	addq.l	#4,a0
 	dbf	d3,.l
-	movem.l	(sp)+,d2-d3
+	movem.l	(sp)+,d2-d3/a2
 	rts
 
 SideOffs:	dc.w	st_MTop,st_MRight,st_MBottom,st_MLeft
@@ -2716,7 +2729,7 @@ PropJump:
 	dc.w	PVisibility-PropJump,PHeight-PropJump,PClip-PropJump
 	dc.w	PPosition-PropJump,PLeftTop-PropJump,PLeftTop-PropJump
 	dc.w	POpacity-PropJump,PFloat-PropJump,PBgImage-PropJump
-	dc.w	PBgRepeat-PropJump
+	dc.w	PBgRepeat-PropJump,PEdge-PropJump,PEdge-PropJump
 
 ; Kw - is the value (a0) the keyword a1 (lower case), as a whole word?
 ; Out: Z clear if yes; a0 kept
@@ -2815,6 +2828,56 @@ DisplayKw:
 	dc.b	DISP_ROWGROUP,"table-footer-group",0,DISP_BLOCK,"table-caption",0
 	dc.b	$ff
 	even
+
+; PEdge - border, box-shadow: their colour (st_Edge, st_Shadow) is an
+; inline box's outline (none, hidden, a border of 0: none; a width
+; without a colour: the text's)
+PEdge:	move.l	a5,-(sp)
+	lea	st_Edge(a3),a5
+	cmp.w	#CP_BORDER,d2
+	beq.s	.b
+	lea	st_Shadow(a3),a5
+.b:	moveq	#-1,d0
+	move.l	d0,(a5)
+	move.l	a2,a0
+	lea	KwNone(pc),a1
+	bsr	Kw
+	bne.s	.x
+	move.l	a2,a0
+	lea	KwHidden(pc),a1
+	bsr	Kw
+	bne.s	.x
+	cmp.w	#CP_BORDER,d2		; border: "0" or "0px ...": no width
+	bne.s	.l			; (box-shadow: offsets first)
+	move.l	a2,a0
+	bsr	SkipWs
+	cmp.b	#'0',(a0)
+	bne.s	.l
+	move.b	1(a0),d0
+	beq.s	.x
+	cmp.b	#' ',d0
+	beq.s	.x
+	cmp.b	#'p',d0
+	beq.s	.x
+.l:	move.l	a2,a0			; each word: a colour?
+	bsr	SkipWs
+	move.l	a0,a2
+	tst.b	(a2)
+	beq.s	.def
+	move.l	a2,a0
+	jsr	ParseColor
+	tst.l	d0
+	bpl.s	.set
+.w:	move.b	(a2),d0			; the next word
+	beq.s	.def
+	cmp.b	#' ',d0
+	beq.s	.l
+	addq.l	#1,a2
+	bra.s	.w
+.def:	move.l	st_Color(a3),d0
+.set:	move.l	d0,(a5)
+.x:	move.l	(sp)+,a5
+	rts
 
 PColor:	move.l	a2,a0
 	jsr	ParseColor

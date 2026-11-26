@@ -23,3 +23,7 @@ layout test/unit/layout/linkcolor.html 300
 # smaller text makes the icons reach into the next item; tall floats
 # still go beside the one above
 layout test/unit/layout/iconlist.html 300
+# a link styled as a button (Safir's "Ny Blogg"): a background behind
+# it, its paddings around it, its box-shadow an outline; a highlighted
+# span gets its background too
+layout test/unit/layout/linkbutton.html 300

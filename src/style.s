@@ -30,6 +30,8 @@ StyleRoot:
 	move.l	g_PageFg(a4),st_Color(a0)
 	moveq	#-1,d0
 	move.l	d0,st_Bg(a0)
+	move.l	d0,st_Edge(a0)
+	move.l	d0,st_Shadow(a0)
 	rts
 
 ;--------------------------------------------------------------------
@@ -108,6 +110,9 @@ StyleCompute:
 	clr.b	st_Display(a3)		; ... then reset what is not inherited
 	moveq	#-1,d0
 	move.l	d0,st_Bg(a3)
+	move.l	d0,st_Edge(a3)
+	move.l	d0,st_Shadow(a3)
+	clr.l	st_Pad(a3)
 	clr.l	st_BgImg(a3)
 	move.b	#3,st_BgRep(a3)
 	clr.l	st_MTop(a3)

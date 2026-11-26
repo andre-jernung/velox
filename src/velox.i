@@ -276,6 +276,12 @@ st_Width	rs.w	1		; px; negative = percent; 0 = auto
 st_Height	rs.w	1
 st_BgImg	rs.l	1		; background image (record) or 0
 st_LinkCol	rs.l	1		; <body link=>: $01RRGGBB, 0: not set
+st_Pad		rs.b	4		; CSS padding t r b l (px, 255 at most;
+					; also in st_MTop..: not inherited)
+st_Edge		rs.l	1		; border colour, or -1 (an inline box's
+					; outline; not inherited)
+st_Shadow	rs.l	1		; box-shadow colour, or -1 (the outline
+					; without a border; not inherited)
 STYLE_SIZEOF	rs.b	0
 SK_GEN		equ	0		; n_Style (style.s): g_StyleGen,
 SK_PARENT	equ	4		; the parent's style,
