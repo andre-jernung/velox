@@ -71,7 +71,8 @@ From the Shell:
 
     Velox [URL] [PROXY=host:port] [LOG=file]
 
-From Workbench, double-click the icon. The icons are in MagicWB's 8
+From Workbench, double-click the icon. `Velox.guide`, beside it, is
+this documentation as an AmigaGuide (double-click it: MultiView). The icons are in MagicWB's 8
 colours. Settings can be tool types in the icon (remove the
 parentheses to enable one) or environment variables
 (`SetEnv SAVE Velox/Home http://frogfind.com/`):
@@ -147,7 +148,9 @@ See `CLAUDE.md` for the toolchain and tests and `docs/DESIGN.md` for the
 architecture. `make dist` puts the program, its icon, the proxy, this
 file and the license in `build/dist/Velox`, and the drawer's icon beside
 it. The icon images are in `gfx`, made from `gfx/icon-hires.png`: the
-program's by `tools/mwbicon.py`, the drawer's by `tools/mkdrawer.py`.
+program's by `tools/mwbicon.py`, the drawer's by `tools/mkdrawer.py`,
+`Velox.guide`'s by `tools/mkguideicon.py` (from a 24 pixel globe that
+`tools/mwbicon.py` makes). The guide is `docs/Velox.guide`.
 
 ## License
 

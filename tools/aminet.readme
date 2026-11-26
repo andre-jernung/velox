@@ -42,8 +42,8 @@ Installing
 ----------
 
 Copy the Velox drawer anywhere and start Velox from its icon or from a
-Shell. Velox/README.md lists the tool types, the Shell arguments and
-the keys.
+Shell. Velox/Velox.guide (an AmigaGuide) tells the rest: the tool
+types, the Shell arguments, the keys, tabs, https and the proxy.
 
 Source
 ------
@@ -59,4 +59,5 @@ The first upload to Aminet. Since 0.1.1 on GitHub: tabs; logging in
 with the keyboard (Tab goes on from a field clicked into, Return sends
 the form as its submit button would); links styled as buttons look
 like buttons (a background, padding and an outline behind inline
-elements); icons in MagicWB's colours.
+elements); Velox.guide, this documentation as an AmigaGuide; icons in
+MagicWB's colours.

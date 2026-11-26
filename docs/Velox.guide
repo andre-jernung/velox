@@ -1,0 +1,280 @@
+@database Velox.guide
+@$VER: Velox.guide %VERSION% (%DATE%)
+@author Johan Smolinski
+@(c) 2026 Johan Smolinski
+@wordwrap
+
+@node Main "Velox %VERSION%"
+
+@{b}Velox %VERSION%@{ub}
+A small, fast web browser for AmigaOS 3.x, written in 68k assembly.
+
+   @{" Introduction       " link Intro}   What Velox is
+   @{" Requirements       " link Requirements}   What it needs
+   @{" Installing         " link Installing}   Where it goes
+   @{" Starting           " link Starting}   From Workbench and from a Shell
+   @{" Settings           " link Settings}   Tool types and variables
+
+   @{" The window         " link Window}   Toolbar, tab strip, page, status line
+   @{" Keys               " link Keys}   Everything from the keyboard
+   @{" The mouse          " link Mouse}   Links, tabs, selecting text
+   @{" Tabs               " link Tabs}   Several pages at once
+   @{" Bookmarks and more " link Bookmarks}   Bookmarks, cookies, downloads, caches
+
+   @{" https and the proxy" link Https}   Secure pages, with or without AmiSSL
+   @{" What Velox shows   " link Features}   HTML, CSS, images, frames, forms
+   @{" Limits             " link Limits}   What it does not do (yet)
+
+   @{" License            " link License}   GNU General Public License 3
+   @{" Author             " link Author}   Source, contact
+
+@endnode
+
+@node Intro "Introduction"
+
+@{b}Introduction@{ub}
+
+Velox is a web browser for classic Amigas: AmigaOS 3.1 or newer on a 68020 or better. All of it is written in 68k assembly, and it decodes JPEG, PNG, GIF and WebP images itself, so it needs no datatypes for them and is fast even on a stock A1200.
+
+Velox stays responsive while it loads: the page scrolls and links, gadgets and menus work while pages and their images still come in. Pages can load in several @{" tabs " link Tabs} at once.
+
+It shows the web of today as far as an Amiga can: HTML with a tolerant parser, much of CSS, tables, forms, frames, image maps, cookies and https. There is no JavaScript; see @{" Limits " link Limits}.
+
+@endnode
+
+@node Requirements "Requirements"
+
+@{b}Requirements@{ub}
+
+  - AmigaOS 3.1 or newer
+  - A 68020 or better (68030, 68040, 68060, an emulated CPU)
+  - A TCP/IP stack with bsdsocket.library: Roadshow, AmiTCP, Miami...
+  - For https: AmiSSL 6, or velox-proxy.py running on another computer (see @{" https and the proxy " link Https})
+  - Fast memory helps: pages, images and the pages kept for Back live there
+
+Nothing more is needed for images: Velox decodes JPEG, PNG, GIF and WebP itself. Other formats (ILBM, BMP...) go through the picture datatypes the system has.
+
+@endnode
+
+@node Installing "Installing"
+
+@{b}Installing@{ub}
+
+Copy the Velox drawer anywhere, for instance to Work: or SYS:Internet. It holds:
+
+  Velox            the program
+  Velox.guide      this guide
+  README.md        the same in short, as text
+  LICENSE          the GNU General Public License 3
+  velox-proxy.py   the proxy, for a computer on your network
+
+Velox makes a Cache drawer beside itself for its disk cache. Its settings live in ENV:Velox and ENVARC:Velox. To uninstall, delete the drawer and ENVARC:Velox.
+
+@endnode
+
+@node Starting "Starting"
+
+@{b}Starting@{ub}
+
+From Workbench, double-click the Velox icon. Its tool types are the @{" settings " link Settings}; a disabled one is in parentheses, so remove them to use it.
+
+From a Shell:
+
+  Velox [URL] [PROXY=host:port] [LOG=file]
+
+  URL      the page to open (http://, https://, file:, about:velox)
+  PROXY    send all requests through a proxy
+  LOG      write a log of what Velox does to a file (for finding bugs)
+
+Two more are for the Shell alone: DUMP prints what the server sends for the URL (a page's HTML), INFO its status and headers, without opening a window.
+
+The window opens where it was last closed. Ctrl-C in the Shell stops what loads, or quits when nothing does.
+
+@endnode
+
+@node Settings "Settings"
+
+@{b}Settings@{ub}
+
+A setting is a tool type in Velox's icon or an environment variable, set with SetEnv; SAVE keeps it:
+
+  SetEnv SAVE Velox/Home http://frogfind.com/
+
+  Tool type           Variable           Meaning
+  PROXY=host:port     Velox/Proxy        all requests through a proxy
+  HOME=url            Velox/Home         the home page (and start page)
+  URL=url                                the page to start with
+  DOWNLOADDIR=drawer  Velox/DownloadDir  where downloads go (RAM:)
+  NOIMAGES            Velox/NoImages     load no images
+  PUBSCREEN=name      Velox/PubScreen    open on that public screen
+                      Velox/CacheDir     the disk cache (PROGDIR:Cache)
+                      Velox/CacheSize    its size in KB (16384; 0: none)
+                      Velox/KeepPages    pages kept for Back (4; 0: none)
+                      Velox/TlsCiphers   TLS 1.3 cipher suites
+                      Velox/Tls13        TLS 1.3 wherever servers have it
+                      Velox/InsecureTLS  no certificate checks (testing)
+
+Without a home page, Home goes to about:velox.
+
+@endnode
+
+@node Window "The window"
+
+@{b}The window@{ub}
+
+At the top, the @{b}toolbar@{ub}: Back, Forward, Reload (it stops a page while it loads) and Home, and the address field. Type an address and press Return; "amiga.org" is enough.
+
+With two tabs or more, the @{b}tab strip@{ub} lies below it: each tab's title, a small mark while it loads, a close box, and "+" for a new tab. See @{" Tabs " link Tabs}.
+
+The @{b}page@{ub} fills the rest, with its scroller at the right. A page of frames shows its frames side by side or stacked, each scrolling on its own, with a scrollbar of its own where it needs one.
+
+At the bottom, the @{b}status line@{ub}: the address of the link under the mouse, what loads and how far it has come, and a progress bar at the right.
+
+@endnode
+
+@node Keys "Keys"
+
+@{b}Keys@{ub}
+
+  Ctrl-L               the address field
+  Tab, Shift-Tab       next, previous link or form field
+                       (a text field: ready for typing)
+  Return               follow the link, use the control
+                       (in a text field: send the form)
+  Shift-Return         open the focused link in a tab behind
+  Cursor up, down      scroll a line (with Shift: a page)
+  Space                a page down
+  Ctrl-Up, Ctrl-Down   the top, the bottom of the page
+  Backspace, Ctrl-B    back
+  Ctrl-F               forward
+  Ctrl-R               reload
+  Esc                  stop loading (the page, or its images)
+  Ctrl-H               home
+  /                    find in the page (Return: next, Esc: done)
+  Ctrl-D               add a bookmark
+  Ctrl-K               the bookmarks
+  Amiga-S              save the page or file
+  Amiga-C              copy the address (of the focused link)
+  Amiga-U              view the page's source
+  Amiga-T              a new tab, with the home page
+  Amiga-W              close the tab
+  Amiga-.  Amiga-,     the next, the previous tab
+  Ctrl-Q               quit
+
+The Amiga key works in place of Ctrl for the menu commands. Keys typed while a page loads are not lost.
+
+@endnode
+
+@node Mouse "The mouse"
+
+@{b}The mouse@{ub}
+
+A click on a link follows it; the status line shows where it goes. Shift-click, or the middle button, opens it in a tab behind the one shown.
+
+Drag over text to select it: it is copied to the clipboard at once.
+
+In the tab strip, a click shows a tab, a click on its close box or the middle button closes it, and "+" opens a new one.
+
+The mouse wheel scrolls the page, or the frame under it.
+
+@endnode
+
+@node Tabs "Tabs"
+
+@{b}Tabs@{ub}
+
+Each tab is a page of its own, with its own history for Back and Forward, and all tabs load at once: a tab behind gets its page, style sheets and images while you read another. The tab shown always comes first, so tabs behind never make it slower to use.
+
+  - Amiga-T or "+" opens a tab with the home page.
+  - Shift-click, the middle button or Shift-Return opens a link in a tab behind.
+  - A link or form with target="_blank" opens in a new tab; one with a target name opens in the tab of that name, which later links with the same target use too.
+  - Amiga-. and Amiga-, show the next and the previous tab; Amiga-W or a close box closes one.
+
+A tab behind that loads nothing gives its memory for loading back; when memory runs short, the pages kept for Back in any tab go first.
+
+@endnode
+
+@node Bookmarks "Bookmarks and more"
+
+@{b}Bookmarks@{ub}
+
+Ctrl-D adds the page shown to ENVARC:Velox/Bookmarks.html and Ctrl-K shows them. It is an ordinary page: edit it as you like.
+
+@{b}Cookies@{ub}
+
+Velox keeps cookies, and saves those a site wants kept (with an expiry date) in ENVARC:Velox/Cookies. Delete that file to forget them.
+
+@{b}Downloads@{ub}
+
+Anything that is not a page (an archive, a picture opened on its own...) is downloaded; a file requester asks where it goes (DOWNLOADDIR first). Amiga-S saves a page or file shown.
+
+@{b}Caches@{ub}
+
+Pages left are kept in memory for Back and Forward (Velox/KeepPages) and come back at once, as they were. Pages, style sheets and images are also kept on disk (Velox/CacheDir), laid out pages too, so a page seen before comes back fast even after Velox was quit. Reload fetches everything anew.
+
+@endnode
+
+@node Https "https and the proxy"
+
+@{b}https@{ub}
+
+With AmiSSL 6 installed, Velox opens https pages itself and checks the servers' certificates. The cryptography runs in a process of its own, so the window stays usable meanwhile. On a 68020 a first connection to a server takes several seconds (over 30 for a server whose certificates are all of the slow ECDSA P-384 kind, the first time: Velox remembers certificates it has checked); a connection resumed later takes a fraction of a second.
+
+@{b}The proxy@{ub}
+
+Without AmiSSL, or to make https fast on a slow Amiga, run velox-proxy.py on a modern computer on your network (Python 3; see the comment at its top) and set PROXY= or Velox/Proxy to that computer and port. The proxy does the encryption and keeps its connections to servers alive.
+
+@endnode
+
+@node Features "What Velox shows"
+
+@{b}What Velox shows@{ub}
+
+  - HTML with a tolerant parser; UTF-8, Latin-1 and Windows-1252 pages
+  - CSS: selectors with specificity (also :not(), :is(), attributes, structural ones), colours, fonts, margins, padding, widths, alignment, display, floats, media queries, backgrounds; links styled as buttons look like buttons
+  - Tables, lists, preformatted text, headings, rules
+  - Images: JPEG (also progressive), PNG (also with transparency), GIF and WebP (lossy and lossless) decoded by Velox, dithered to the screen's colours; other formats through datatypes; background images
+  - Forms: text fields, passwords, check boxes, radio buttons, selects, text areas; GET and POST
+  - Frames, each scrolling on its own; links into a frame load that frame only
+  - Image maps, client and server side
+  - http and https, keep-alive, redirects, chunked transfers, cookies, pages with a password (http://user:password@host/)
+  - <meta> refresh, find in page, view source, local file: pages
+
+@endnode
+
+@node Limits "Limits"
+
+@{b}Limits@{ub}
+
+  - No JavaScript: pages that need it to show anything stay empty or show what they have for browsers without it.
+  - Iframes are shown as links to their pages.
+  - Fonts: one proportional font (helvetica) and one fixed one (courier), in six sizes; font-family picks one of the two.
+  - Absolute positioning, flexbox and grid are laid out as ordinary blocks.
+
+@endnode
+
+@node License "License"
+
+@{b}License@{ub}
+
+Copyright (C) 2026 Johan Smolinski
+
+Velox is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License version 3, as published by the Free Software Foundation.
+
+It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License in the file LICENSE for more details.
+
+@endnode
+
+@node Author "Author"
+
+@{b}Author@{ub}
+
+Velox is written by Johan Smolinski.
+
+Its source, its releases and its issue tracker are on GitHub:
+
+  https://github.com/johansmolinski/velox
+
+Bugs and wishes are welcome there.
+
+@endnode
