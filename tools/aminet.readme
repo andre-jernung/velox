@@ -4,7 +4,7 @@ Uploader:     @AUTHOR@
 Type:         comm/www
 Version:      @VERSION@
 Architecture: m68k-amigaos >= 3.1.0
-Requires:     68020+, a TCP/IP stack, AmiSSL 6 for https
+Requires:     68020+, Fast RAM, a TCP/IP stack, AmiSSL 6 for https
 Kurz:         Webbrowser in 68k-Assembler geschrieben
 
 Velox is a small, fast web browser for classic AmigaOS 3.x, written
@@ -34,6 +34,9 @@ Requirements
 ------------
 
 - AmigaOS 3.1 or newer, a 68020 or better
+- Fast RAM: with Chip RAM alone (a stock A1200) few pages fit. A few
+  MB will do without https; with AmiSSL, 8 MB or more (AmiSSL alone
+  takes about 4 MB)
 - A TCP/IP stack with bsdsocket.library (Roadshow, AmiTCP, Miami...)
 - For https: AmiSSL 6, or velox-proxy.py (included) running on another
   computer

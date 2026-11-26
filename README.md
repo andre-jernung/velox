@@ -6,6 +6,9 @@ A small, fast web browser for classic AmigaOS 3.x, written entirely in
 ## Requirements
 
 - AmigaOS 3.1 or newer, 68020 or better
+- Fast RAM: with Chip RAM alone (a stock A1200) few pages fit. A few
+  MB will do without https; with AmiSSL, 8 MB or more (AmiSSL alone
+  takes about 4 MB)
 - A TCP/IP stack with bsdsocket.library (Roadshow, AmiTCP, Miami)
 - For https: AmiSSL 6, or `velox-proxy.py` running on a modern
   machine

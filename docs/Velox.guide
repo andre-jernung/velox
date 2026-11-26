@@ -34,7 +34,7 @@ A small, fast web browser for AmigaOS 3.x, written in 68k assembly.
 
 @{b}Introduction@{ub}
 
-Velox is a web browser for classic Amigas: AmigaOS 3.1 or newer on a 68020 or better. All of it is written in 68k assembly, and it decodes JPEG, PNG, GIF and WebP images itself, so it needs no datatypes for them and is fast even on a stock A1200.
+Velox is a web browser for classic Amigas: AmigaOS 3.1 or newer on a 68020 or better. All of it is written in 68k assembly, and it decodes JPEG, PNG, GIF and WebP images itself, so it needs no datatypes for them.
 
 Velox stays responsive while it loads: the page scrolls and links, gadgets and menus work while pages and their images still come in. Pages can load in several @{" tabs " link Tabs} at once.
 
@@ -50,7 +50,7 @@ It shows the web of today as far as an Amiga can: HTML with a tolerant parser, m
   - A 68020 or better (68030, 68040, 68060, an emulated CPU)
   - A TCP/IP stack with bsdsocket.library: Roadshow, AmiTCP, Miami...
   - For https: AmiSSL 6, or velox-proxy.py running on another computer (see @{" https and the proxy " link Https})
-  - Fast memory helps: pages, images and the pages kept for Back live there
+  - Fast RAM: pages, their images and the pages kept for Back live there. With Chip RAM alone, as on a stock A1200, few pages fit. A few MB will do without https; with AmiSSL, 8 MB or more (AmiSSL alone takes about 4 MB)
 
 Nothing more is needed for images: Velox decodes JPEG, PNG, GIF and WebP itself. Other formats (ILBM, BMP...) go through the picture datatypes the system has.
 
